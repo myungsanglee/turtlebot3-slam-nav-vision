@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  fastdds_tailscale_server.xml   [회사 서버용 / 수정본]
+  ===========================================================================
+  Tailscale로 이은 집-회사 통신에서 멀티캐스트 디스커버리가 안 되는 문제를,
+  "기본 전송을 끄지 않고" 유니캐스트 peer만 추가하는 방식으로 해결한다.
+
+    상대(집 터틀봇) Tailscale IP : 100.71.74.81
+
+  [중요] useBuiltinTransports 를 false 로 끄면 localhost 경로까지 사라져서
+         같은 머신(서버 컨테이너) 안 노드끼리도 디스커버리가 깨진다
+         (cartographer 노드가 ros2 node list 에 안 보이는 원인).
+         따라서 기본 전송은 그대로 두고 initialPeersList 만 추가한다.
+         -> localhost(로컬 노드) + Tailscale peer(원격 로봇) 둘 다 발견 가능.
+
+  [사용법]
+    export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    export FASTRTPS_DEFAULT_PROFILES_FILE=/cfg/fastdds_tailscale_server.xml
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+
+  <participant profile_name="tailscale_unicast" is_default_profile="true">
+    <rtps>
+      <builtin>
+        <!-- 멀티캐스트가 막힌 환경에서도 이 peer 로 유니캐스트 디스커버리 -->
+        <initialPeersList>
+          <locator>
+            <udpv4>
+              <address>100.71.74.81</address>   <!-- 상대 = 집 터틀봇 -->
+            </udpv4>
+          </locator>
+        </initialPeersList>
+      </builtin>
+    </rtps>
+  </participant>
+
+</profiles>

@@ -1,0 +1,79 @@
+# =============================================================================
+# docker-compose.yml  (TurtleBot3 Remote PC + Discovery Server / ROS 2 Humble)
+#
+# [구성]
+#   discovery-server : Fast DDS Discovery Server (중앙 디스커버리, 상시 실행)
+#   remote-pc        : SLAM/Nav2/RViz 를 돌리는 개발·작업 컨테이너
+#
+# [디스커버리] Tailscale(집-회사, 다른 망) 환경에서 멀티캐스트가 안 되므로
+#   Discovery Server 방식 사용. XML(FASTRTPS_DEFAULT_PROFILES_FILE)은 폐기.
+#   모든 노드는 ROS_DISCOVERY_SERVER=100.95.193.1:11811 를 바라본다.
+#   -> localhost 간섭/순서 의존 문제 없음.
+#
+#   같은 와이파이(LAN)에서 테스트할 때는 ROS_DISCOVERY_SERVER 를 주석 처리하면
+#   기본 멀티캐스트로 동작 (또는 .bashrc 의 ros_lan / ros_ds 함수 사용).
+#
+# [주소 규약] 서버 Tailscale IP 100.95.193.1 / 포트 11811 / server-id 0
+# =============================================================================
+services:
+
+  # ── Discovery Server (중앙 디스커버리, 상시) ─────────────────────────────
+  discovery-server:
+    image: tb3-remote-pc:overlay        # remote-pc 와 동일 이미지 재사용(추가 빌드 없음)
+    network_mode: host                  # 서버 Tailscale IP 로 바인딩되도록
+    restart: always                     # 죽으면 자동 재시작 + (도커 자동시작 시) 부팅 복구
+    entrypoint: []                      # 기존 entrypoint 무시
+    command: >
+      bash -lc "source /opt/ros/humble/setup.bash &&
+                exec fastdds discovery -i 0 -l 100.95.193.1 -p 11811"
+
+  # ── Remote PC (SLAM / Nav2 / RViz 작업 컨테이너) ─────────────────────────
+  remote-pc:
+    image: tb3-remote-pc:overlay
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: overlay
+      args:
+        ROS_DISTRO: humble
+
+    stdin_open: true
+    tty: true
+
+    network_mode: host      # DDS 통신
+    ipc: host               # 노드 간 공유메모리 전송 성능
+
+    depends_on:
+      - discovery-server     # 디스커버리 먼저 뜨고 remote-pc
+
+    # NVIDIA GPU (RViz 가속 / 추후 비전 AI)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      # 로봇(파이)과 반드시 동일하게 맞출 값
+      - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-30}
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      # ── 디스커버리: Discovery Server 방식 (XML 폐기) ──
+      - ROS_DISCOVERY_SERVER=100.95.193.1:11811
+      #   ↑ 같은 와이파이(LAN) 테스트 시에는 위 줄을 주석 처리(멀티캐스트로 동작)
+      # GUI(X11) 통과 — 서버 물리 세션(:0/:1)에 맞춰 실행 셸의 DISPLAY 사용
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+
+    volumes:
+      # GUI: 호스트 X 서버 공유 (RViz 를 서버 데스크톱/VNC 화면에 표시)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority:rw
+      # 개발용: 본인 프로젝트 소스를 호스트에서 마운트 (이미지 재빌드 없이 코드 수정)
+      - ./remote_pc:/overlay_ws:rw
+
+    command: bash
