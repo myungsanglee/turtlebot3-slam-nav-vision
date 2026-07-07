@@ -1,0 +1,86 @@
+# =============================================================================
+# slam_toolbox (online async) 파라미터 — TurtleBot3 커스텀 로봇용
+#
+# 기준: slam_toolbox 기본값(mapper_params_online_async.yaml)에서
+#       TurtleBot3(LDS 라이다, 소형/저속, 실내)에 맞게 조정한 항목만 주석 표시.
+#
+# [TF 트리]  map → odom → base_footprint → base_link → base_scan
+#   - odom→base_footprint : Pi 의 bringup(휠 오도메트리)이 publish
+#   - base_footprint→base_scan : Pi 의 URDF(robot_state_publisher)가 publish
+#   - map→odom : ★ slam_toolbox 가 publish (이 노드의 역할)
+# =============================================================================
+slam_toolbox:
+  ros__parameters:
+
+    # ── 프레임 / 토픽 (로봇 쪽과 반드시 일치해야 하는 부분) ──────────────
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint     # TurtleBot3 의 기준 프레임 (base_link 아님)
+    scan_topic: /scan              # LDS 라이다. publisher 가 BEST_EFFORT 지만
+                                   # slam_toolbox 는 sensor-data QoS 로 구독하므로 OK
+    use_sim_time: false            # 실물 로봇
+
+    # ── 동작 모드 ────────────────────────────────────────────────────────
+    mode: mapping                  # 지도 작성 모드 (완성 후엔 localization 모드로 전환)
+    use_map_saver: true
+
+    # ── 솔버 (그래프 최적화 백엔드) — 기본값 유지 ───────────────────────
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ── 일반 동작 ────────────────────────────────────────────────────────
+    debug_logging: false
+    throttle_scans: 1              # 스캔 다운샘플 안 함 (Remote PC 연산 여유 충분)
+    transform_publish_period: 0.02 # map→odom TF 50Hz publish
+    map_update_interval: 5.0       # /map 토픽 갱신 주기(초). 시각화 주기일 뿐,
+                                   # 내부 그래프는 스캔마다 갱신됨
+    resolution: 0.05               # 지도 해상도 5cm/픽셀 (실내 표준)
+    max_laser_range: 3.5           # ★ LDS-01/02 최대 사거리 스펙. 이보다 크게 잡으면
+                                   #   노이즈가 지도에 들어감
+    minimum_time_interval: 0.5
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0       # 원격(Tailscale) 환경이라 TF 버퍼 넉넉히
+    stack_size_to_use: 40000000
+    enable_interactive_mode: true
+
+    # ── 스캔 매칭 (지도 품질의 핵심) ─────────────────────────────────────
+    use_scan_matching: true
+    use_scan_barycenter: true
+    minimum_travel_distance: 0.2   # ★ 기본 0.5 → 0.2. 이만큼 이동할 때마다 스캔을
+                                   #   지도에 반영. 소형 로봇/좁은 실내라 촘촘하게
+    minimum_travel_heading: 0.2    # ★ 회전 기준(rad, 약 11도). 회전 시에도 갱신
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 10.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    do_loop_closing: true          # 루프 클로저: 왔던 곳을 다시 인식하면
+                                   # 누적 오차를 한 번에 보정 (SLAM 의 백미)
+    loop_search_maximum_distance: 3.0
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # ── 상관관계 탐색 (스캔매칭 탐색 범위) — 기본값 유지 ────────────────
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # ── 루프 클로저 탐색 — 기본값 유지 ──────────────────────────────────
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # ── 스캔매칭 페널티/미세 탐색 — 기본값 유지 ─────────────────────────
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
