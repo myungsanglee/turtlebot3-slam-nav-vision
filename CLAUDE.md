@@ -92,7 +92,8 @@ turtlebot3-slam-nav-vision/
 ├── README.md
 ├── docs/                      # 컴포넌트별 상세 문서 (개발 완료 시마다 작성 — 9번 규칙)
 │   ├── my_slam.md
-│   └── my_navigation.md
+│   ├── my_navigation.md
+│   └── description.md
 ├── docker/                    # Remote PC 컨테이너 (ROS2 Humble)
 │   ├── Dockerfile
 │   └── entrypoint.sh
@@ -135,13 +136,18 @@ turtlebot3-slam-nav-vision/
   (지도 만들며 주행), 저장 지도+AMCL 모드 지원. 전체 lifecycle 활성화·코스트맵
   publish 실기 검증 완료(실주행 테스트는 사용자 입회 하 예정). footprint 는
   표준 burger 임시값(★실측 교체 필요). 상세는 `docs/my_navigation.md`
+- **커스텀 로봇 URDF 보정** — description/urdf/turtlebot3_burger.urdf 에 실측 반영:
+  scan_joint(LDS) xyz=-0.100,0,0.125 / imu_joint yaw=-1.57(OpenCR 90° 회전).
+  xacro·robot_state_publisher 로드 검증 완료. Pi 배포(파일 교체) + 실주행 검증은
+  예정. IMU 위치 xyz 는 미실측(표준값 유지, EKF 전 교체). 상세는 `docs/description.md`
 
 **다음 (우선순위 순)**
-1. **커스텀 로봇 URDF 보정** — LDS 위치/높이 실측 반영, RealSense camera_link TF 추가
+1. **URDF 보정판 Pi 배포 + 실주행 검증** — turtlebot3_description 의 urdf 교체 후
+   제자리 회전 시 지도 벽 이중선 사라지는지 확인 (필요시 scan yaw 경험적 보정)
 2. **Nav2 footprint 실측 교체** — nav2_params.yaml 의 robot_radius(임시 0.105) →
    실측 다각형 footprint
-3. RealSense 런치 (Pi 쪽) + bringup 과 함께 뜨는 통합 런치
-4. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합)
+3. RealSense 런치 (Pi 쪽) + bringup 과 함께 뜨는 통합 런치, camera_link TF 추가
+4. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — 전에 IMU 위치 실측
 5. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
 6. Vision AI 노드 (TensorRT 추론) 통합
 
