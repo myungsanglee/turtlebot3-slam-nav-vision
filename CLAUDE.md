@@ -93,7 +93,8 @@ turtlebot3-slam-nav-vision/
 ├── docs/                      # 컴포넌트별 상세 문서 (개발 완료 시마다 작성 — 9번 규칙)
 │   ├── my_slam.md
 │   ├── my_navigation.md
-│   └── description.md
+│   ├── description.md
+│   └── troubleshooting.md     # 비자명한 문제의 진단·해결 기록 (인시던트 로그)
 ├── docker/                    # Remote PC 컨테이너 (ROS2 Humble)
 │   ├── Dockerfile
 │   └── entrypoint.sh
@@ -163,4 +164,11 @@ turtlebot3-slam-nav-vision/
   그리고 관련 개념(좌표계/TF/QoS 등)을 로봇 분야를 전혀 모르는 사람도
   코드와 문서만 보고 "어떤 원리로 계산되고 왜 이렇게 작성했는지" 이해할 수
   있는 수준으로 설명. 예시: `docs/my_slam.md`
+- **비자명한 문제를 해결하면 `docs/troubleshooting.md` 에 기록한다.**
+  "증상 → 진단 과정 → 근본 원인 → 해결 → 재발 방지" 형식. 특히 git 에 안 남는
+  설정(방화벽·로봇 하드웨어 등)은 여기가 유일한 기록이므로 반드시 남긴다.
+  (컴포넌트 "정상 동작 방식"은 docs/<패키지>.md, 문제 해결 "여정"은 여기)
+- **컴포넌트 개발/변경이 끝나면 `README.md` 도 갱신한다.** docs 만큼 깊지 않게,
+  프로젝트 개요 + "개발한 내용" 표(컴포넌트·한 줄 설명·상태·문서 링크) + 실행
+  방법을 최신 상태로 유지한다. (docs 는 상세, README 는 개요·실행법 요약)
 - 응답/주석은 한국어 기본.
