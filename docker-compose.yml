@@ -60,9 +60,16 @@ services:
       - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-30}
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-      # ── 디스커버리: Discovery Server 방식 (XML 폐기) ──
+      # ── 디스커버리: Discovery Server 방식 ──
       - ROS_DISCOVERY_SERVER=100.95.193.1:11811
       #   ↑ 같은 와이파이(LAN) 테스트 시에는 위 줄을 주석 처리(멀티캐스트로 동작)
+      # ── 인터페이스 화이트리스트: 멀티홈 서버가 tailscale+loopback 만 쓰게 제한 ──
+      #   (없으면 원격 Pi 가 /scan 을 서버 LAN IP 로 잘못 보내 데이터 유실.
+      #    상세: config/fastdds_iface_whitelist.xml)
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/cfg/fastdds_iface_whitelist.xml
+      # 디스커버리 서버 환경에서 CLI(ros2 topic list/hz 등)가 원격 토픽을 보게 함.
+      # (모니터링/개발용 remote PC 라 모든 노드가 super client 여도 무방)
+      - ROS_SUPER_CLIENT=TRUE
       # GUI(X11) 통과 — 서버 물리 세션(:0/:1)에 맞춰 실행 셸의 DISPLAY 사용
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
@@ -75,5 +82,7 @@ services:
       - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority:rw
       # 개발용: 본인 프로젝트 소스를 호스트에서 마운트 (이미지 재빌드 없이 코드 수정)
       - ./remote_pc:/overlay_ws:rw
+      # DDS 프로파일(인터페이스 화이트리스트) 마운트
+      - ./config:/cfg:ro
 
     command: bash
