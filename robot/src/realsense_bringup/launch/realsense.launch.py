@@ -4,22 +4,21 @@
 # realsense2_camera 의 표준 런치(rs_launch.py)를 재사용하되, 이 로봇/환경에 맞춘
 # 옵션만 덮어써서 띄운다.
 #
-# [해상도를 낮게 잡는 이유] 라즈베리파이의 USB 링크에서 D435i 기본 해상도
-#   (RGB 1280x720x30 + depth 848x480x30)는 대역폭이 커서 UVC 컨트롤 타임아웃
-#   (xioctl ... Connection timed out)으로 스트림 시작이 실패하기 쉽다. 낮은
-#   해상도/fps 로 USB 부담을 줄인다. 또한 원격(Tailscale) 전송 대역폭도 절약.
-#   → 안정화되면 값을 점차 올리며 한계를 찾는다.
+# [Pi USB 이슈 대응] pyrealsense2 최소 스트리밍은 되는데 ROS 노드는
+#   UVC 컨트롤 타임아웃(xioctl ... Connection timed out)으로 실패하는 경우가 있다.
+#   원인은 ROS 노드가 최소 스트리밍보다 많은 장치 제어(XU 컨트롤)를 하기 때문:
+#     - initial_reset  : 시작 시 USB 리셋 → 직후 제어 접근이 불안정할 수 있음
+#     - align_depth    : depth↔color 정렬용 extrinsics 를 XU 로 읽음 (실패 지점)
+#   그래서 기본값을 "가볍게"(둘 다 off) 잡아 기본 스트리밍부터 되게 하고,
+#   안정화되면 인자로 하나씩 켜서 범인을 좁힌다.
 #
-# [지원 형식] 프로파일은 "WIDTHxHEIGHTxFPS" (예: 640x480x15). D435i depth 는
-#   848x480 / 640x480 / 640x360 / 480x270 / 424x240 등 지원.
+# [해상도] Pi USB/원격 대역폭 고려해 낮게. 형식 "WIDTHxHEIGHTxFPS".
 #
-# [실행] Pi 에서 (realsense2_camera 설치 필요):
-#   ros2 launch realsense_bringup realsense.launch.py
-#   ros2 launch <이 파일 경로>/realsense.launch.py           # 빌드 없이 직접
-#
-# [옵션]
-#   color_profile:=424x240x15   depth_profile:=480x270x15   (더 낮추기)
-#   pointcloud:=true   imu:=true
+# [실행 예]
+#   ros2 launch realsense_bringup realsense.launch.py                  # 가벼운 기본
+#   ros2 launch realsense_bringup realsense.launch.py align_depth:=true
+#   ros2 launch realsense_bringup realsense.launch.py initial_reset:=true
+#   ros2 launch realsense_bringup realsense.launch.py color_profile:=424x240x15
 # =============================================================================
 import os
 
@@ -34,9 +33,10 @@ def generate_launch_description():
     rs_dir = get_package_share_directory('realsense2_camera')
     rs_launch = os.path.join(rs_dir, 'launch', 'rs_launch.py')
 
-    # 낮은 기본 해상도 (USB 안정성 우선). 안정화 후 상향.
     color_profile = LaunchConfiguration('color_profile')
     depth_profile = LaunchConfiguration('depth_profile')
+    align_depth = LaunchConfiguration('align_depth')
+    initial_reset = LaunchConfiguration('initial_reset')
     pointcloud = LaunchConfiguration('pointcloud')
     imu = LaunchConfiguration('imu')
 
@@ -45,6 +45,12 @@ def generate_launch_description():
                               description='RGB 해상도 WxHxFPS'),
         DeclareLaunchArgument('depth_profile', default_value='640x480x15',
                               description='Depth 해상도 WxHxFPS'),
+        # Pi USB 타임아웃 회피 위해 무거운 옵션은 기본 off
+        DeclareLaunchArgument('align_depth', default_value='false',
+                              description='depth↔color 정렬(extrinsics XU 읽음). '
+                                          'Pi 에서 타임아웃 유발 가능 → 기본 off'),
+        DeclareLaunchArgument('initial_reset', default_value='false',
+                              description='시작 시 USB 리셋. 기본 off(직후 제어 불안정 회피)'),
         DeclareLaunchArgument('pointcloud', default_value='false',
                               description='pointcloud publish (부담 큼)'),
         DeclareLaunchArgument('imu', default_value='false',
@@ -58,11 +64,11 @@ def generate_launch_description():
             'enable_depth': 'true',
             'rgb_camera.color_profile': color_profile,
             'depth_module.depth_profile': depth_profile,
-            'align_depth.enable': 'true',       # depth 를 color 에 정렬
+            'align_depth.enable': align_depth,
             'pointcloud.enable': pointcloud,
             'enable_gyro': imu,
             'enable_accel': imu,
-            'initial_reset': 'true',            # 시작 시 카메라 리셋(스턱 예방)
+            'initial_reset': initial_reset,
         }.items(),
     )
 
