@@ -17,6 +17,7 @@
 | 토픽 목록엔 보이는데 `ros2 topic hz` 수신율 0 | 디스커버리(메타데이터)는 되나 **유저 데이터 P2P 경로**가 막힘 (방화벽/멀티홈 locator) | 아래 2026-08-25 항목 참조 |
 | RViz 에서 `/scan` 이 안 보임 | QoS 불일치 (`/scan` 은 BEST_EFFORT) | 구독 Reliability 를 Best Effort 로 |
 | RViz 에서 `/map` 이 늦게/안 보임 | QoS Durability 불일치 | Transient Local 로 |
+| bringup 이 `robot_description as yaml` 오류로 안 뜸 | URDF 주석에 콜론+공백/줄끝 콜론 → YAML 파싱 깨짐 | 주석에서 콜론 제거 (아래 2026-08-26 항목) |
 
 ---
 
@@ -94,3 +95,49 @@ Remote PC 에서 `my_slam` 을 실행해도 지도가 안 그려짐. `ros2 topic
 ### 관련
 - 개념: [my_slam.md](./my_slam.md) 2장(TF/QoS), CLAUDE.md 3장(네트워크/디스커버리)
 - 커밋: `3c06ea3` (DDS 화이트리스트 + super client)
+
+---
+
+## 2026-08-26 — 보정 URDF 배포 후 bringup 실행 실패 (robot_description YAML 파싱)
+
+### 증상
+Pi 에 보정 URDF 배포 후 bringup 실행 시:
+```
+urdf_file_name : turtlebot3_burger.urdf
+[ERROR] [launch]: ... Unable to parse the value of parameter robot_description
+as yaml. If the parameter is meant to be a string, try wrapping it in
+launch_ros.parameter_descriptions.ParameterValue(value, value_type=str)
+```
+로봇 문제가 아니라 **URDF 파일 문제**. 표준 URDF 는 잘 뜨는데 보정판만 실패.
+
+### 근본 원인
+bringup(turtlebot3_state_publisher.launch.py)은 URDF 파일 내용을 문자열로 읽어
+`robot_description` 파라미터로 넘기는데, 이때 파라미터 시스템이 그 문자열을
+**YAML 로 파싱**해 타입을 추론한다. 그런데 보정판에 넣은 한글 주석에
+**콜론+공백( ) 이나 줄 끝 콜론**이 있으면, YAML 이 그 줄을 "매핑 키"로 오해해
+`mapping values are not allowed here` 로 파싱이 깨진다. 표준 URDF 의 주석/XML
+에는 그 패턴이 없어서(예: `xmlns:xacro`, `http://` 는 콜론 뒤 공백이 없음) 문제없었다.
+
+### 진단
+호스트에서 그대로 재현:
+```bash
+python3 -c "import yaml; yaml.safe_load(open('description/urdf/turtlebot3_burger.urdf').read())"
+# → mapping values are not allowed here ... line 10 "1) scan_joint (LDS 라이다 위치):"
+```
+트레일링 콜론 `...위치):` 이 범인.
+
+### 해결
+URDF **주석에서 콜론+공백/줄끝 콜론을 전부 제거**(`=>`, `-`, `(...)` 로 대체).
+보정값(xyz/rpy)과 XML 본체는 불변. 커밋 이력 참조. 수정 후 재검증:
+```bash
+python3 -c "import yaml; yaml.safe_load(open('.../turtlebot3_burger.urdf').read())"  # 예외 없어야 함
+xacro turtlebot3_burger.urdf > /dev/null                                             # 파싱 OK
+```
+
+### 재발 방지 · 교훈
+- **URDF/센서 파라미터 파일의 주석에 `콜론+공백` 이나 `줄 끝 콜론` 금지.** 특히
+  한글 설명 주석에서 흔히 나온다("항목: 설명", "다음과 같다:" 등).
+- URDF 를 배포하기 전 `python3 -c "import yaml; yaml.safe_load(open(...).read())"`
+  로 한 번 검사하면 이 에러를 사전에 잡는다.
+- "표준은 되는데 내 파일만 안 될" 때는 로봇/네트워크가 아니라 **내가 바꾼 파일의
+  내용**을 의심하라.
