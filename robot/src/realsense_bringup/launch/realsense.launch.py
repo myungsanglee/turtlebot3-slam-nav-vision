@@ -1,21 +1,25 @@
 # =============================================================================
 # realsense.launch.py — RealSense D435i 브링업 (Raspberry Pi 에서 실행)
 #
-# realsense2_camera 의 표준 런치(rs_launch.py)를 그대로 재사용하되, 이 로봇에
-# 필요한 옵션만 인자로 덮어써서 띄운다. (버전별 파라미터 이름 차이를 표준 런치가
-# 흡수해주므로 안정적)
+# realsense2_camera 의 표준 런치(rs_launch.py)를 재사용하되, 이 로봇/환경에 맞춘
+# 옵션만 덮어써서 띄운다.
 #
-# [1차 목표] color + depth 가 /camera/* 로 안정적으로 뜨는 것 확인.
-#   - 해상도/fps 프로파일은 일단 카메라 기본값 사용(파라미터 형식 리스크 회피).
-#   - 대역폭(원격 전송) 최적화·해상도 다운·압축 전송은 동작 확인 후 2차로.
+# [해상도를 낮게 잡는 이유] 라즈베리파이의 USB 링크에서 D435i 기본 해상도
+#   (RGB 1280x720x30 + depth 848x480x30)는 대역폭이 커서 UVC 컨트롤 타임아웃
+#   (xioctl ... Connection timed out)으로 스트림 시작이 실패하기 쉽다. 낮은
+#   해상도/fps 로 USB 부담을 줄인다. 또한 원격(Tailscale) 전송 대역폭도 절약.
+#   → 안정화되면 값을 점차 올리며 한계를 찾는다.
 #
-# [실행] Pi 에서 (realsense2_camera 설치돼 있어야 함):
-#   ros2 launch realsense_bringup realsense.launch.py            # 빌드/소싱 시
-#   ros2 launch <이 파일 경로>/realsense.launch.py                # 빌드 없이 직접
+# [지원 형식] 프로파일은 "WIDTHxHEIGHTxFPS" (예: 640x480x15). D435i depth 는
+#   848x480 / 640x480 / 640x360 / 480x270 / 424x240 등 지원.
 #
-# [옵션 예]
-#   ros2 launch realsense_bringup realsense.launch.py pointcloud:=true
-#   ros2 launch realsense_bringup realsense.launch.py imu:=true
+# [실행] Pi 에서 (realsense2_camera 설치 필요):
+#   ros2 launch realsense_bringup realsense.launch.py
+#   ros2 launch <이 파일 경로>/realsense.launch.py           # 빌드 없이 직접
+#
+# [옵션]
+#   color_profile:=424x240x15   depth_profile:=480x270x15   (더 낮추기)
+#   pointcloud:=true   imu:=true
 # =============================================================================
 import os
 
@@ -30,35 +34,36 @@ def generate_launch_description():
     rs_dir = get_package_share_directory('realsense2_camera')
     rs_launch = os.path.join(rs_dir, 'launch', 'rs_launch.py')
 
+    # 낮은 기본 해상도 (USB 안정성 우선). 안정화 후 상향.
+    color_profile = LaunchConfiguration('color_profile')
+    depth_profile = LaunchConfiguration('depth_profile')
     pointcloud = LaunchConfiguration('pointcloud')
     imu = LaunchConfiguration('imu')
 
-    declare_pointcloud = DeclareLaunchArgument(
-        'pointcloud', default_value='false',
-        description='pointcloud publish 여부 (연산·대역폭 부담 큼 → 기본 off)')
-    declare_imu = DeclareLaunchArgument(
-        'imu', default_value='false',
-        description='카메라 내장 IMU(gyro/accel) publish 여부. 로봇 IMU 와 별개 '
-                    '→ 기본 off (필요 시 켬)')
+    declares = [
+        DeclareLaunchArgument('color_profile', default_value='640x480x15',
+                              description='RGB 해상도 WxHxFPS'),
+        DeclareLaunchArgument('depth_profile', default_value='640x480x15',
+                              description='Depth 해상도 WxHxFPS'),
+        DeclareLaunchArgument('pointcloud', default_value='false',
+                              description='pointcloud publish (부담 큼)'),
+        DeclareLaunchArgument('imu', default_value='false',
+                              description='카메라 내장 IMU(gyro/accel) publish'),
+    ]
 
     realsense = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(rs_launch),
         launch_arguments={
-            # 스트림
             'enable_color': 'true',
             'enable_depth': 'true',
-            'align_depth.enable': 'true',      # depth 를 color 에 정렬(비전용 정합 depth)
+            'rgb_camera.color_profile': color_profile,
+            'depth_module.depth_profile': depth_profile,
+            'align_depth.enable': 'true',       # depth 를 color 에 정렬
             'pointcloud.enable': pointcloud,
             'enable_gyro': imu,
             'enable_accel': imu,
-            'unite_imu_method': '2',           # imu:=true 일 때 gyro/accel 을 하나로 결합
-            # 안정화
-            'initial_reset': 'true',           # 시작 시 카메라 리셋(프레임 안 옴 현상 예방)
+            'initial_reset': 'true',            # 시작 시 카메라 리셋(스턱 예방)
         }.items(),
     )
 
-    return LaunchDescription([
-        declare_pointcloud,
-        declare_imu,
-        realsense,
-    ])
+    return LaunchDescription([*declares, realsense])
