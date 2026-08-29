@@ -18,6 +18,8 @@
 | RViz 에서 `/scan` 이 안 보임 | QoS 불일치 (`/scan` 은 BEST_EFFORT) | 구독 Reliability 를 Best Effort 로 |
 | RViz 에서 `/map` 이 늦게/안 보임 | QoS Durability 불일치 | Transient Local 로 |
 | bringup 이 `robot_description as yaml` 오류로 안 뜸 | URDF 주석에 콜론+공백/줄끝 콜론 → YAML 파싱 깨짐 | 주석에서 콜론 제거 (아래 2026-08-26 항목) |
+| ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
+| 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
 
 ---
 
@@ -141,3 +143,101 @@ xacro turtlebot3_burger.urdf > /dev/null                                        
   로 한 번 검사하면 이 에러를 사전에 잡는다.
 - "표준은 되는데 내 파일만 안 될" 때는 로봇/네트워크가 아니라 **내가 바꾼 파일의
   내용**을 의심하라.
+
+---
+
+## 2026-08-27 — RealSense ROS 노드만 UVC 컨트롤 타임아웃 (pyrealsense2 는 정상)
+
+### 증상
+Pi 에서 `realsense2_camera`(apt, v4.58.3) 실행 시, 카메라는 인식되나 스트림 시작에서
+반복 실패 후 죽음:
+```
+get_xu(...) xioctl(UVCIOC_CTRL_QUERY) failed on control 1 Last Error: Connection timed out
+get_xu(...) xioctl(UVCIOC_CTRL_QUERY) failed on control 7 Last Error: No such file or directory
+Error starting device: std::exception
+```
+그런데 **pyrealsense2 로 최소 스트리밍(640x480x15)은 문제없이 됨.** 케이블은 Intel 정품.
+
+### 진단 과정
+1. 해상도 낮춤(RGB 1280x720→640x480) → 동일 실패. 대역폭 문제 아님.
+2. align_depth·initial_reset 등 무거운 옵션 다 off → 동일. 옵션 문제 아님.
+3. **pyrealsense2 최소 스트리밍 테스트는 성공** → 카메라/USB/케이블 정상.
+   실패 지점이 `global_timestamp_reader` 폴링과 인트린식 읽기의 **XU(extension
+   unit) 컨트롤** = 하드웨어 메타데이터 접근. `control 7 No such file or directory`
+   (ENOENT)는 커널에 그 XU 노드가 없다는 뜻.
+4. 사용자가 pyrealsense2 를 **소스 빌드(`-DFORCE_RSUSB_BACKEND=true`, `/usr/local`)**
+   한 것을 확인 → 결정적 단서.
+
+### 근본 원인
+pyrealsense2 와 ROS 노드가 **서로 다른 librealsense** 를 쓴다:
+- `pyrealsense2` (소스, `/usr/local`) = **RSUSB(유저스페이스 USB) 백엔드** → 커널 패치 불필요 → OK
+- `ros-humble-realsense2-camera` 가 링크한 apt `ros-humble-librealsense2` = **커널(V4L2)
+  백엔드** → RealSense 커널 패치(uvcvideo XU/메타데이터) 필요 → 라즈베리파이 커널엔
+  없음 → XU 컨트롤 타임아웃.
+최소 스트리밍은 XU 를 안 건드려 되지만, ROS 노드는 메타데이터/인트린식을 XU 로 읽어 실패.
+
+### 해결
+realsense-ros(ROS 래퍼)를 **`/usr/local` 의 RSUSB librealsense 에 링크되도록 소스 빌드**:
+```bash
+# 커널 백엔드 apt 패키지 제거
+sudo apt remove -y "ros-humble-realsense2-*" ros-humble-librealsense2 && sudo apt autoremove -y
+# 소스 받아 워크스페이스에
+mkdir -p ~/realsense_ros_ws/src && cd ~/realsense_ros_ws/src
+git clone https://github.com/IntelRealSense/realsense-ros.git -b ros2-development
+cd ~/realsense_ros_ws
+# ★ 의존성 설치하되 librealsense2 는 skip (안 그러면 apt 커널 백엔드가 다시 깔림)
+rosdep install --from-paths src --ignore-src -r -y --skip-keys=librealsense2
+# /usr/local librealsense 를 명시해 빌드
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -Drealsense2_DIR=/usr/local/lib/cmake/realsense2
+source install/setup.bash
+```
+결과: ROS 노드가 RSUSB 백엔드를 써서 pyrealsense2 처럼 XU 문제 없이 뜨고, 서버에서
+`/camera/camera/*` 토픽이 보임(빌드 성공).
+
+### 재발 방지 · 교훈
+- **라즈베리파이/Jetson 처럼 커널 패치가 어려운 플랫폼에선 librealsense 를 RSUSB
+  백엔드로 빌드**하고 realsense-ros 도 그것에 링크한다. apt 패키지는 커널 백엔드라 안 됨.
+- `rosdep install` 시 **`--skip-keys=librealsense2`** 로 apt librealsense 재설치를 막는다.
+- "같은 카메라인데 SDK 는 되고 ROS 만 안 될" 때는 **두 경로가 다른 라이브러리/백엔드를
+  쓰는지** 의심하라.
+
+---
+
+## 2026-08-29 — 카메라 토픽은 discover 되는데 데이터가 서버로 안 옴 (라이다는 정상)
+
+### 증상
+realsense-ros 빌드 성공 후, 서버 `ros2 topic list` 에 `/camera/camera/*` 다 보임.
+그러나 color image·**작은 camera_info 조차** 수신율 0. 같은 Pi 의 `/scan`(라이다)은
+동시각에 깨끗한 5Hz 로 정상 수신.
+
+### 진단 과정 (배제법)
+- **대역폭 아님**: 작은 camera_info(수백 byte)도 어떤 QoS 로도 0.
+- **QoS 불일치 아님**: `ros2 topic info --verbose` 로 퍼블리셔 QoS(RELIABLE/VOLATILE)
+  완전히 받아짐 → 표준 구독자와 매칭 가능.
+- **디스커버리 불완전 아님**: 노드명/GID/QoS 까지 서버가 다 앎.
+- **인터페이스 화이트리스트 아님**: 서버·Pi 양쪽 적용해도 동일. tcpdump 상 Pi 가
+  서버 데이터 포트로 **하트비트는 보내나 데이터 샘플은 안 감**.
+- **loopback locator 아님**: 화이트리스트에서 127.0.0.1 제거해도 동일.
+- **카메라 특정 문제 확정**: 같은 링크에서 `/scan` 은 정상(5Hz). 차이는 참가자뿐 —
+  카메라는 토픽 20+개의 복잡한 참가자, 라이다는 단순·소수.
+
+### 근본 원인 (판정)
+**Fast DDS Discovery Server 가 VPN(Tailscale) + 멀티홈 + 복잡한 참가자 조합에서
+사용자 데이터 전달에 실패하는 한계.** 디스커버리/매칭은 되지만 실제 샘플 전송이
+안 됨. 라이다(BEST_EFFORT·소수 엔드포인트)는 넘고 카메라(RELIABLE 기본·다수
+엔드포인트)는 못 넘음. Fast DDS 레벨에서 더 파는 것은 효율 낮다고 판단.
+
+### 해결 방향 (진행 예정)
+**Pi↔서버 통신을 Zenoh 로 전환** — ROS 2 를 VPN/WAN 으로, 큰 데이터·멀티홈 환경에
+보내기 위해 설계된 표준 해법(디스커버리 트래픽 97~99% 감소 보고). 두 방식:
+- `zenoh-bridge-ros2dds` (덜 침습적, 각 머신 내부는 DDS 유지, 브리지만 tailscale 로 연결)
+- `rmw_zenoh` (전 노드 RMW 교체)
+추가로 카메라는 **compressed image transport + 저해상도**도 병행 필요(원시 이미지
+~14MB/s 는 Tailscale 로 무리).
+
+### 재발 방지 · 교훈
+- **원격(VPN) ROS 2 에서 큰/복잡한 데이터(카메라·포인트클라우드)는 Fast DDS
+  Discovery Server 가 한계.** 소형 센서(라이다)로 검증됐다고 카메라도 될 거라 가정 금지.
+- "discover 는 되는데 데이터 0"에서 대역폭·QoS·디스커버리·화이트리스트를 다
+  배제하면 **미들웨어 자체의 한계**를 의심하고 Zenoh 를 검토하라.
+- 진단은 **가장 작은 메시지(camera_info)** 부터 확인하면 대역폭 문제를 빠르게 배제한다.
