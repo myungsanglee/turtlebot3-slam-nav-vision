@@ -1,0 +1,37 @@
+// =============================================================================
+// zenoh-bridge-pi.json5 — 로봇(Raspberry Pi) 쪽 zenoh-bridge-ros2dds 설정
+//
+// [아키텍처] Pi 내부(bringup·realsense)는 ROS_LOCALHOST_ONLY=1 로 로컬 DDS 만,
+//   서버와는 이 브리지가 유일한 통로 (서버 tcp/100.95.193.1:7447 로 접속).
+//
+// [실행] Pi 에서 (버전은 서버 Docker 이미지와 동일하게 - 현재 1.10.0):
+//   ROS_DOMAIN_ID=30 ./zenoh-bridge-ros2dds -c ~/turtlebot3-slam-nav-vision/robot/config/zenoh-bridge-pi.json5
+//
+// [allow] 서버 설정(config/zenoh-bridge-server.json5)과 방향만 반대.
+//   ★ raw 이미지 금지 — 카메라는 compressed(JPEG)만.
+// =============================================================================
+{
+  plugins: {
+    ros2dds: {
+      domain: 30,               // Pi 로컬 DDS 도메인 (bringup 과 동일)
+      ros_localhost_only: true,
+      allow: {
+        publishers: [           // Pi 에서 나가는 것 (Pi -> 서버)
+          "/scan", "/odom", "/imu",
+          "/tf", "/tf_static", "/joint_states",
+          "/robot_description", "/battery_state",
+          "/camera/.*/camera_info",
+          "/camera/.*/compressed",
+        ],
+        subscribers: [          // Pi 로 들어오는 것 (서버 -> Pi)
+          "/cmd_vel",
+          "/tf", "/tf_static",
+        ],
+      },
+    },
+  },
+  mode: "peer",
+  connect: { endpoints: ["tcp/100.95.193.1:7447"] },  // 서버 Tailscale IP
+  listen: { endpoints: [] },
+  scouting: { multicast: { enabled: false } },
+}

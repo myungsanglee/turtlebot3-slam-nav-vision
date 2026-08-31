@@ -1,0 +1,41 @@
+// =============================================================================
+// zenoh-bridge-server.json5 — Remote PC(서버) 쪽 zenoh-bridge-ros2dds 설정
+//
+// [아키텍처] 각 호스트 내부는 ROS_LOCALHOST_ONLY=1 로 로컬 DDS 만 사용하고,
+//   호스트 간(Pi<->서버)은 zenoh 브리지가 유일한 통로다 (TCP 7447, Tailscale 경유).
+//   Fast DDS Discovery Server 방식은 VPN+멀티홈+카메라(복잡 참가자)에서 데이터
+//   전달이 깨져 폐기 (docs/troubleshooting.md 2026-08-29 항목).
+//
+// [역할] 서버 브리지 = listener. Pi 브리지가 tcp/100.95.193.1:7447 로 접속해 온다.
+//   UFW 는 tailscale0 전체 허용이라 추가 규칙 불필요 (LAN 에서 오는 7447 은
+//   기본 deny 로 차단됨 = 의도된 동작).
+//
+// [allow 리스트] 브리징할 토픽만 명시 (정규식, 부분일치).
+//   ★ raw 이미지는 절대 넣지 말 것 — 640x480 raw ≈ 14MB/s 로 Tailscale 초과.
+//     카메라는 compressed(JPEG)만 브리징한다.
+//   버전은 Pi 쪽 바이너리와 반드시 동일하게 (현재 1.10.0).
+// =============================================================================
+{
+  plugins: {
+    ros2dds: {
+      domain: 30,               // 이 호스트(서버) 로컬 DDS 도메인
+      ros_localhost_only: true, // 로컬 DDS 는 loopback 만 (컨테이너 노드들과 동일)
+      allow: {
+        publishers: [           // 이 호스트에서 나가는 것 (서버 -> Pi)
+          "/cmd_vel",
+          "/tf", "/tf_static",  // slam 의 map->odom 등 (Pi 쪽에서 쓸 일은 적지만 무해)
+        ],
+        subscribers: [          // 이 호스트로 들어오는 것 (Pi -> 서버)
+          "/scan", "/odom", "/imu",
+          "/tf", "/tf_static", "/joint_states",
+          "/robot_description", "/battery_state",
+          "/camera/.*/camera_info",
+          "/camera/.*/compressed",   // compressed + compressedDepth 매칭
+        ],
+      },
+    },
+  },
+  mode: "peer",
+  listen: { endpoints: ["tcp/0.0.0.0:7447"] },
+  scouting: { multicast: { enabled: false } },  // 명시적 접속만 사용
+}
