@@ -58,8 +58,9 @@ turtlebot3-slam-nav-vision/
 |---|---|---|---|
 | **my_slam** | slam_toolbox 기반 2D SLAM. 로봇 라이다(`/scan`)로 지도 작성 + 위치추정 | ✅ 실물 검증 | [docs/my_slam.md](./docs/my_slam.md) |
 | **my_navigation** | Nav2 자율주행. 지도 만들며 주행(기본) / 저장 지도+AMCL 모드 | ✅ 실기 검증 (실주행 예정) | [docs/my_navigation.md](./docs/my_navigation.md) |
-| **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전) | ✅ 파싱 검증 (Pi 배포 예정) | [docs/description.md](./docs/description.md) |
-| **인프라/네트워크** | Tailscale + Fast DDS Discovery Server, 멀티홈 인터페이스 화이트리스트 | ✅ 안정화 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
+| **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전) | ✅ Pi 배포·TF 검증 | [docs/description.md](./docs/description.md) |
+| **realsense_bringup** | RealSense D435i 브링업 (RSUSB 백엔드) + compressed 영상 publish | ✅ 15fps 원격 수신 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
+| **인프라/네트워크** | Tailscale + **Zenoh Bridge** (Fast DDS Discovery Server 의 VPN 한계를 진단 후 전환) | ✅ 검증 완료 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
 | my_vision | Vision AI 노드 (TensorRT 추론) | ⏳ 예정 | — |
 
 ## 시작하기
@@ -67,12 +68,14 @@ turtlebot3-slam-nav-vision/
 ### 1. 컨테이너 실행
 
 ```bash
-docker compose up -d              # discovery-server + remote-pc 기동
+docker compose up -d              # zenoh-bridge + remote-pc 기동
 docker compose exec remote-pc bash
 ```
 
-> 전제: 로봇(Pi)에서 `turtlebot3_bringup` 이 실행 중이고, Pi 와 서버가 같은
-> Tailscale 망에 있어야 합니다. 네트워크 이슈는 [docs/troubleshooting.md](./docs/troubleshooting.md) 참고.
+> 전제: 로봇(Pi)에서 `turtlebot3_bringup`(+ 필요 시 realsense)과 zenoh-bridge
+> (systemd)가 실행 중이고, Pi 와 서버가 같은 Tailscale 망에 있어야 합니다.
+> ★ 브리지는 **노드들을 띄운 뒤** 시작/재시작해야 데이터가 흐릅니다
+> (순서 quirk — [docs/troubleshooting.md](./docs/troubleshooting.md) 2026-09-01 참고).
 
 ### 2. SLAM — 지도 만들기
 
@@ -97,6 +100,7 @@ RViz 툴바의 **2D Goal Pose** 로 목표점을 찍으면 로봇이 이동합�
 
 ### 참고
 
-- Discovery Server 환경에서 `ros2 topic list` 등 CLI 가 원격 토픽을 못 보면
-  `ROS_SUPER_CLIENT=TRUE` 가 필요합니다 (remote-pc 컨테이너엔 기본 적용됨).
+- Pi↔서버 통신은 zenoh-bridge 가 담당하며, 브리징되는 토픽은
+  `config/zenoh-bridge-server.json5` / `robot/config/zenoh-bridge-pi.json5` 의
+  allow 리스트로 관리합니다 (카메라는 compressed 만 — raw 는 대역폭 초과).
 - 상세 개발 문서: [docs/](./docs/) · 프로젝트 전체 컨텍스트: [CLAUDE.md](./CLAUDE.md)

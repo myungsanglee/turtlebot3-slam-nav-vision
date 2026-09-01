@@ -13,8 +13,9 @@
 
 | 증상 | 원인 | 즉효 |
 |---|---|---|
-| `ros2 topic list` 에 원격 토픽이 안 보임 (`/parameter_events`, `/rosout` 만) | Discovery Server 환경에서 CLI(daemon)가 일반 client → 매칭되는 것만 봄 | `export ROS_SUPER_CLIENT=TRUE` 후 `ros2 daemon stop && ros2 daemon start` |
-| 토픽 목록엔 보이는데 `ros2 topic hz` 수신율 0 | 디스커버리(메타데이터)는 되나 **유저 데이터 P2P 경로**가 막힘 (방화벽/멀티홈 locator) | 아래 2026-08-25 항목 참조 |
+| **[Zenoh 전환 후]** 토픽은 보이는데 데이터 수신 0 | 브리지를 노드들보다 먼저 시작 → 로컬 DDS 매칭 실패 (순서 quirk) | **노드 띄운 뒤 브리지 재시작** — Pi `sudo systemctl restart zenoh-bridge`, 서버 `docker compose restart zenoh-bridge` (2026-09-01 항목) |
+| [구 Discovery Server 시절] `ros2 topic list` 에 원격 토픽이 안 보임 | CLI(daemon)가 일반 client → 매칭되는 것만 봄 | (역사적 — 현재 Zenoh 구성에선 불필요) `ROS_SUPER_CLIENT=TRUE` + daemon 재시작 |
+| [구 Discovery Server 시절] 토픽 목록엔 보이는데 `ros2 topic hz` 수신율 0 | 디스커버리(메타데이터)는 되나 **유저 데이터 P2P 경로**가 막힘 (방화벽/멀티홈 locator) | 아래 2026-08-25 항목 참조 |
 | RViz 에서 `/scan` 이 안 보임 | QoS 불일치 (`/scan` 은 BEST_EFFORT) | 구독 Reliability 를 Best Effort 로 |
 | RViz 에서 `/map` 이 늦게/안 보임 | QoS Durability 불일치 | Transient Local 로 |
 | bringup 이 `robot_description as yaml` 오류로 안 뜸 | URDF 주석에 콜론+공백/줄끝 콜론 → YAML 파싱 깨짐 | 주석에서 콜론 제거 (아래 2026-08-26 항목) |
@@ -241,3 +242,39 @@ realsense-ros 빌드 성공 후, 서버 `ros2 topic list` 에 `/camera/camera/*`
 - "discover 는 되는데 데이터 0"에서 대역폭·QoS·디스커버리·화이트리스트를 다
   배제하면 **미들웨어 자체의 한계**를 의심하고 Zenoh 를 검토하라.
 - 진단은 **가장 작은 메시지(camera_info)** 부터 확인하면 대역폭 문제를 빠르게 배제한다.
+
+---
+
+## 2026-09-01 — Zenoh Bridge 전환 완료 (카메라 15fps 성공) + 브리지 시작 순서 quirk
+
+### 전환 결과
+zenoh-bridge-ros2dds(1.10.0)로 전환 후 엔드투엔드 검증 성공:
+- `/scan` 5Hz (지터 역대 최소), `/odom` 20Hz, `/tf`·`camera_info` 정상
+- **카메라 color compressed 15fps, 프레임당 ~70KB ≈ 1.05MB/s** (raw 였다면 14MB/s)
+- CLI(`ros2 topic list/hz`)가 super client 없이 그냥 동작. 구성 대폭 단순화
+  (Discovery Server·인터페이스 화이트리스트·SUPER_CLIENT 전부 제거)
+
+구성 요약은 CLAUDE.md 3번, 설정 파일은 `config/zenoh-bridge-server.json5`(서버,
+compose 서비스) / `robot/config/zenoh-bridge-pi.json5`(Pi, systemd 서비스).
+
+### 겪은 문제 — 브리지 시작 순서 quirk
+**증상**: 브리지 연결·라우트 생성·allow 매칭까지 전부 정상 로그인데 데이터만 0.
+tcpdump 로 보면 Pi loopback 에 DDS 유저 데이터가 전혀 없음 (Fast DDS 끼리는
+SHM 으로 통신해서 로컬 `ros2 topic hz` 는 정상으로 보임 — 함정).
+
+**원인(경험적)**: 브리지(내장 CycloneDDS)를 **노드들보다 먼저** 시작하면
+Fast DDS 노드의 writer 가 브리지의 reader 에게 데이터를 보내지 않는 로컬
+DDS 매칭 문제 발생. 노드들이 떠 있는 상태에서 브리지를 재시작하면 즉시 해결.
+
+**해결/운영 규칙**: **bringup·카메라를 먼저 띄우고 브리지를 (재)시작**한다.
+재부팅 등으로 순서가 어긋나 "토픽은 보이는데 데이터 0"이면 브리지만 재시작:
+- Pi: `sudo systemctl restart zenoh-bridge`
+- 서버: `docker compose restart zenoh-bridge`
+
+### 진단 도구 메모 (이번에 유효했던 것)
+- 프로세스의 **실제 env** 확인: `tr "\0" "\n" < /proc/<PID>/environ | grep ROS`
+  (셸에서 echo 로 보는 값과 실행 중 프로세스의 값은 다를 수 있다)
+- 브리지 debug 로그: `RUST_LOG=zenoh_plugin_ros2dds=debug` — 라우트 생성/매칭 상태가 다 보임
+- 링크에 데이터가 실제로 흐르는지: `tcpdump -ni tailscale0 "tcp port 7447"`
+- 로컬 DDS 유저 데이터: `tcpdump -ni lo "udp and greater 500"` (Fast DDS 끼리는
+  SHM 이라 안 보일 수 있음에 유의)

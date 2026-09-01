@@ -33,21 +33,30 @@ ROBOTIS TurtleBot3 실물 로봇으로 **SLAM · Navigation · Vision AI** 를 �
 - Remote PC 는 그 토픽들(`/scan`, `/odom`, `/imu`, `/camera/*`)을 받아
   **나만의 SLAM/Nav/Vision** 을 돌린다.
 
-## 3. 네트워크 / 디스커버리 (중요 — 삽질 끝에 확정된 구성)
+## 3. 네트워크 / 통신 (중요 — 2026-09 Zenoh 전환으로 확정된 구성)
 
-집-회사처럼 다른 망이라 DDS 멀티캐스트가 안 된다. **Fast DDS Discovery Server**
-방식으로 확정(XML/initialPeers 방식은 localhost 간섭·순서 의존 문제로 폐기).
+집-회사처럼 다른 망이라 DDS 멀티캐스트가 안 된다. 초기의 **Fast DDS Discovery
+Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 참가자)의 데이터
+전달이 VPN+멀티홈에서 실패**해 폐기하고 **Zenoh Bridge** 로 전환했다
+(진단 여정: docs/troubleshooting.md 2026-08-29, 09-01 항목).
 
-- RMW: `rmw_fastrtps_cpp` (Humble 기본)
-- **`ROS_DISCOVERY_SERVER=<서버 Tailscale IP>:11811`** 를 모든 노드가 바라봄
-- Discovery Server 는 Remote PC 의 Docker 컨테이너에서 상시 실행
-  (`fastdds discovery -i 0 -l <서버 IP> -p 11811`, compose 의 별도 서비스)
-- `ROS_DOMAIN_ID` 는 Pi 와 Remote PC 가 **반드시 동일** (현재: 30 — 실제 값 확인 후 유지)
-- 같은 와이파이(LAN) 테스트 시엔 `ROS_DISCOVERY_SERVER` 를 끄면 멀티캐스트로 동작
-  (전환용 셸 함수 `ros_ds` / `ros_lan` 사용)
+**현재 아키텍처 (zenoh-bridge-ros2dds, 양쪽 버전 동일 필수 — 현재 1.10.0)**
+- 각 호스트 내부: `ROS_LOCALHOST_ONLY=1` → DDS 는 loopback 만 (RMW 는 그대로
+  `rmw_fastrtps_cpp`, `ROS_DOMAIN_ID=30` 양쪽 동일)
+- 호스트 간: zenoh 브리지가 유일한 통로 — 서버가 `tcp/7447` listen
+  (compose 의 `zenoh-bridge` 서비스), Pi 가 접속 (`robot/config/zenoh-bridge-pi.json5`,
+  systemd 서비스 `zenoh-bridge`)
+- 브리징 토픽은 양쪽 config 의 **allow 리스트**로 제한. ★ 카메라는 **compressed 만**
+  브리징 (raw 640x480 ≈ 14MB/s 는 Tailscale 초과, compressed ≈ 1MB/s)
+- ROS_DISCOVERY_SERVER / 인터페이스 화이트리스트 / ROS_SUPER_CLIENT 전부 불필요
+  (CLI 도 그냥 동작). 같은 LAN 테스트도 동일 구성으로 동작.
+
+**운영 주의 (★ 순서 quirk)**: 브리지를 노드들보다 먼저 켜면 토픽은 discover 되나
+데이터가 안 흐를 수 있다. **bringup/카메라를 띄운 뒤 브리지를 (재)시작**할 것
+— Pi: `sudo systemctl restart zenoh-bridge`, 서버: `docker compose restart zenoh-bridge`.
 
 주소(실제 값):
-- 서버 Tailscale IP: `100.95.193.1`
+- 서버 Tailscale IP: `100.95.193.1` (UFW 는 tailscale0 전체 허용 규칙 필요)
 - 로봇(Pi) Tailscale IP: `100.71.74.81`
 
 > QoS 주의: `/scan` 은 publisher 가 BEST_EFFORT. 구독/RViz 는 Best Effort 로 맞출 것.
@@ -127,7 +136,6 @@ turtlebot3-slam-nav-vision/
 
 **완료**
 - Docker ROS2 Humble 컨테이너 (osrf 베이스 + ROBOTIS 소스 3종 + SLAM/Nav2)
-- Discovery Server 방식으로 Pi↔서버 통신 안정화 (map 그려짐, 양방향 teleop OK)
 - x11vnc 로 RViz 원격 확인 환경 구축
 - 레포 구조 정리 (위 6번 구조 스캐폴딩, README / .gitignore)
 - **my_slam 패키지** — slam_toolbox(online async) 설정/런치/RViz 구성.
@@ -139,18 +147,24 @@ turtlebot3-slam-nav-vision/
   표준 burger 임시값(★실측 교체 필요). 상세는 `docs/my_navigation.md`
 - **커스텀 로봇 URDF 보정** — description/urdf/turtlebot3_burger.urdf 에 실측 반영:
   scan_joint(LDS) xyz=-0.100,0,0.125 / imu_joint yaw=-1.57(OpenCR 90° 회전).
-  xacro·robot_state_publisher 로드 검증 완료. Pi 배포(파일 교체) + 실주행 검증은
-  예정. IMU 위치 xyz 는 미실측(표준값 유지, EKF 전 교체). 상세는 `docs/description.md`
+  Pi 배포 + TF 실기 검증 완료. 제자리 회전 정밀 검증은 공간 확보 시 예정.
+  IMU 위치 xyz 는 미실측(표준값 유지, EKF 전 교체). 상세는 `docs/description.md`
+- **realsense_bringup (Pi)** — D435i 를 RSUSB 백엔드 realsense-ros(소스 빌드)로
+  구동, color/depth 640x480x15 + compressed 퍼블리시 (docs/troubleshooting.md
+  2026-08-27 참고). ※ docs/realsense_bringup.md 작성 예정
+- **통신 아키텍처 Zenoh 전환** — Discovery Server 폐기, zenoh-bridge-ros2dds 로
+  전환 (위 3번). 엔드투엔드 검증 완료: /scan 5Hz, /odom 20Hz, 카메라 compressed
+  15fps(≈1MB/s), tf/camera_info 정상. Pi 브리지 systemd 서비스 등록.
 
 **다음 (우선순위 순)**
-1. **URDF 보정판 Pi 배포 + 실주행 검증** — turtlebot3_description 의 urdf 교체 후
-   제자리 회전 시 지도 벽 이중선 사라지는지 확인 (필요시 scan yaw 경험적 보정)
+1. **base_link→camera_link TF 추가** — 카메라 장착 위치 실측 → URDF 반영 (5번 규칙)
 2. **Nav2 footprint 실측 교체** — nav2_params.yaml 의 robot_radius(임시 0.105) →
    실측 다각형 footprint
-3. RealSense 런치 (Pi 쪽) + bringup 과 함께 뜨는 통합 런치, camera_link TF 추가
+3. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
 4. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — 전에 IMU 위치 실측
 5. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
-6. Vision AI 노드 (TensorRT 추론) 통합
+6. Vision AI 노드 (TensorRT 추론) 통합 — compressed 구독→디코드→추론
+7. docs/realsense_bringup.md 작성 (9번 규칙)
 
 ## 9. 규칙 / 선호
 
