@@ -74,8 +74,8 @@ docker compose exec remote-pc bash
 
 > 전제: 로봇(Pi)에서 `turtlebot3_bringup`(+ 필요 시 realsense)과 zenoh-bridge
 > (systemd)가 실행 중이고, Pi 와 서버가 같은 Tailscale 망에 있어야 합니다.
-> ★ 브리지는 **노드들을 띄운 뒤** 시작/재시작해야 데이터가 흐릅니다
-> (순서 quirk — [docs/troubleshooting.md](./docs/troubleshooting.md) 2026-09-01 참고).
+> 드물게 "토픽은 보이는데 데이터 0"이면 브리지만 재시작하면 복구됩니다
+> ([docs/troubleshooting.md](./docs/troubleshooting.md) 2026-09-01 참고).
 
 ### 2. SLAM — 지도 만들기
 

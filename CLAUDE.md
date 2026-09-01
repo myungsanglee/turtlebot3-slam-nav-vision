@@ -51,8 +51,9 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 - ROS_DISCOVERY_SERVER / 인터페이스 화이트리스트 / ROS_SUPER_CLIENT 전부 불필요
   (CLI 도 그냥 동작). 같은 LAN 테스트도 동일 구성으로 동작.
 
-**운영 주의 (★ 순서 quirk)**: 브리지를 노드들보다 먼저 켜면 토픽은 discover 되나
-데이터가 안 흐를 수 있다. **bringup/카메라를 띄운 뒤 브리지를 (재)시작**할 것
+**운영 주의**: 정상 상태에선 시작 순서 무관 (브리지가 먼저 떠 있어도 나중에
+시작한 노드가 붙는 것 실증됨). 단, env 를 갈아엎는 등 비정상 상황 후 "토픽은
+보이는데 데이터 0" 증상이 나면 **브리지만 재시작**하면 복구된다
 — Pi: `sudo systemctl restart zenoh-bridge`, 서버: `docker compose restart zenoh-bridge`.
 
 주소(실제 값):

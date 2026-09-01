@@ -13,7 +13,7 @@
 
 | 증상 | 원인 | 즉효 |
 |---|---|---|
-| **[Zenoh 전환 후]** 토픽은 보이는데 데이터 수신 0 | 브리지를 노드들보다 먼저 시작 → 로컬 DDS 매칭 실패 (순서 quirk) | **노드 띄운 뒤 브리지 재시작** — Pi `sudo systemctl restart zenoh-bridge`, 서버 `docker compose restart zenoh-bridge` (2026-09-01 항목) |
+| **[Zenoh 전환 후]** 토픽은 보이는데 데이터 수신 0 (드묾) | 브리지가 비정상 상태의 옛 노드들과 섞여 로컬 DDS 매칭이 꼬임 | **브리지 재시작** — Pi `sudo systemctl restart zenoh-bridge`, 서버 `docker compose restart zenoh-bridge` (2026-09-01 항목) |
 | [구 Discovery Server 시절] `ros2 topic list` 에 원격 토픽이 안 보임 | CLI(daemon)가 일반 client → 매칭되는 것만 봄 | (역사적 — 현재 Zenoh 구성에선 불필요) `ROS_SUPER_CLIENT=TRUE` + daemon 재시작 |
 | [구 Discovery Server 시절] 토픽 목록엔 보이는데 `ros2 topic hz` 수신율 0 | 디스커버리(메타데이터)는 되나 **유저 데이터 P2P 경로**가 막힘 (방화벽/멀티홈 locator) | 아래 2026-08-25 항목 참조 |
 | RViz 에서 `/scan` 이 안 보임 | QoS 불일치 (`/scan` 은 BEST_EFFORT) | 구독 Reliability 를 Best Effort 로 |
@@ -257,17 +257,20 @@ zenoh-bridge-ros2dds(1.10.0)로 전환 후 엔드투엔드 검증 성공:
 구성 요약은 CLAUDE.md 3번, 설정 파일은 `config/zenoh-bridge-server.json5`(서버,
 compose 서비스) / `robot/config/zenoh-bridge-pi.json5`(Pi, systemd 서비스).
 
-### 겪은 문제 — 브리지 시작 순서 quirk
+### 겪은 문제 — 첫 브리지 인스턴스에서 데이터만 0 (로컬 DDS 매칭 꼬임)
 **증상**: 브리지 연결·라우트 생성·allow 매칭까지 전부 정상 로그인데 데이터만 0.
 tcpdump 로 보면 Pi loopback 에 DDS 유저 데이터가 전혀 없음 (Fast DDS 끼리는
 SHM 으로 통신해서 로컬 `ros2 topic hz` 는 정상으로 보임 — 함정).
 
-**원인(경험적)**: 브리지(내장 CycloneDDS)를 **노드들보다 먼저** 시작하면
-Fast DDS 노드의 writer 가 브리지의 reader 에게 데이터를 보내지 않는 로컬
-DDS 매칭 문제 발생. 노드들이 떠 있는 상태에서 브리지를 재시작하면 즉시 해결.
+**원인(검증됨)**: 처음엔 "브리지를 노드보다 먼저 켜면 안 된다"(순서 quirk)로
+추정했으나, 이후 실증 테스트로 반박됨 — **브리지가 오래 떠 있는 상태에서 새로
+시작한 노드(static_transform_publisher)의 데이터가 즉시 서버에 도착**함.
+실제 원인은 전환 작업 중 첫 브리지가 **구버전 env(loopback 빠진 화이트리스트)의
+옛 노드들과 공존하며 로컬 DDS 매칭 상태가 꼬인 것.** 정상 상태에선 시작 순서 무관.
 
-**해결/운영 규칙**: **bringup·카메라를 먼저 띄우고 브리지를 (재)시작**한다.
-재부팅 등으로 순서가 어긋나 "토픽은 보이는데 데이터 0"이면 브리지만 재시작:
+**해결/운영 규칙**: 평상시엔 systemd/compose 로 브리지가 먼저 떠 있어도 된다.
+드물게 "토픽은 보이는데 데이터 0" 증상(env 갈아엎기 등 비정상 상황 후)이 나면
+브리지만 재시작하면 복구:
 - Pi: `sudo systemctl restart zenoh-bridge`
 - 서버: `docker compose restart zenoh-bridge`
 
