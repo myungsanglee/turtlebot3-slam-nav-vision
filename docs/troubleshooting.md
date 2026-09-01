@@ -281,3 +281,42 @@ SHM 으로 통신해서 로컬 `ros2 topic hz` 는 정상으로 보임 — 함�
 - 링크에 데이터가 실제로 흐르는지: `tcpdump -ni tailscale0 "tcp port 7447"`
 - 로컬 DDS 유저 데이터: `tcpdump -ni lo "udp and greater 500"` (Fast DDS 끼리는
   SHM 이라 안 보일 수 있음에 유의)
+
+---
+
+## 2026-09-01 (2) — Pi 재부팅 후 카메라만 스트림 실패 (전원 부족)
+
+### 증상
+Pi 재부팅 후 서버 `topic list` 는 다 보이고 `/scan` 도 정상인데 **카메라 데이터만 0**.
+Pi 로컬에서도 스트림 없음. 카메라 로그에 `RS2_USB_STATUS_BUSY`,
+`control_transfer ... Resource temporarily unavailable` 연발. depth 는 열리는데
+RGB 에서 실패. 브리지/네트워크는 이번엔 전부 정상이었음.
+
+### 근본 원인
+**Pi 전원 부족(undervoltage).** `vcgencmd get_throttled` → `0x50005`
+(bit0=현재 전압 부족, bit2=스로틀링 중). RGB 센서 기동 시 추가 전류를 못 끌어와
+USB 컨트롤 전송부터 실패. "재부팅 전엔 됐는데" = 코드가 아니라 전원 환경 변화.
+※ 2026-08 라이다 정지 사건(배터리 → LDS 모터 멈춤)과 같은 계열.
+
+### 진단 순서 (재사용 가능)
+1. `vcgencmd get_throttled` — **bit0 이 켜져 있으면 그 이상 볼 것 없이 전원부터**
+2. 카메라 프로세스 중복 확인 — 옛 인스턴스가 USB 를 잡고 있으면 BUSY
+3. 소프트 USB 리셋 (sudo 불필요 — realsense udev 규칙 덕에 노드 권한 열려 있음):
+   `python3` 로 `/dev/bus/usb/BUS/DEV` 에 `USBDEVFS_RESET` ioctl
+4. 안 되면 물리 재연결 → 그래도 안 되면 전원이 원인일 확률 높음
+
+### 곁가지 함정들 (이번에 겪음)
+- **`pkill -f` 자기살해**: SSH 원격 명령 문자열에 패턴이 포함되면 자기 세션이
+  죽는다 → 옛 프로세스가 살아남아 새 인스턴스와 USB 충돌(BUSY)로 이어졌음.
+  bracket 트릭 사용: `pkill -f "realsense[2]_camera_node"`
+- `kill -9` 뒤 남는 `<defunct>` 좀비는 무해 (USB 는 이미 해제됨)
+- **죽인 노드의 토픽이 서버 `topic list` 에 계속 보이는 이유**:
+  ① 서버 ros2 daemon 의 그래프 캐시 (`ros2 daemon stop && start` 로 새로고침)
+  ② `kill -9` 는 undeclare 없이 죽어서 DDS liveliness lease(~20s) 만료까지
+     브리지가 라우트를 회수하지 못함 (곱게 끄면 즉시 회수)
+
+### 해결/현재 상태
+전원 조치 + 재부팅 후 카메라 15fps 복구, 서버 수신 정상. 단 **undervoltage 는
+여전히 지속**(0x50005) — 지금은 마진으로 동작하는 상태라 재발 위험 있음.
+근본 대책: 정격 전원(라즈베리파이4 기준 5V/3A+) 또는 배터리 충전 관리,
+필요 시 카메라용 유전원(powered) USB 허브.
