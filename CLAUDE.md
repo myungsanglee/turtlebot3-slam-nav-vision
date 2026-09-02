@@ -46,8 +46,9 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 - 호스트 간: zenoh 브리지가 유일한 통로 — 서버가 `tcp/7447` listen
   (compose 의 `zenoh-bridge` 서비스), Pi 가 접속 (`robot/config/zenoh-bridge-pi.json5`,
   systemd 서비스 `zenoh-bridge`)
-- 브리징 토픽은 양쪽 config 의 **allow 리스트**로 제한. ★ 카메라는 **compressed 만**
-  브리징 (raw 640x480 ≈ 14MB/s 는 Tailscale 초과, compressed ≈ 1MB/s)
+- 브리징 토픽은 양쪽 config 의 **allow 리스트**로 제한 (정규식 `/camera/.*/compressed`,
+  `/camera/.*/camera_info`). ★ 카메라는 **compressed 만** 브리징 (raw 640x480 ≈ 14MB/s 는
+  Tailscale 초과; 현재 color JPEG 0.55MB/s + 정렬 depth PNG16 1.4MB/s ≈ 1.9MB/s 로 15fps 확인)
 - ROS_DISCOVERY_SERVER / 인터페이스 화이트리스트 / ROS_SUPER_CLIENT 전부 불필요
   (CLI 도 그냥 동작). 같은 LAN 테스트도 동일 구성으로 동작.
 
@@ -73,7 +74,7 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 | 센서 융합 | **robot_localization (EKF)** | LiDAR+IMU+엔코더 융합, 커스텀 로봇 odom 안정화 |
 | Localization | AMCL 또는 slam_toolbox localization 모드 | 지도 완성 후 주행 단계 |
 | 원격 통신 | **zenoh-bridge-ros2dds** | Fast DDS Discovery Server 의 VPN 한계로 전환 (3번) |
-| 카메라 | **realsense2_camera** (RSUSB 소스 빌드) | D435i. Pi 커널 미패치로 apt 판 불가 (troubleshooting 08-27) |
+| 카메라 | **자체 pyrealsense2 노드** (`rs_camera_node.py`) | D435i. 공식 realsense2_camera 는 Pi4+RSUSB 에서 RGB 컨트롤 경로(XU 캘리브레이션)가 세션 단위로 간헐 불통 → 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 자체 해결 (docs/realsense_bringup.md). librealsense 는 RSUSB 소스 빌드 (troubleshooting 08-27) |
 | Vision AI | 본인 파이프라인 (RF-DETR/RTMDet + TensorRT) | ROS2 노드로 래핑, `/camera` 구독→추론→publish |
 | 시각화 | RViz2 (+ 추후 Foxglove) | SLAM+Nav+영상 통합 .rviz 한 창 |
 
@@ -134,8 +135,11 @@ turtlebot3-slam-nav-vision/
 - **편집**: 맥북에서 VS Code Remote-SSH 로 Remote PC 에 접속(Tailscale). Claude Code 도 여기서.
 - **빌드/실행**: Remote PC 의 Docker 컨테이너 안 (`docker compose exec remote-pc bash`)
 - **Pi 원격 작업**: 서버에서 `ssh michael@100.71.74.81` (서버 공개키 등록됨) —
-  Claude 도 이 경로로 Pi 진단·작업 가능. ⚠️ 원격 `pkill -f` 는 자기 SSH 명령과
-  패턴이 매치되지 않게 bracket 트릭 사용 (troubleshooting 2026-09-01(2))
+  Claude 도 이 경로로 Pi 진단·작업 가능. ⚠️ 원격 `pkill -f`/`pgrep -f` 는 자기 SSH 명령과
+  패턴이 매치되지 않게 bracket 트릭 사용 (troubleshooting 2026-09-01(2)).
+  ⚠️ **카메라 프로세스는 장치 열거/start 도중 kill 금지** — 카메라가 USB 버스에서 떨어져
+  물리 재연결이 필요해진다 (콜드 스타트 열거 ~11s 는 정상, troubleshooting 2026-09-03).
+  USB 소프트 리셋도 연타 금지. 긴 SSH 명령은 heredoc 대신 스크립트 파일로 올려 실행.
 - **RViz 확인**: 서버 물리 세션을 x11vnc 로 미러링, 맥에서 RealVNC/화면공유로 접속
   (컨테이너 RViz 는 `DISPLAY` 를 서버 물리 세션 `:0`/`:1` 에 맞춰 실행)
 - **환경 자동 source**: 컨테이너는 entrypoint(run 용) + .bashrc(exec 용) 양쪽에서
@@ -158,9 +162,14 @@ turtlebot3-slam-nav-vision/
   scan_joint(LDS) xyz=-0.100,0,0.125 / imu_joint yaw=-1.57(OpenCR 90° 회전).
   Pi 배포 + TF 실기 검증 완료. 제자리 회전 정밀 검증은 공간 확보 시 예정.
   IMU 위치 xyz 는 미실측(표준값 유지, EKF 전 교체). 상세는 `docs/description.md`
-- **realsense_bringup (Pi)** — D435i 를 RSUSB 백엔드 realsense-ros(소스 빌드)로
-  구동, color/depth 640x480x15 + compressed 퍼블리시 (docs/troubleshooting.md
-  2026-08-27 참고). ※ docs/realsense_bringup.md 작성 예정
+- **realsense_bringup (Pi)** — **자체 pyrealsense2 노드**(`rs_camera_node.py`)로
+  color JPEG + **color 에 정렬된 depth(PNG 16bit, mm)** + camera_info 를
+  `/camera/color/compressed`·`/camera/depth/compressed`·`/camera/color/camera_info` 로
+  publish (같은 stamp, best effort). 공식 realsense2_camera 의 Pi4 간헐 실패(RGB XU
+  컨트롤 경로)를 캘리브레이션 파일 캐시(`~/.rs_camera_calib.json`) + 캡처 프로세스 분리
+  감시 + 온화한 복구로 해결. 15fps·1.9MB/s 서버 수신 검증. full_bringup 기본
+  `camera_driver:=custom`, 공식 노드는 `realsense2` 로 대안 유지.
+  상세는 `docs/realsense_bringup.md`, 개발 여정은 troubleshooting 09-02·09-03
 - **통신 아키텍처 Zenoh 전환** — Discovery Server 폐기, zenoh-bridge-ros2dds 로
   전환 (위 3번). 엔드투엔드 검증 완료: /scan 5Hz, /odom 20Hz, 카메라 compressed
   15fps(≈1MB/s), tf/camera_info 정상. Pi 브리지 systemd 서비스 등록.
@@ -175,8 +184,8 @@ turtlebot3-slam-nav-vision/
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
 5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — 전에 IMU 위치 실측
 6. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
-7. Vision AI 노드 (TensorRT 추론) 통합 — compressed 구독→디코드→추론
-8. docs/realsense_bringup.md 작성 (9번 규칙)
+7. Vision AI 노드 (TensorRT 추론) 통합 — `/camera/color/compressed`(JPEG) +
+   `/camera/depth/compressed`(정렬 depth PNG16, mm) 구독→디코드→추론→검출 물체 거리 계산
 
 ## 9. 규칙 / 선호
 

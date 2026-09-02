@@ -22,7 +22,8 @@
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
-| 카메라 depth 는 뜨는데 RGB 만 실패 (`set_xu`/`control_transfer` EAGAIN) | Pi4 USB(VL805) 에서 RSUSB 컨트롤 전송 간헐 불안정 (SDK 는 정상) | 그냥 **재시도** — 대개 뜸. 잦으면 유전원 USB3 허브 (2026-09-02 항목) |
+| 카메라 depth 는 뜨는데 RGB 만 실패 (`set_xu`/`control_transfer` EAGAIN) | Pi4 USB(VL805) 에서 RGB 컨트롤 경로(XU 캘리브레이션 읽기)가 세션 단위로 간헐 불통 | **자체 노드(rs_camera.launch.py)** 사용 — 캘리브레이션 캐시로 XU 독립 + 자기 복구 (2026-09-02, 09-03 항목) |
+| 카메라가 `lsusb` 에서 사라짐 (No such device) | 열거/start 도중인 카메라 프로세스를 kill 했거나 USB 리셋을 연타함 | 소프트웨어 복구 불가 — **물리 재연결**. 재발 방지는 2026-09-03 항목 |
 
 ---
 
@@ -367,3 +368,58 @@ ROS 노드는 시작 시 RGB 인트린식을 XU 컨트롤로 읽는 등 컨트�
   `ls -l /usr/local/lib/librealsense2.so*`, 로그의 "Running with LibRealSense vX".
 - `throttled` 는 bit0(현재) vs bit16(이력) 구분 — 0x50000 은 이력만.
 - ⚠️ 원격 디버깅 시 `kill -9` 남발 자제 — 장치 상태 오염으로 오진 유발.
+
+---
+
+## 2026-09-03 — 공식 카메라 노드를 자체 pyrealsense2 노드로 대체 (개발 중 실측한 USB 특성 3가지)
+
+### 배경
+09-02 항목의 "RGB 간헐 실패"는 재시도로 넘어갈 순 있었지만, 실패 시 노드가 hang 이라
+respawn 도 못 잡고, align_depth·camera_info 가 그 실패 지점(XU 캘리브레이션 읽기)에
+직접 의존해 Vision 파이프라인의 전제가 흔들렸다. 순수 pyrealsense2 스트리밍은 항상
+됐으므로 **그 최소 경로 위에 ROS publish 만 얹은 자체 노드**를 만들기로 했다.
+정상 동작 원리는 [realsense_bringup.md](./realsense_bringup.md). 여기엔 만들면서
+부딪힌 것들을 남긴다 — 하나같이 문서에 없고 실측으로만 알 수 있던 것들이다.
+
+### 발견 1 — 불안정한 건 정확히 "RGB 컨트롤 경로", 세션 단위
+자체 노드도 첫 시도에 `get_xu(ctrl=1) failed` 를 냈다. 우리 코드가 XU 를 건드리는 곳은
+`get_intrinsics()`(camera_info) 하나 → 순수 SDK 테스트가 항상 됐던 이유는 **그걸 호출
+안 해서**였다. 이어서 `rs.align` 도 같은 이유로 실패했다(내부에서 인트린식·익스트린식을
+XU 로 읽음). 경로 상태는 장치 open 세션 단위로 갈리며, 좋은 세션에선 전부 즉시 읽힌다.
+→ **해법**: 캘리브레이션은 공장값이라 불변 → 좋은 세션에서 읽어 파일 캐시, 나쁜 세션은
+캐시로 numpy 수동 정렬. 한 번 성공하면 영구히 XU 독립.
+
+### 발견 2 — hang 은 GIL 을 쥐고 멈춘다 → 스레드 감시 불가
+XU 실패 후 파이프라인을 내렸다 다시 `start()` 하면 멈추는 경우가 있었고, 이때 같은
+프로세스에 넣어둔 20초 감시 타이머가 **발동하지 않았다**. `start()` 가 C++ 안에서
+GIL 을 쥔 채 블록되어 파이썬 인터프리터 전체가 얼어붙은 것. → **캡처를 별도 프로세스로
+분리**(multiprocessing spawn). 부모는 자식 GIL 과 무관하게 살아 있고 SIGKILL 로 확실히
+회수 가능. 실제로 hang 감지 → kill → 복구가 동작함을 확인.
+
+### 발견 3 — 공격적 복구는 카메라를 USB 버스에서 떨어뜨린다 (★ 두 번 재연결 대가로 배움)
+- (a) 복구 루프에서 USB 소프트 리셋(USBDEVFS_RESET ioctl)을 **11초 간격으로 연타**하자
+  `No such device` → `lsusb` 에서 카메라가 사라짐. 리셋은 한 번은 약, 연타는 독.
+- (b) 리셋을 온화하게 바꾼 뒤에도 또 사라졌는데, 이번엔 리셋 실행 전이었다. 직전 행위는
+  **12초 타임아웃으로 `start()` 도중인 자식을 SIGKILL** 한 것. USB 트랜잭션 한가운데서
+  프로세스가 죽으면 장치 USB 상태가 꼬여 de-enumerate 된다. 오늘 장치가 사라진 매 순간이
+  정확히 이 직후였다.
+- 단계 로그를 넣어 재보니 **콜드 스타트는 장치 열거(`rs.pipeline()`, RSUSB 프로빙)에만
+  ~11초**, `start()` 는 0.7초. 12초 타임아웃은 정상 시작을 딱 그 지점에서 죽이고 있었다.
+  → 시작 타임아웃 45초(단계마다 리셋), 리셋은 연속 실패 2회 후·최소 60초 간격·장치가
+  버스에 있을 때만, 재시작은 지수 백오프, 장치 없으면 재연결만 대기. 이후 조기 kill 없이
+  두 번째 세션에서 스스로 수렴(15fps)하는 것 확인.
+
+### 결과
+자체 노드 15.0fps 안정, color 36KB + 정렬 depth(PNG16) 93KB ≈ 1.9MB/s 서버 수신 확인,
+캘리브레이션 캐시 생성(depth→color 14.9mm — D435i 물리 배치와 일치). full_bringup 기본
+드라이버를 `custom` 으로 전환, 공식 노드는 `camera_driver:=realsense2` 로 유지.
+
+### 재발 방지 · 교훈
+- **카메라 프로세스는 열거/start 도중 kill 금지.** 멈춘 것 같아도 콜드 스타트 11초는 정상.
+  손으로 정리할 땐 로그에 fps 가 찍히는(스트리밍 중) 상태에서.
+- USB 리셋은 진단 도구지 루프에 넣을 것이 아니다. 넣는다면 간격·횟수 제한 필수.
+- "SDK 는 되는데 ROS 는 안 된다"는 결론을 내리기 전에 **SDK 테스트가 같은 호출을 하는지**
+  확인하라 (이번엔 `get_intrinsics` 하나 차이였다).
+- 감시자는 감시 대상과 **프로세스를 분리**하라. 같은 인터프리터 안의 타이머는 GIL 에 묶인다.
+- 원격 디버깅 시 SSH 명령줄에 패턴 문자열이 있으면 `pgrep -f` 가 자기 자신을 잡는다 —
+  bracket 트릭(`rs_camera[_]node`) 없이는 "잔존" 오탐이 난다 (09-01(2) 항목과 같은 함정).

@@ -22,8 +22,12 @@
 - Ubuntu 22.04 arm64 (Raspberry Pi 4 기준)
 - Tailscale 설치·로그인 — 서버와 **같은 tailnet** 필수 (노드 공유로는 DDS 불가,
   troubleshooting 참고). 로봇 IP 예: `100.71.74.81`
-- ⚠️ 전원: Pi4 + D435i 는 전력에 민감. `vcgencmd get_throttled` 이 `0x0` 인지
-  수시 확인 (bit0 켜지면 카메라/USB 가 오동작 — 2026-09-01(2) 항목)
+- 전원: Pi 는 **외부 정품급 5V/3A+ 어댑터**로 (OpenCR 5V 출력은 D435i 까지 감당 못 함).
+  `vcgencmd get_throttled` 은 **bit0**(현재 전압 부족)만 의미 있음 — `0x50000` 은 과거
+  이력 플래그라 무시 (troubleshooting 2026-09-02).
+- ⚠️ 카메라 USB 특성: **장치 열거/시작 도중인 카메라 프로세스를 kill 하면 카메라가 USB
+  버스에서 떨어져 나가** 물리 재연결이 필요하다. 자체 노드는 이를 고려해 설계됐지만, 손으로
+  정리할 땐 스트리밍 중에만 종료할 것 (realsense_bringup.md 7장).
 
 ## 1. ROS 2 Humble + TurtleBot3 기본 셋업
 
@@ -67,6 +71,10 @@ cd ~ && git clone <레포 URL> turtlebot3-slam-nav-vision
 
 ## 4. realsense-ros 소스 빌드 (`~/realsense_ros_ws`)
 
+> 기본 카메라 드라이버는 이 레포의 **자체 노드(rs_camera_node.py, pyrealsense2 기반)**라
+> 2단계의 librealsense 만 있으면 동작한다. realsense-ros 는 **대안 드라이버**
+> (`camera_driver:=realsense2`)와 워크스페이스 뼈대용으로 여전히 빌드한다.
+
 apt 의 `ros-humble-realsense2-camera` 는 커널 백엔드 librealsense 에 링크되므로
 설치돼 있으면 제거하고, 소스로 빌드해 `/usr/local` RSUSB 에 링크한다.
 
@@ -97,8 +105,13 @@ ln -s ~/turtlebot3-slam-nav-vision/robot/src/realsense_bringup ~/realsense_ros_w
 cd ~/realsense_ros_ws
 colcon build --packages-select realsense_bringup --symlink-install
 ```
-`--symlink-install` 이라 이후 레포를 `git pull` 하면 런치 수정이 자동 반영된다
-(새 파일 추가 시에만 이 빌드를 다시 실행).
+`--symlink-install` 이라 이후 레포를 `git pull` 하면 런치·스크립트 수정이 자동 반영된다
+(**새 파일 추가 시에만** 이 빌드를 다시 실행 — 예: `scripts/rs_camera_node.py` 추가 커밋).
+
+자체 노드의 의존성은 2단계의 pyrealsense2(/usr/local) + `python3-numpy` + `python3-opencv`
+(Ubuntu 22.04 기본 apt 에 포함, 없으면 `sudo apt install python3-opencv python3-numpy`).
+노드가 처음 캘리브레이션을 읽으면 `~/.rs_camera_calib.json` 에 캐시한다 — **카메라 개체를
+바꾸면 이 파일을 지울 것** (공장 보정값은 개체별).
 
 ## 6. zenoh-bridge 설치 + systemd 등록
 
@@ -184,13 +197,14 @@ cp ~/turtlebot3-slam-nav-vision/description/urdf/turtlebot3_burger.urdf "$TARGET
 ## 9. 최종 검증
 
 ```bash
-# Pi (각각 새 셸)
-ros2 launch turtlebot3_bringup robot.launch.py
-ros2 launch realsense_bringup realsense.launch.py
+# Pi — 로봇 + 카메라(자체 노드) 통합
+ros2 launch realsense_bringup full_bringup.launch.py
+#   로그에 "[자식] pipeline.start() 성공", "스트리밍 시작", 10초마다 "15.0 fps | color ... | depth ..."
 
 # 서버 컨테이너에서
 ros2 topic hz /scan                                        # ~5Hz
-ros2 topic hz /camera/camera/color/image_raw/compressed    # ~15fps
+ros2 topic hz /camera/color/compressed                     # ~15fps
+ros2 topic hz /camera/depth/compressed                     # ~15fps (컬러 정렬 depth)
 ros2 run tf2_ros tf2_echo base_link base_scan              # -0.100, 0, 0.125 (보정 URDF 확인)
 ```
 

@@ -35,7 +35,7 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | SLAM | slam_toolbox (online async) |
 | Navigation | Nav2 |
 | 원격 통신 | **Zenoh Bridge** (zenoh-bridge-ros2dds) — Fast DDS 의 VPN 한계 진단 후 전환 |
-| 카메라 | RealSense D435i (RSUSB 백엔드 소스 빌드, compressed 원격 전송) |
+| 카메라 | RealSense D435i — **자체 pyrealsense2 노드** (공식 노드의 Pi4 USB 불안정을 캘리브레이션 캐시·프로세스 분리로 우회), 컬러 + 컬러 정렬 depth compressed 원격 전송 |
 | Vision AI | 자체 파이프라인 (RF-DETR/RTMDet + TensorRT) — 예정 |
 | 센서 융합 | robot_localization (EKF) — 예정 |
 | 시각화 | RViz2 |
@@ -62,7 +62,7 @@ turtlebot3-slam-nav-vision/
 | **my_slam** | slam_toolbox 기반 2D SLAM. 로봇 라이다(`/scan`)로 지도 작성 + 위치추정 | ✅ 실물 검증 | [docs/my_slam.md](./docs/my_slam.md) |
 | **my_navigation** | Nav2 자율주행. 지도 만들며 주행(기본) / 저장 지도+AMCL 모드 | ✅ 실기 검증 (실주행 예정) | [docs/my_navigation.md](./docs/my_navigation.md) |
 | **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전) | ✅ Pi 배포·TF 검증 | [docs/description.md](./docs/description.md) |
-| **realsense_bringup** | RealSense D435i 브링업 (RSUSB 백엔드) + compressed 영상 publish | ✅ 15fps 원격 수신 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
+| **realsense_bringup** | D435i 브링업 — **자체 pyrealsense2 노드**: 컬러 + 컬러에 정렬된 depth(PNG 16bit, mm) compressed publish. 공식 노드가 Pi4 에서 간헐 실패하는 문제를 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 해결 | ✅ 15fps 원격 수신 | [docs/realsense_bringup.md](./docs/realsense_bringup.md) |
 | **인프라/네트워크** | Tailscale + **Zenoh Bridge** (Fast DDS Discovery Server 의 VPN 한계를 진단 후 전환) | ✅ 검증 완료 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
 | my_vision | Vision AI 노드 (TensorRT 추론) | ⏳ 예정 | — |
 
@@ -79,17 +79,19 @@ zenoh-bridge 는 systemd 로 부팅 시 자동 실행됩니다 (`systemctl statu
 ```bash
 # 통합 실행 — 로봇 기본(모터·오도메트리·라이다) + RealSense 카메라 한 번에
 ros2 launch realsense_bringup full_bringup.launch.py
-#   카메라 제외: camera:=false / 카메라 안 뜰 때: initial_reset:=true
+#   카메라 제외: camera:=false / 공식 드라이버로 비교: camera_driver:=realsense2
 ```
 
-개별 실행(카메라가 불안정해 따로 재시작하고 싶을 때):
+개별 실행:
 ```bash
 ros2 launch turtlebot3_bringup robot.launch.py      # 셸 1 — 로봇 기본
-ros2 launch realsense_bringup realsense.launch.py   # 셸 2 — 카메라
+ros2 launch realsense_bringup rs_camera.launch.py   # 셸 2 — 카메라 (자체 노드, 기본)
+#   대역폭 절약: fps:=6 jpeg_quality:=70
 ```
 
-> 카메라가 안 뜨면 `vcgencmd get_throttled` 부터 확인(전원), 그다음
-> `initial_reset:=true` 재시도 ([docs/troubleshooting.md](./docs/troubleshooting.md)).
+> 카메라 노드는 USB 가 꼬여도 스스로 복구한다(로그의 `[자식]` 단계 메시지·10초 stats 참고).
+> ⚠️ 시작 중인 카메라 프로세스를 `kill -9` 하지 말 것 — 카메라가 USB 버스에서 떨어져
+> 물리 재연결이 필요해진다 ([docs/realsense_bringup.md](./docs/realsense_bringup.md) 7장).
 
 ### 2. 서버 컨테이너 실행
 
@@ -128,4 +130,6 @@ RViz 툴바의 **2D Goal Pose** 로 목표점을 찍으면 로봇이 이동합�
 - Pi↔서버 통신은 zenoh-bridge 가 담당하며, 브리징되는 토픽은
   `config/zenoh-bridge-server.json5` / `robot/config/zenoh-bridge-pi.json5` 의
   allow 리스트로 관리합니다 (카메라는 compressed 만 — raw 는 대역폭 초과).
+- 카메라 토픽: `/camera/color/compressed`(JPEG) · `/camera/depth/compressed`(컬러 정렬
+  depth, PNG 16bit mm) · `/camera/color/camera_info`, 셋 다 같은 stamp, best effort QoS.
 - 상세 개발 문서: [docs/](./docs/) · 프로젝트 전체 컨텍스트: [CLAUDE.md](./CLAUDE.md)

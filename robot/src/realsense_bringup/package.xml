@@ -2,17 +2,27 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>realsense_bringup</name>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <description>
-    RealSense D435i 카메라 실행 런치 (Raspberry Pi 에서 실행).
-    realsense2_camera 노드를 커스텀 로봇에 맞춘 옵션으로 띄워 color/depth 를
-    /camera/* 토픽으로 publish 한다. bringup 은 건드리지 않고 카메라만 추가.
+    RealSense D435i 카메라 브링업 (Raspberry Pi 에서 실행).
+    기본 드라이버는 pyrealsense2 기반 자체 노드(rs_camera_node.py)로, color 와
+    color 에 정렬된 depth 를 compressed 로 /camera/* 에 publish 한다. 공식
+    realsense2_camera 를 쓰는 런치(realsense.launch.py)도 대안으로 유지.
+    bringup 은 건드리지 않고 카메라만 추가.
   </description>
   <maintainer email="mslee@robotegra.com">Myungsang Lee</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- 자체 노드 (rs_camera_node.py) -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <!-- pyrealsense2 는 apt 가 아니라 /usr/local 소스 빌드 (docs/pi_setup.md 2단계) -->
+
+  <!-- 대안 드라이버 런치 (realsense.launch.py) -->
   <exec_depend>realsense2_camera</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

@@ -3,10 +3,16 @@ project(realsense_bringup)
 
 find_package(ament_cmake REQUIRED)
 
-# 런치 파일만 install (Pi 에서 빌드하거나, 파일 경로로 직접 실행도 가능)
+# 런치 파일 install
 install(
   DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
+)
+
+# 자체 카메라 노드 (Python 스크립트) — `ros2 run realsense_bringup rs_camera_node.py`
+install(
+  PROGRAMS scripts/rs_camera_node.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()
