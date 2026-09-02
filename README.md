@@ -65,19 +65,37 @@ turtlebot3-slam-nav-vision/
 
 ## 시작하기
 
-### 1. 컨테이너 실행
+> 최초 환경 구축(새 머신)은 [docs/pi_setup.md](./docs/pi_setup.md)(로봇) ·
+> [docs/server_setup.md](./docs/server_setup.md)(서버) 참고.
+> 아래는 구축이 끝난 상태에서의 일상 실행 절차입니다.
+
+### 1. 로봇(Pi) 쪽 실행
+
+zenoh-bridge 는 systemd 로 부팅 시 자동 실행됩니다 (`systemctl status zenoh-bridge`).
+
+```bash
+# 셸 1 — 로봇 기본 (모터·오도메트리·라이다)
+ros2 launch turtlebot3_bringup robot.launch.py
+
+# 셸 2 — RealSense 카메라 (비전 작업 시)
+ros2 launch realsense_bringup realsense.launch.py
+```
+
+> 카메라가 안 뜨면 `vcgencmd get_throttled` 부터 확인(전원), 그다음
+> `initial_reset:=true` 재시도 ([docs/troubleshooting.md](./docs/troubleshooting.md)).
+
+### 2. 서버 컨테이너 실행
 
 ```bash
 docker compose up -d              # zenoh-bridge + remote-pc 기동
 docker compose exec remote-pc bash
+ros2 topic hz /scan               # 로봇 연결 확인 (~5Hz)
 ```
 
-> 전제: 로봇(Pi)에서 `turtlebot3_bringup`(+ 필요 시 realsense)과 zenoh-bridge
-> (systemd)가 실행 중이고, Pi 와 서버가 같은 Tailscale 망에 있어야 합니다.
 > 드물게 "토픽은 보이는데 데이터 0"이면 브리지만 재시작하면 복구됩니다
-> ([docs/troubleshooting.md](./docs/troubleshooting.md) 2026-09-01 참고).
+> (`docker compose restart zenoh-bridge` / Pi: `sudo systemctl restart zenoh-bridge`).
 
-### 2. SLAM — 지도 만들기
+### 3. SLAM — 지도 만들기 (서버)
 
 ```bash
 export DISPLAY=:1                          # RViz 를 서버 세션에 표시
@@ -86,7 +104,7 @@ ros2 launch my_slam slam.launch.py
 ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map
 ```
 
-### 3. Navigation — 자율주행
+### 4. Navigation — 자율주행 (서버)
 
 ```bash
 # 모드 1: SLAM 하며 주행 (지도 만들며 목표점 이동)

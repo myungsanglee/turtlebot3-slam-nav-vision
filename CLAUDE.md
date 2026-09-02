@@ -104,7 +104,9 @@ turtlebot3-slam-nav-vision/
 │   ├── my_slam.md
 │   ├── my_navigation.md
 │   ├── description.md
-│   └── troubleshooting.md     # 비자명한 문제의 진단·해결 기록 (인시던트 로그)
+│   ├── troubleshooting.md     # 비자명한 문제의 진단·해결 기록 (인시던트 로그)
+│   ├── pi_setup.md            # 새 Pi(로봇) 환경 재구축 가이드
+│   └── server_setup.md        # 새 Remote PC(서버) 환경 재구축 가이드
 ├── docker/                    # Remote PC 컨테이너 (ROS2 Humble)
 │   ├── Dockerfile
 │   └── entrypoint.sh
