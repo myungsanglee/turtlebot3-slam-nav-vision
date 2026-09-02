@@ -83,8 +83,8 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 
 - **바퀴 폭(wheel separation): 표준과 동일** → 휠 오도메트리 파라미터는 그대로 OK.
 - ✅ **LDS(라이다) 위치/높이 다름** → `base_link → base_scan` 실측 보정 **완료**
-  (xyz=-0.100,0,0.125 — docs/description.md). IMU 회전(yaw=-1.57)도 반영,
-  IMU 위치 xyz 는 미실측(EKF 전 교체).
+  (xyz=-0.100,0,0.125 — docs/description.md). IMU 회전(yaw=-1.57)도 반영·
+  물리 검증 완료(전진 밀기→y축 반응 확인). IMU 위치 xyz 는 미실측(EKF 전 교체).
 - ⏳ **RealSense 추가** → `base_link → camera_link` static transform 을 실측값으로
   URDF 에 추가 (다음 우선 작업).
 - ⏳ Nav2 풋프린트: `robot_radius`(임시 0.105) 대신 실제 외형 실측 다각형
