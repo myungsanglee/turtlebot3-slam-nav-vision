@@ -77,11 +77,15 @@ turtlebot3-slam-nav-vision/
 zenoh-bridge 는 systemd 로 부팅 시 자동 실행됩니다 (`systemctl status zenoh-bridge`).
 
 ```bash
-# 셸 1 — 로봇 기본 (모터·오도메트리·라이다)
-ros2 launch turtlebot3_bringup robot.launch.py
+# 통합 실행 — 로봇 기본(모터·오도메트리·라이다) + RealSense 카메라 한 번에
+ros2 launch realsense_bringup full_bringup.launch.py
+#   카메라 제외: camera:=false / 카메라 안 뜰 때: initial_reset:=true
+```
 
-# 셸 2 — RealSense 카메라 (비전 작업 시)
-ros2 launch realsense_bringup realsense.launch.py
+개별 실행(카메라가 불안정해 따로 재시작하고 싶을 때):
+```bash
+ros2 launch turtlebot3_bringup robot.launch.py      # 셸 1 — 로봇 기본
+ros2 launch realsense_bringup realsense.launch.py   # 셸 2 — 카메라
 ```
 
 > 카메라가 안 뜨면 `vcgencmd get_throttled` 부터 확인(전원), 그다음
