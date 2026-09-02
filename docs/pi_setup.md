@@ -28,6 +28,8 @@
 ## 1. ROS 2 Humble + TurtleBot3 기본 셋업
 
 ROBOTIS e-Manual 의 SBC Setup(Humble) 절차를 따른다:
+https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html
+https://docs.robotis.com/docs/systems/turtlebot3/quick_start_guide/sbc_setup
 - ROS 2 Humble 설치 (apt)
 - `~/turtlebot3_ws` 에 ROBOTIS 패키지(DynamixelSDK, turtlebot3_msgs, turtlebot3) 소스 빌드
 - OpenCR 펌웨어 셋업
@@ -54,7 +56,7 @@ make -j4                                     # 15~20분
 sudo make install                            # /usr/local 에 설치
 
 # 동작 확인 (카메라 연결 후)
-python3 -c "import sys; sys.path.append('/usr/local/lib'); import pyrealsense2 as rs; p=rs.pipeline(); p.start(); p.wait_for_frames(); print('OK')"
+python3 -c "import pyrealsense2 as rs; p = rs.pipeline(); p.start(); f = p.wait_for_frames(); print('카메라 연결 성공! 이미지 해상도:', f.get_color_frame().get_width(), 'x', f.get_color_frame().get_height())"
 ```
 
 ## 3. 이 레포 clone
@@ -107,6 +109,7 @@ cd ~ && mkdir -p zenoh-bridge && cd zenoh-bridge
 wget https://github.com/eclipse-zenoh/zenoh-plugin-ros2dds/releases/download/1.10.0/zenoh-plugin-ros2dds-1.10.0-aarch64-unknown-linux-gnu-standalone.zip
 unzip zenoh-plugin-ros2dds-1.10.0-aarch64-unknown-linux-gnu-standalone.zip
 chmod +x zenoh-bridge-ros2dds
+./zenoh-bridge-ros2dds --version    # 1.10.0 확인
 ```
 
 systemd 유닛 `/etc/systemd/system/zenoh-bridge.service` (User/경로는 계정에 맞게):
@@ -132,7 +135,13 @@ WantedBy=multi-user.target
 
 ```bash
 sudo cp zenoh-bridge.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now zenoh-bridge
+sudo systemctl daemon-reload
+sudo systemctl enable zenoh-bridge
+pkill -f zenoh-bridge-ros2dds        # 수동 실행 중이던 브리지 종료
+sudo systemctl start zenoh-bridge
+
+# 상태/로그 확인
+systemctl status zenoh-bridge
 journalctl -u zenoh-bridge -f     # "New ROS 2 bridge detected" 나오면 서버와 연결됨
 ```
 
@@ -148,6 +157,7 @@ source ~/turtlebot3_ws/install/setup.bash
 source ~/realsense_ros_ws/install/setup.bash
 export TURTLEBOT3_MODEL=burger
 export ROS_DOMAIN_ID=30
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOCALHOST_ONLY=1      # DDS 는 Pi 안(loopback)만 — 원격은 zenoh 브리지 담당
 # librealsense (/usr/local 소스 설치)
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
