@@ -21,9 +21,9 @@ ROBOTIS TurtleBot3 실물 로봇으로 **SLAM · Navigation · Vision AI** 를 �
 [Raspberry Pi @ TurtleBot3]        [Remote PC / 회사 서버]
   - turtlebot3_bringup (고정)         - Docker: ROS 2 Humble 컨테이너
   - RealSense D435i (추가)            - SLAM / Nav2 / Vision AI (개발 대상)
-  - Tailscale                        - Discovery Server (컨테이너)
-        │                            - Tailscale, NVIDIA RTX A6000
-        └──────── Tailscale (DDS / Discovery Server) ────────┘
+  - zenoh-bridge (systemd)           - zenoh-bridge (컨테이너, tcp/7447 listen)
+  - Tailscale                        - Tailscale, NVIDIA RTX A6000
+        └──────── Tailscale (Zenoh Bridge, tcp/7447) ────────┘
 ```
 
 - **역할 분리**: Pi = 센서 publish 전용(엣지), Remote PC = 무거운 연산 전부.
@@ -110,7 +110,7 @@ turtlebot3-slam-nav-vision/
 ├── docker/                    # Remote PC 컨테이너 (ROS2 Humble)
 │   ├── Dockerfile
 │   └── entrypoint.sh
-├── docker-compose.yml         # discovery-server + remote-pc 서비스
+├── docker-compose.yml         # zenoh-bridge + remote-pc 서비스
 ├── config/                    # 파라미터, .rviz, EKF 설정 등
 ├── remote_pc/                 # Remote PC 에서 도는 패키지들
 │   └── src/
@@ -123,8 +123,9 @@ turtlebot3-slam-nav-vision/
 └── description/               # URDF/xacro (커스텀 로봇: LDS/카메라 TF 실측 반영)
 ```
 
-> 참고: 현재 컨테이너의 colcon 워크스페이스는 `/overlay_ws` 에 마운트됨
-> (compose 의 `./my_robot_ws:/overlay_ws`). 위 구조로 정리 시 마운트 경로도 함께 갱신.
+> 참고: 컨테이너의 colcon 워크스페이스는 `./remote_pc` → `/overlay_ws` 마운트.
+> Pi 쪽 `realsense_bringup` 은 Pi 의 `~/realsense_ros_ws/src` 에 심볼릭 링크로
+> 연결되어 빌드된다 (docs/pi_setup.md 5단계).
 
 ## 7. 개발 워크플로
 
@@ -188,4 +189,10 @@ turtlebot3-slam-nav-vision/
 - **컴포넌트 개발/변경이 끝나면 `README.md` 도 갱신한다.** docs 만큼 깊지 않게,
   프로젝트 개요 + "개발한 내용" 표(컴포넌트·한 줄 설명·상태·문서 링크) + 실행
   방법을 최신 상태로 유지한다. (docs 는 상세, README 는 개요·실행법 요약)
+- **환경·실행 절차가 바뀌면 `docs/pi_setup.md`(로봇)·`docs/server_setup.md`(서버)를
+  같은 작업에서 함께 갱신한다.** 해당하는 변경의 예: 의존성 추가/제거(apt·소스
+  빌드), 환경변수(.bashrc·compose env), 버전 고정값(예: zenoh-bridge 버전),
+  systemd/compose 서비스 구성, 워크스페이스 구조, 하드웨어/배선 절차.
+  판단 기준: **"이 문서만 보고 새 머신을 재구축했을 때 지금과 동일한 상태가
+  나오는가"** — 아니라면 문서가 뒤처진 것이므로 갱신한다.
 - 응답/주석은 한국어 기본.
