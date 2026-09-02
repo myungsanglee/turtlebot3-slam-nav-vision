@@ -48,10 +48,11 @@ def generate_launch_description():
         # align_depth: 비전 파이프라인에서 depth-color 좌표 매칭에 필요 → 기본 on
         DeclareLaunchArgument('align_depth', default_value='true',
                               description='depth↔color 정렬. 비전에서 필요 → 기본 on'),
-        # initial_reset: 이 로봇의 D435i 가 재부팅/전원 변동 후 자주 안 떠서
-        #   시작 시 USB 리셋을 기본 on (전원 보강 후 off 재검토 — 2026-09-01 항목)
-        DeclareLaunchArgument('initial_reset', default_value='true',
-                              description='시작 시 USB 리셋. 카메라가 자주 안 떠서 기본 on'),
+        # initial_reset: 시작 시 USB 리셋. RSUSB 컨트롤 전송 불안정 상황에선 리셋이
+        #   오히려 시작 시 USB 부담을 늘려 첫 시도 실패를 유발할 수 있어 기본 off
+        #   (2026-09-02 진단: false 로 성공률 나음). 장치가 꼬였을 때만 true.
+        DeclareLaunchArgument('initial_reset', default_value='false',
+                              description='시작 시 USB 리셋. 장치 꼬였을 때만 true'),
         DeclareLaunchArgument('pointcloud', default_value='false',
                               description='pointcloud publish (부담 큼)'),
         DeclareLaunchArgument('imu', default_value='false',

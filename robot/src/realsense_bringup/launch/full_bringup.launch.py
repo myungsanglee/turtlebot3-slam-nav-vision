@@ -33,8 +33,8 @@ def generate_launch_description():
     declares = [
         DeclareLaunchArgument('camera', default_value='true',
                               description='RealSense 카메라 포함 여부'),
-        DeclareLaunchArgument('initial_reset', default_value='true',
-                              description='카메라 시작 시 USB 리셋 (자주 안 떠서 기본 on)'),
+        DeclareLaunchArgument('initial_reset', default_value='false',
+                              description='카메라 시작 시 USB 리셋 (장치 꼬였을 때만 true)'),
     ]
 
     # 로봇 기본 (모터·오도메트리·라이다·robot_state_publisher) — ROBOTIS 그대로
