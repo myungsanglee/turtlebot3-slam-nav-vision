@@ -155,10 +155,14 @@ journalctl -u zenoh-bridge -f     # "New ROS 2 bridge detected" 나오면 서버
 source /opt/ros/humble/setup.bash
 source ~/turtlebot3_ws/install/setup.bash
 source ~/realsense_ros_ws/install/setup.bash
-export TURTLEBOT3_MODEL=burger
 export ROS_DOMAIN_ID=30
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOCALHOST_ONLY=1      # DDS 는 Pi 안(loopback)만 — 원격은 zenoh 브리지 담당
+# TurtleBot3 하드웨어 (★ LDS_MODEL 없으면 bringup 이 KeyError 로 실행 실패)
+export TURTLEBOT3_MODEL=burger
+export LDS_MODEL=LDS-01
+export OPENCR_PORT=/dev/ttyACM0
+export OPENCR_MODEL=burger
 # librealsense (/usr/local 소스 설치)
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 export PYTHONPATH=$PYTHONPATH:/usr/local/lib
