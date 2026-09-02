@@ -45,12 +45,13 @@ def generate_launch_description():
                               description='RGB 해상도 WxHxFPS'),
         DeclareLaunchArgument('depth_profile', default_value='640x480x15',
                               description='Depth 해상도 WxHxFPS'),
-        # Pi USB 타임아웃 회피 위해 무거운 옵션은 기본 off
-        DeclareLaunchArgument('align_depth', default_value='false',
-                              description='depth↔color 정렬(extrinsics XU 읽음). '
-                                          'Pi 에서 타임아웃 유발 가능 → 기본 off'),
-        DeclareLaunchArgument('initial_reset', default_value='false',
-                              description='시작 시 USB 리셋. 기본 off(직후 제어 불안정 회피)'),
+        # align_depth: 비전 파이프라인에서 depth-color 좌표 매칭에 필요 → 기본 on
+        DeclareLaunchArgument('align_depth', default_value='true',
+                              description='depth↔color 정렬. 비전에서 필요 → 기본 on'),
+        # initial_reset: 이 로봇의 D435i 가 재부팅/전원 변동 후 자주 안 떠서
+        #   시작 시 USB 리셋을 기본 on (전원 보강 후 off 재검토 — 2026-09-01 항목)
+        DeclareLaunchArgument('initial_reset', default_value='true',
+                              description='시작 시 USB 리셋. 카메라가 자주 안 떠서 기본 on'),
         DeclareLaunchArgument('pointcloud', default_value='false',
                               description='pointcloud publish (부담 큼)'),
         DeclareLaunchArgument('imu', default_value='false',
