@@ -208,14 +208,14 @@ slam_toolbox 대신 map_server(저장 지도) + AMCL(파티클 필터 위치추�
 | 좁은 통로에서 경로가 안 나옴 | inflation_radius(0.55) 가 통로 폭 대비 과함 → 낮추거나 footprint 실측 반영 |
 | 주행이 뚝뚝 끊김 | 원격(VPN) 지연 가능성. controller_frequency 를 낮추거나 (이미 10Hz) 네트워크 상태 확인 |
 | 벽에 스치거나 좁은 곳을 못 지나감 | footprint 가 실물과 다름 — ★ 실측 교체 (4장) |
-| CLI 로 디버깅 시 토픽 안 보임 | `export ROS_SUPER_CLIENT=TRUE` (my_slam.md 트러블슈팅 참고) |
+| 토픽은 보이는데 데이터 수신 0 | zenoh 브리지 재시작 (troubleshooting.md 참고). 종료한 노드 토픽이 남아 보이면 `ros2 daemon stop && ros2 daemon start` |
 
 ## 8. 현재 한계와 다음 단계
 
 1. **footprint 실측 교체 (★ 최우선)** — 로봇 외형(전장×전폭, base_footprint
    원점 기준 꼭짓점)을 실측해 `robot_radius` 를 다각형 `footprint` 로 교체.
-2. **URDF 보정과 연동** — LDS 위치 실측 보정(description/ 작업)이 끝나면
-   지도 품질이 올라가고 코스트맵 정확도도 함께 개선됨.
+2. ~~URDF 보정과 연동~~ → **완료 (2026-08)**: LDS 실측 보정 URDF 가 Pi 에
+   배포되어 지도·코스트맵 정확도의 기반은 확보됨 (description.md 참고).
 3. **실주행 튜닝** — 실제 목표점 주행에서 DWB critic 가중치, inflation,
    goal tolerance 를 환경에 맞게 조정.
 4. **robot_localization(EKF)** — LiDAR+IMU+엔코더 융합으로 odom 안정화 (로드맵).

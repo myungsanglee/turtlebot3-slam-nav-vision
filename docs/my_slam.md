@@ -201,7 +201,8 @@ QoS(Quality of Service)는 ROS 2 토픽 통신의 "전달 보장 수준" 계약�
 
 ## 7. 실행 방법
 
-**전제조건**: 로봇(Pi)에서 `turtlebot3_bringup` 이 떠 있고, Discovery Server 가 동작 중.
+**전제조건**: 로봇(Pi)에서 `turtlebot3_bringup` 이 떠 있고, 양쪽 zenoh-bridge 가
+동작 중 (Pi 는 systemd 자동 실행, 서버는 compose — CLAUDE.md 3번 참고).
 
 ```bash
 # Remote PC 에서
@@ -232,7 +233,8 @@ ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| `ros2 topic list` 에 로봇 토픽이 안 보임 (통신은 정상인데) | Discovery Server 환경에서 CLI 는 자기 관심 토픽만 발견함 | `export ROS_SUPER_CLIENT=TRUE` 후 `ros2 daemon stop && ros2 daemon start` |
+| 토픽은 보이는데 `/scan` 수신율 0 | 브리지 로컬 DDS 매칭이 꼬임 (드묾) | 브리지 재시작 — Pi `sudo systemctl restart zenoh-bridge` / 서버 `docker compose restart zenoh-bridge` (troubleshooting.md 참고) |
+| 종료한 노드의 토픽이 `topic list` 에 남아 보임 | ros2 daemon 그래프 캐시 (표시 문제) | `ros2 daemon stop && ros2 daemon start` |
 | RViz 에서 /scan 이 안 보임 | QoS 불일치 (Reliable 구독) | LaserScan 디스플레이의 Reliability 를 Best Effort 로 (slam.rviz 에는 반영됨) |
 | RViz 에서 /map 이 한참 뒤에야 보임 | QoS Durability 불일치 | Map 디스플레이의 Durability 를 Transient Local 로 (slam.rviz 에는 반영됨) |
 | 실행 로그의 "minimum laser range (0.0) exceeds (0.1)" 경고 | 라이다 최소사거리보다 작은 설정값 | 자동 클리핑되므로 무해 |
@@ -240,9 +242,8 @@ ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map
 
 ## 10. 현재 한계와 다음 단계
 
-지금은 로봇이 보내주는 **ROBOTIS 표준 URDF 의 TF** 를 그대로 쓰고 있다.
-이 로봇은 라이다(LDS) 위치/높이가 표준과 다르므로, `base_link→base_scan` 변환이
-실물과 어긋난 만큼 지도 품질에 오차가 들어간다 (2.5절의 변환 과정에서 두 번째 줄이 틀어짐).
-
-**다음 작업**: LDS 부착 위치를 실측해서 커스텀 URDF 로 보정 (`description/` 에서 작업 예정).
-그 다음 RealSense camera_link TF 추가 → Nav2 → Vision AI 순서로 진행한다.
+- ~~표준 URDF 의 TF 를 그대로 사용~~ → **해결됨 (2026-08)**: LDS 위치를 실측한
+  보정 URDF 를 Pi 에 배포하고 TF 실기 검증 완료 (`base_link→base_scan` =
+  -0.100, 0, 0.125 — 상세는 [description.md](./description.md)).
+- 남은 것: **제자리 회전 정밀 검증** (벽 이중선 여부 — 공간 확보 시),
+  RealSense camera_link TF 추가, robot_localization(EKF), Vision AI 연동.

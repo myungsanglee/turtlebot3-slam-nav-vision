@@ -78,38 +78,44 @@ bringup 의 코드/런치는 수정하지 않는 것이 원칙이므로, **로�
 이 보정판으로 교체한다:
 
 ```bash
-# Pi 에서 (git pull 로 이 레포를 받은 뒤)
-#  설치 위치는 환경에 따라 다름 — 아래 중 실제 존재하는 경로로 복사
-#   - apt 설치:   /opt/ros/humble/share/turtlebot3_description/urdf/
-#   - 소스 빌드:  ~/turtlebot3_ws/install/turtlebot3_description/share/turtlebot3_description/urdf/
-cp description/urdf/turtlebot3_burger.urdf \
-   /opt/ros/humble/share/turtlebot3_description/urdf/turtlebot3_burger.urdf
+# Pi 에서 (git pull 로 이 레포를 받은 뒤) — 이 Pi 는 소스 빌드 + symlink-install
+# 이라 src 의 원본 파일을 교체하면 install 에 자동 반영된다 (pi_setup.md 8단계)
+TARGET=~/turtlebot3_ws/src/turtlebot3/turtlebot3_description/urdf/turtlebot3_burger.urdf
+cp "$TARGET" "$TARGET.orig"      # 원본 백업
+cp ~/turtlebot3-slam-nav-vision/description/urdf/turtlebot3_burger.urdf "$TARGET"
 
 # 이후 bringup 을 (재)실행하면 보정된 TF 가 나온다
 ros2 launch turtlebot3_bringup robot.launch.py
 ```
 
-> 원본을 덮어쓰므로, 교체 전 원본을 백업(`*.orig`)해 두길 권장한다.
 > `TURTLEBOT3_MODEL=burger` 를 그대로 쓰므로 모델명 변경은 필요 없다.
+> ⚠️ URDF **주석에 콜론+공백/줄끝 콜론 금지** — bringup 이 robot_description 을
+> YAML 로 파싱하다 깨진다 (troubleshooting.md 2026-08-26 사건). 배포 전
+> `python3 -c "import yaml; yaml.safe_load(open('<파일>').read())"` 로 검사.
 
-## 5. 검증 기록 (2026-07-22)
+## 5. 검증 기록
 
-Remote PC 컨테이너에서 파싱·로드 검증 완료:
-- `xacro` 파싱 성공 (XML 문법/구조 정상)
-- `robot_state_publisher` 로 로드 성공 — 모든 세그먼트 인식
-  (base_footprint, base_link, base_scan, imu_link, wheel_left/right, caster_back)
+**파싱·로드 검증 (2026-07-22, Remote PC 컨테이너)**
+- `xacro` 파싱 성공, `robot_state_publisher` 로드 성공 — 모든 세그먼트 인식
 - 파싱 결과에서 보정값 확인:
   `scan_joint origin xyz="-0.100 0 0.125" rpy="0 0 0"`,
   `imu_joint origin rpy="0 0 -1.57"`
-- ★ 실물 로봇에 배포 후 "제자리 회전 시 벽 이중선이 사라지는지" 실주행 검증은
-  Pi 배포 후 진행 예정.
+
+**Pi 배포 + TF 실기 검증 (2026-08 완료)**
+- 배포 중 주석 콜론으로 bringup YAML 파싱 실패 발생 → 주석 수정으로 해결
+  (troubleshooting.md 2026-08-26)
+- 배포 후 서버에서 실기 확인:
+  `tf2_echo base_link base_scan` → Translation `[-0.100, 0.000, 0.125]` ✓
+  `tf2_echo base_link imu_link` → RPY `[0, 0, -1.570]` ✓
+- SLAM 대략 주행에서 지도 정상 생성 확인. **제자리 회전 정밀 검증(벽 이중선
+  여부)은 공간 확보 시 진행** — 벽이 회전돼 보이면 scan_joint 의 yaw 를
+  경험적으로 보정.
 
 ## 6. 다음 단계
 
-1. **실물 배포 + 실주행 검증** — Pi 에 URDF 교체 후 제자리 회전시켜 지도 번짐 확인.
-   여전히 벽이 회전돼 보이면 scan_joint 의 yaw 를 경험적으로 보정.
-2. **IMU 위치(xyz) 실측 교체** — robot_localization(EKF) 전.
-3. **RealSense camera_link 추가** — base_link → camera_link static transform 을
-   실측값으로 이 URDF 에 추가 (카메라 도입 시).
+1. **제자리 회전 정밀 검증** — 공간 확보 시 (위 검증 기록 참고).
+2. **RealSense camera_link 추가** — base_link → camera_link static transform 을
+   실측값으로 이 URDF 에 추가 (다음 우선 작업).
+3. **IMU 위치(xyz) 실측 교체** — robot_localization(EKF) 전.
 4. **Nav2 footprint 실측 반영** — 로봇 외형이 표준과 다르므로 nav2_params.yaml 의
    robot_radius(임시 0.105) 를 실측 다각형 footprint 로 교체.
