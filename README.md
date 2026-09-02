@@ -15,9 +15,10 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 ```
 [Raspberry Pi @ TurtleBot3]              [Remote PC / 서버]
   - turtlebot3_bringup (센서 publish)      - Docker (ROS 2 Humble 컨테이너)
-  - RealSense D435i (예정)                 - SLAM / Nav2 / Vision AI (개발 대상)
-  - Tailscale                             - Fast DDS Discovery Server
-        └──────── Tailscale (DDS / Discovery Server) ────────┘
+  - RealSense D435i (compressed 전송)      - SLAM / Nav2 / Vision AI (개발 대상)
+  - zenoh-bridge (systemd)                - zenoh-bridge (컨테이너)
+  - Tailscale                             - Tailscale, NVIDIA GPU
+        └──────── Tailscale (Zenoh Bridge, tcp/7447) ────────┘
 ```
 
 - **Pi** = 센서 publish 전용 엣지 (bringup 은 수정하지 않음)
@@ -33,8 +34,10 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | 실행 환경 | Docker (`osrf/ros:humble-desktop` 기반) |
 | SLAM | slam_toolbox (online async) |
 | Navigation | Nav2 |
+| 원격 통신 | **Zenoh Bridge** (zenoh-bridge-ros2dds) — Fast DDS 의 VPN 한계 진단 후 전환 |
+| 카메라 | RealSense D435i (RSUSB 백엔드 소스 빌드, compressed 원격 전송) |
+| Vision AI | 자체 파이프라인 (RF-DETR/RTMDet + TensorRT) — 예정 |
 | 센서 융합 | robot_localization (EKF) — 예정 |
-| 카메라 / Vision | RealSense D435i + 자체 파이프라인(TensorRT) — 예정 |
 | 시각화 | RViz2 |
 
 ## 레포 구조
@@ -43,8 +46,8 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 turtlebot3-slam-nav-vision/
 ├── docs/                      # 컴포넌트별 상세 문서 + 트러블슈팅 로그
 ├── docker/                    # Remote PC 컨테이너 (Dockerfile, entrypoint)
-├── docker-compose.yml         # discovery-server + remote-pc 서비스
-├── config/                    # DDS 프로파일 등 공용 설정
+├── docker-compose.yml         # zenoh-bridge + remote-pc 서비스
+├── config/                    # zenoh 브리지 설정 등 공용 설정
 ├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_vision)
 ├── robot/src/                 # Raspberry Pi 패키지 (realsense_bringup)
 └── description/               # URDF/xacro (커스텀 로봇 센서 TF 실측 보정)

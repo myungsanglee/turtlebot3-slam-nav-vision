@@ -13,7 +13,7 @@ ROBOTIS TurtleBot3 실물 로봇으로 **SLAM · Navigation · Vision AI** 를 �
 - 따라서 코드 품질·문서화·현업 표준 스택 사용이 중요하다. 데모를 그대로 쓰는 게
   아니라 **커스텀 로봇에 맞춰 실제 문제를 해결한 과정**을 보여주는 것이 핵심 차별점.
 
-## 2. 시스템 아키텍처 (2대 + 중앙 디스커버리)
+## 2. 시스템 아키텍처 (2대 + Zenoh Bridge)
 
 물리적으로 떨어진 두 머신을 Tailscale(WireGuard VPN)로 연결한다.
 
@@ -28,8 +28,8 @@ ROBOTIS TurtleBot3 실물 로봇으로 **SLAM · Navigation · Vision AI** 를 �
 
 - **역할 분리**: Pi = 센서 publish 전용(엣지), Remote PC = 무거운 연산 전부.
 - **bringup 은 변경하지 않는다.** 모터 제어/오도메트리 등 로봇 기본은 ROBOTIS
-  `turtlebot3_bringup` 을 그대로 사용. 로봇 쪽에 새로 추가하는 것은 **RealSense
-  카메라 영상 publish 뿐**.
+  `turtlebot3_bringup` 을 그대로 사용. 로봇 쪽에 새로 추가한 것은 **RealSense
+  카메라 publish(realsense_bringup) 와 zenoh-bridge(systemd) 뿐**.
 - Remote PC 는 그 토픽들(`/scan`, `/odom`, `/imu`, `/camera/*`)을 받아
   **나만의 SLAM/Nav/Vision** 을 돌린다.
 
@@ -72,7 +72,8 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 | Navigation | **Nav2** | ROS2 내비게이션 표준 |
 | 센서 융합 | **robot_localization (EKF)** | LiDAR+IMU+엔코더 융합, 커스텀 로봇 odom 안정화 |
 | Localization | AMCL 또는 slam_toolbox localization 모드 | 지도 완성 후 주행 단계 |
-| 카메라 | **realsense2_camera** | D435i, depth/color/pointcloud |
+| 원격 통신 | **zenoh-bridge-ros2dds** | Fast DDS Discovery Server 의 VPN 한계로 전환 (3번) |
+| 카메라 | **realsense2_camera** (RSUSB 소스 빌드) | D435i. Pi 커널 미패치로 apt 판 불가 (troubleshooting 08-27) |
 | Vision AI | 본인 파이프라인 (RF-DETR/RTMDet + TensorRT) | ROS2 노드로 래핑, `/camera` 구독→추론→publish |
 | 시각화 | RViz2 (+ 추후 Foxglove) | SLAM+Nav+영상 통합 .rviz 한 창 |
 
@@ -81,12 +82,13 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 이 TurtleBot3 는 ROBOTIS 표준과 형태가 다르다:
 
 - **바퀴 폭(wheel separation): 표준과 동일** → 휠 오도메트리 파라미터는 그대로 OK.
-- **LDS(라이다) 센서의 위치와 높이가 다름** → URDF/xacro 에서
-  `base_link → base_scan` 의 x/y/z 오프셋을 **실측값으로 수정 필수**.
-  (안 맞으면 slam_toolbox 맵이 어긋나거나 회전 시 이중으로 그려짐)
-- **RealSense 추가** → `base_link → camera_link` static transform 을 실측값으로 추가.
-- Nav2 풋프린트: 로봇 형태가 표준과 다르면 `robot_radius` 대신 실제 외형에 맞는
-  다각형 `footprint` 고려.
+- ✅ **LDS(라이다) 위치/높이 다름** → `base_link → base_scan` 실측 보정 **완료**
+  (xyz=-0.100,0,0.125 — docs/description.md). IMU 회전(yaw=-1.57)도 반영,
+  IMU 위치 xyz 는 미실측(EKF 전 교체).
+- ⏳ **RealSense 추가** → `base_link → camera_link` static transform 을 실측값으로
+  URDF 에 추가 (다음 우선 작업).
+- ⏳ Nav2 풋프린트: `robot_radius`(임시 0.105) 대신 실제 외형 실측 다각형
+  `footprint` 로 교체.
 
 > 이 "커스텀 로봇에 맞춘 TF/URDF 보정" 과정 자체가 포트폴리오의 차별점이므로
 > 문서화(README, 커밋 메시지)를 잘 남긴다.
@@ -131,6 +133,9 @@ turtlebot3-slam-nav-vision/
 
 - **편집**: 맥북에서 VS Code Remote-SSH 로 Remote PC 에 접속(Tailscale). Claude Code 도 여기서.
 - **빌드/실행**: Remote PC 의 Docker 컨테이너 안 (`docker compose exec remote-pc bash`)
+- **Pi 원격 작업**: 서버에서 `ssh michael@100.71.74.81` (서버 공개키 등록됨) —
+  Claude 도 이 경로로 Pi 진단·작업 가능. ⚠️ 원격 `pkill -f` 는 자기 SSH 명령과
+  패턴이 매치되지 않게 bracket 트릭 사용 (troubleshooting 2026-09-01(2))
 - **RViz 확인**: 서버 물리 세션을 x11vnc 로 미러링, 맥에서 RealVNC/화면공유로 접속
   (컨테이너 RViz 는 `DISPLAY` 를 서버 물리 세션 `:0`/`:1` 에 맞춰 실행)
 - **환경 자동 source**: 컨테이너는 entrypoint(run 용) + .bashrc(exec 용) 양쪽에서
@@ -164,11 +169,14 @@ turtlebot3-slam-nav-vision/
 1. **base_link→camera_link TF 추가** — 카메라 장착 위치 실측 → URDF 반영 (5번 규칙)
 2. **Nav2 footprint 실측 교체** — nav2_params.yaml 의 robot_radius(임시 0.105) →
    실측 다각형 footprint
-3. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
-4. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — 전에 IMU 위치 실측
-5. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
-6. Vision AI 노드 (TensorRT 추론) 통합 — compressed 구독→디코드→추론
-7. docs/realsense_bringup.md 작성 (9번 규칙)
+3. **Pi 전원 보강** — OpenCR 5V 출력이 Pi4+D435i 에 한계(undervoltage 재발,
+   troubleshooting 2026-09-01(2)). 부품 결정됨: 배터리(T-plug)→5V/5A 컨버터
+   (Pololu D24V50F5 또는 UBEC) → Pi 직결. 개발 중엔 벽 어댑터로 대체 가능
+4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
+5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — 전에 IMU 위치 실측
+6. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
+7. Vision AI 노드 (TensorRT 추론) 통합 — compressed 구독→디코드→추론
+8. docs/realsense_bringup.md 작성 (9번 규칙)
 
 ## 9. 규칙 / 선호
 
