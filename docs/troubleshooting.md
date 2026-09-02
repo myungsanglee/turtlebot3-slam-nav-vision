@@ -22,6 +22,7 @@
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
+| 카메라 depth 는 뜨는데 RGB 만 실패 (`set_xu`/`control_transfer` EAGAIN) | Pi4 USB(VL805) 에서 RSUSB 컨트롤 전송 간헐 불안정 (SDK 는 정상) | 그냥 **재시도** — 대개 뜸. 잦으면 유전원 USB3 허브 (2026-09-02 항목) |
 
 ---
 
@@ -324,34 +325,45 @@ USB 컨트롤 전송부터 실패. "재부팅 전엔 됐는데" = 코드가 아�
 
 ---
 
-## 2026-09-02 — 카메라 RGB(컬러) 스트림만 상시 실패 (depth 정상) → 하드웨어 의심
+## 2026-09-02 — 카메라 RGB(컬러) 스트림이 ROS 노드에서 간헐 실패 (RSUSB 컨트롤 전송 불안정)
 
 ### 증상
-카메라 실행 시 **depth 모듈은 매번 정상(Open profile 성공)인데 RGB(컬러) 모듈만
-계속 실패.** `control_transfer returned error ... Resource temporarily unavailable`
-(EAGAIN)가 수백~수천 개 쌓이고 컬러 토픽이 안 뜬다. 전에는 15fps 로 잘 되던 것.
+카메라 실행 시 **depth 는 매번 열리는데 RGB(컬러) 는 자주 실패.** 로그에
+`set_xu(ctrl=1) failed! Numerical argument out of domain` (RGB 인트린식 읽기) 후
+`control_transfer returned error, index: 768, Resource temporarily unavailable`
+(EAGAIN)가 수백~수천 개 쌓이며 컬러 스트림이 안 열린다. **재시도하면 뜰 때도 있다.**
 
-### 배제한 원인 (체계적 격리 — 전부 아님)
-- **전원**: 외부 정품급 어댑터 사용, `vcgencmd get_throttled` 의 bit0(현재 전압
-  부족) clear. `0x50000` 은 과거 이력 플래그(bit16/18)일 뿐 라이브 정상.
-- **USB 대역폭**: 424x240x6 로 낮춰도 RGB 실패 → 부하 문제 아님.
-- **align_depth**: `align_depth:=false` 로도 RGB 실패 → 정렬 옵션 무관.
-- **소스빌드 vs apt**: apt(커널 백엔드)는 애초에 안 뜸(08-27) — 소스빌드가 유일 정답.
-- **ROS 노드**: ★ **pyrealsense2 SDK 직접 스트리밍도 컬러에서 블록** → ROS 무관.
-- 소프트 USB 리셋·물리 재연결 후에도 동일.
+### ⚠️ 처음 오진 → 정정
+처음엔 "SDK 도 컬러에서 멈춘다"고 보고 **하드웨어(RGB 센서) 문제로 오판**했다.
+그러나 그 SDK 테스트는 **이전 실패 런의 좀비(kill -9 잔재)가 USB 를 쥔 오염된
+상태**에서 돌린 것이었다. 깨끗한 상태에서 재검증하니:
+- **pyrealsense2 SDK (color+depth 640x480x15) → 30프레임 항상 성공** = 하드웨어 정상.
+- **동일 조건 ROS 노드 → 1회차 실패, 2회차 성공(에러 1개)** = 간헐적.
+→ 하드웨어 아님. **교훈: 디버깅 중 kill -9 남발이 장치 상태를 오염시켜 오진을
+   유발했다. 격리 테스트는 반드시 깨끗한 장치 상태에서.**
 
-### 판정
-depth 는 되고 RGB 만, SDK 레벨에서도 실패 → **RGB 이미저 또는 그 연결의 하드웨어
-문제**(간헐 불량이 상시 불량으로 악화된 것으로 추정). 소프트웨어 원인 아님.
+### 배제한 원인
+- 전원(외부 어댑터, throttled bit0 clear), USB 대역폭(저해상도도 동일),
+  align_depth(off 도 동일), 라이브러리(/usr/local RSUSB 2.58.2 하나뿐, apt 없음,
+  ROS·SDK 동일 lib 사용).
 
-### 다음 조치 (권고 순서)
-1. **USB3 케이블 교체** — depth 되고 RGB 만 안 되는 게 특정 신호선 불량일 수 있음.
-   다른 USB3 포트도 시도.
-2. **D435i 펌웨어 업데이트** — `rs-fw-update` 또는 RealSense Viewer (FW 5.12.3 였음).
-3. 위로도 안 되면 카메라 하드웨어 결함 → AS/교체. (depth-only 로 당장 개발은 가능하나
-   Vision AI 는 컬러가 핵심이라 컬러 복구 필요)
+### 근본 원인 (판정)
+**Pi4 USB 컨트롤러(VL805)에서 RSUSB(유저스페이스 libusb) 백엔드의 컨트롤 전송이
+간헐적으로 불안정.** 최소 스트리밍만 하는 SDK 는 컨트롤 전송이 적어 안정적이나,
+ROS 노드는 시작 시 RGB 인트린식을 XU 컨트롤로 읽는 등 컨트롤 전송을 많이 해서,
+그 순간 EAGAIN 이 몰리면 RGB 시작에 실패한다. 잘 풀리는 판엔 성공.
+
+### 대응
+1. **재시도** — 간헐적이므로 그냥 카메라 런치 재시작하면 대개 뜬다(가장 빠름).
+2. **유전원 USB3 허브** — RSUSB 컨트롤 전송에 안정적 USB 경로 제공(근본 완화).
+   SBC + RealSense 의 정석 대책.
+3. 부하/컨트롤 접근 줄이기(해상도 다운 등)도 보조.
+   ※ 이건 전원 문제가 아니라 **USB 컨트롤 계층 안정성** 문제다.
 
 ### 진단 도구 메모
-- SDK 격리: `python3` 로 `rs.pipeline` + color/depth enable_stream 후 wait_for_frames.
-  빠르게 프레임 잡히면 정상, **start()에서 블록되면 컬러 스트림 실패 = 하드웨어 의심**.
-- `throttled` 는 bit0(현재) vs bit16(이력) 구분 필수 — 0x50000 은 이력만.
+- **SDK 격리 테스트는 깨끗한 장치 상태에서** (실패 런 좀비 정리 + USB 리셋 후).
+  스크립트를 파일로 올려 실행(heredoc over SSH 는 자주 끊김).
+- 로드된 librealsense 확인: `ldd <node>` / `dpkg -l | grep realsense` /
+  `ls -l /usr/local/lib/librealsense2.so*`, 로그의 "Running with LibRealSense vX".
+- `throttled` 는 bit0(현재) vs bit16(이력) 구분 — 0x50000 은 이력만.
+- ⚠️ 원격 디버깅 시 `kill -9` 남발 자제 — 장치 상태 오염으로 오진 유발.
