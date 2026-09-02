@@ -321,3 +321,37 @@ USB 컨트롤 전송부터 실패. "재부팅 전엔 됐는데" = 코드가 아�
 여전히 지속**(0x50005) — 지금은 마진으로 동작하는 상태라 재발 위험 있음.
 근본 대책: 정격 전원(라즈베리파이4 기준 5V/3A+) 또는 배터리 충전 관리,
 필요 시 카메라용 유전원(powered) USB 허브.
+
+---
+
+## 2026-09-02 — 카메라 RGB(컬러) 스트림만 상시 실패 (depth 정상) → 하드웨어 의심
+
+### 증상
+카메라 실행 시 **depth 모듈은 매번 정상(Open profile 성공)인데 RGB(컬러) 모듈만
+계속 실패.** `control_transfer returned error ... Resource temporarily unavailable`
+(EAGAIN)가 수백~수천 개 쌓이고 컬러 토픽이 안 뜬다. 전에는 15fps 로 잘 되던 것.
+
+### 배제한 원인 (체계적 격리 — 전부 아님)
+- **전원**: 외부 정품급 어댑터 사용, `vcgencmd get_throttled` 의 bit0(현재 전압
+  부족) clear. `0x50000` 은 과거 이력 플래그(bit16/18)일 뿐 라이브 정상.
+- **USB 대역폭**: 424x240x6 로 낮춰도 RGB 실패 → 부하 문제 아님.
+- **align_depth**: `align_depth:=false` 로도 RGB 실패 → 정렬 옵션 무관.
+- **소스빌드 vs apt**: apt(커널 백엔드)는 애초에 안 뜸(08-27) — 소스빌드가 유일 정답.
+- **ROS 노드**: ★ **pyrealsense2 SDK 직접 스트리밍도 컬러에서 블록** → ROS 무관.
+- 소프트 USB 리셋·물리 재연결 후에도 동일.
+
+### 판정
+depth 는 되고 RGB 만, SDK 레벨에서도 실패 → **RGB 이미저 또는 그 연결의 하드웨어
+문제**(간헐 불량이 상시 불량으로 악화된 것으로 추정). 소프트웨어 원인 아님.
+
+### 다음 조치 (권고 순서)
+1. **USB3 케이블 교체** — depth 되고 RGB 만 안 되는 게 특정 신호선 불량일 수 있음.
+   다른 USB3 포트도 시도.
+2. **D435i 펌웨어 업데이트** — `rs-fw-update` 또는 RealSense Viewer (FW 5.12.3 였음).
+3. 위로도 안 되면 카메라 하드웨어 결함 → AS/교체. (depth-only 로 당장 개발은 가능하나
+   Vision AI 는 컬러가 핵심이라 컬러 복구 필요)
+
+### 진단 도구 메모
+- SDK 격리: `python3` 로 `rs.pipeline` + color/depth enable_stream 후 wait_for_frames.
+  빠르게 프레임 잡히면 정상, **start()에서 블록되면 컬러 스트림 실패 = 하드웨어 의심**.
+- `throttled` 는 bit0(현재) vs bit16(이력) 구분 필수 — 0x50000 은 이력만.
