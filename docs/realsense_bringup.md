@@ -156,8 +156,10 @@ ros2 launch realsense_bringup full_bringup.launch.py camera_driver:=realsense2
   버스에서 떨어진다. 노드는 이를 알고 넉넉한 타임아웃으로 정상 시작을 기다린다.
   손으로 정리할 땐 스트리밍 중(로그에 fps 가 찍히는 상태)에 하는 것이 안전하다.
 - 카메라가 버스에서 사라졌으면(`lsusb` 에 없음) 소프트웨어로는 복구 불가 — 물리 재연결.
-- 전원 문제가 아니다: `vcgencmd get_throttled` 의 `0x50000` 은 과거 이력 플래그(bit16/18)이며
-  bit0 이 꺼져 있으면 라이브 전압은 정상 (troubleshooting 09-02).
+- **fps 가 절반(≈8)으로 떨어지면 전원부터**: `vcgencmd get_throttled` 을 **카메라 스트리밍 중에**
+  확인. `0x50005`(bit0=현재 전압 부족, bit2=스로틀링 중)이면 ARM 클럭이 600MHz 로 떨어져
+  노드가 2.5배 느려진다. 유휴 땐 `0x50000`(이력만)으로 보여 놓치기 쉽다 — 부하 의존 처짐
+  (troubleshooting 09-03(2)). 전원 경로(어댑터·USB-C 케이블·연결)를 점검.
 
 ## 8. 다음 단계
 
