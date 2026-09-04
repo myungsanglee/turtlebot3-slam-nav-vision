@@ -36,13 +36,13 @@ services:
       - ./config/zenoh-bridge-server.json5:/conf/zenoh-bridge-server.json5:ro
     command: -c /conf/zenoh-bridge-server.json5
 
-  # ── Remote PC (SLAM / Nav2 / RViz 작업 컨테이너) ─────────────────────────
+  # ── Remote PC (SLAM / Nav2 / Vision AI / RViz 작업 컨테이너) ─────────────
   remote-pc:
-    image: tb3-remote-pc:overlay
+    image: tb3-remote-pc:vision
     build:
       context: .
       dockerfile: docker/Dockerfile
-      target: overlay
+      target: vision           # overlay + Vision AI 추론 스택 (PyTorch CUDA, RF-DETR)
       args:
         ROS_DISTRO: humble
 

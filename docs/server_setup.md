@@ -12,13 +12,16 @@
   Docker + NVIDIA Container Toolkit + Tailscale + UFW 규칙
   └─ docker compose
        ├─ zenoh-bridge  : Pi<->서버 통신 (tcp/7447 listen, eclipse/zenoh-bridge-ros2dds)
-       └─ remote-pc     : ROS 2 Humble 컨테이너 (SLAM/Nav2/RViz, /overlay_ws=./remote_pc)
+       └─ remote-pc     : ROS 2 Humble 컨테이너 (SLAM/Nav2/Vision AI/RViz, /overlay_ws=./remote_pc)
+                          이미지 tb3-remote-pc:vision = ROS + PyTorch CUDA + RF-DETR
 ```
 
 ## 0. 전제 (호스트)
 
 - Ubuntu 24.04 (다른 버전도 무방 — 컨테이너가 22.04/Humble 을 제공)
-- NVIDIA 드라이버 + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (RViz GPU 가속·추후 비전 AI)
+- NVIDIA 드라이버 + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+  — RViz GPU 가속 + **Vision AI 추론(필수)**. 컨테이너 안 PyTorch 는 CUDA 12.8 휠이라 호스트
+  드라이버가 CUDA 12.8 을 지원해야 한다 (드라이버 ≥ 570; 현재 580).
 - Docker Engine + docker compose v2
 - Tailscale 설치·로그인 — Pi 와 **같은 tailnet** 필수. 서버 IP 예: `100.95.193.1`
 
@@ -40,7 +43,8 @@ tailnet 을 통해서만 접근 가능한 것이 의도된 동작).
 git clone <레포 URL> turtlebot3-slam-nav-vision
 cd turtlebot3-slam-nav-vision
 
-docker compose build          # 최초 1회: tb3-remote-pc:overlay 이미지 빌드 (오래 걸림)
+docker compose build          # 최초 1회: tb3-remote-pc:vision 이미지 빌드
+                              #   (ROS/Nav2 + PyTorch cu128 ~2.5GB + rfdetr — 수십 분, 디스크 ~10GB)
 docker compose up -d          # zenoh-bridge + remote-pc 기동
 docker compose ps             # 두 서비스 Up 확인
 ```
@@ -55,7 +59,7 @@ docker compose ps             # 두 서비스 Up 확인
 
 ```bash
 docker compose exec remote-pc bash
-colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation 등)
+colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_vision)
 exit && docker compose exec remote-pc bash   # 재진입하면 자동 source 됨
 ```
 
@@ -65,10 +69,10 @@ exit && docker compose exec remote-pc bash   # 재진입하면 자동 source 됨
 서버 물리 세션을 x11vnc 로 미러링해 맥/노트북에서 VNC 로 접속하는 구성:
 
 ```bash
-# 호스트에서 (물리 세션 :0 또는 :1 미러)
-x11vnc -display :1 -forever -shared
-# 컨테이너에서 RViz 실행 시
-export DISPLAY=:1
+# 호스트에서 (물리 세션 번호는 `who` 로 확인 — 현재 :0)
+x11vnc -display :0 -forever -shared
+# 컨테이너에서 RViz/뷰어 실행 시 같은 번호로
+export DISPLAY=:0
 ```
 
 ## 5. 최종 검증
@@ -78,8 +82,11 @@ Pi 쪽(bringup·카메라·브리지)이 떠 있는 상태에서, 컨테이너 �
 ```bash
 ros2 topic list                                            # 브리지 allow 토픽들이 보임
 ros2 topic hz /scan                                        # ~5Hz
-ros2 topic hz /camera/camera/color/image_raw/compressed    # ~15fps (≈1MB/s)
+ros2 topic hz /camera/color/compressed                     # ~6fps (기본값; 자체 카메라 노드)
+ros2 topic hz /camera/depth/compressed                     # ~6fps (컬러 정렬 depth)
 ros2 launch my_slam slam.launch.py                         # SLAM + RViz
+ros2 launch my_vision vision.launch.py                     # Vision AI (첫 실행 시 가중치 ~120MB 다운로드 → remote_pc/models/)
+ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 (DISPLAY 필요)
 ```
 
 ## 운영 명령 모음

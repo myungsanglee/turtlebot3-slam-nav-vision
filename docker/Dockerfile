@@ -4,6 +4,7 @@
 # 베이스: OSRF 공식 ROS 2 이미지 (osrf/ros:humble-desktop)
 # 그 위에 ROBOTIS 공식 humble 브랜치 소스(DynamixelSDK / turtlebot3_msgs /
 # turtlebot3)를 빌드하고, SLAM(Cartographer/slam_toolbox)·Nav2를 추가.
+# 마지막 vision 스테이지에서 Vision AI 추론 스택(PyTorch CUDA + RF-DETR)을 얹는다.
 #
 # 호스트: Ubuntu 24.04 + NVIDIA RTX A6000 (드라이버 + NVIDIA Container Toolkit 설치 가정)
 # 컨테이너 베이스는 22.04(Humble)이며, 호스트 OS와 무관하게 동작.
@@ -115,6 +116,30 @@ RUN chmod +x /entrypoint.sh
 ENV TURTLEBOT3_MODEL=burger
 ENV ROS_DOMAIN_ID=30
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+
+# ----------------------------------------------------------------------------
+# vision: Vision AI 추론 스택 (PyTorch CUDA + RF-DETR + vision_msgs)
+#   - PyTorch 는 CUDA 12.8 휠을 pip 로 설치. 휠이 CUDA 런타임을 동봉하므로 베이스를
+#     CUDA 이미지로 바꿀 필요가 없고, 호스트에는 NVIDIA 드라이버 + Container Toolkit 만 있으면 된다.
+#   - RF-DETR (Apache-2.0): 실시간 DETR 계열 검출기. pip 한 줄, ONNX export 지원 → TensorRT 경로.
+#     (RTMDet 은 mmdet/mmcv 가 CUDA 버전에 민감해 설치 부담이 커서 후보에서 제외)
+#   - 가중치는 /overlay_ws/models (호스트 remote_pc/models, gitignore) 에 캐시해 재빌드에도 유지.
+# ----------------------------------------------------------------------------
+FROM overlay AS vision
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ros-${ROS_DISTRO}-vision-msgs \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+      torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128 \
+ && pip install --no-cache-dir rfdetr==1.9.4
+
+# ★ numpy 는 1.x 로 고정: 위 pip 설치가 numpy 2.x 를 끌어오는데, ROS Humble 의 apt 파이썬
+#   패키지(cv2 4.5.4, cv_bridge 등)는 numpy 1.x 빌드라 `import cv2` 가
+#   "numpy.core.multiarray failed to import" 로 깨진다 (실측). 별도 레이어로 두어
+#   torch 레이어 캐시를 유지한다.
+RUN pip install --no-cache-dir "numpy<2"
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

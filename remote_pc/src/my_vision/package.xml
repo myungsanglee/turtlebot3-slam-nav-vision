@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_vision</name>
+  <version>0.1.0</version>
+  <description>
+    Vision AI 노드 (Remote PC, GPU). 로봇 카메라의 compressed color/정렬 depth 를 구독해
+    RF-DETR 로 물체를 검출하고, 정렬 depth 와 camera_info 로 각 물체의 거리·카메라 좌표
+    3D 위치를 계산해 vision_msgs/Detection2DArray 와 주석 이미지로 publish 한다.
+    카메라 토픽 뷰어(camera_viewer)도 포함.
+  </description>
+  <maintainer email="mslee@robotegra.com">Myungsang Lee</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <!-- torch / rfdetr 는 pip (docker/Dockerfile vision 스테이지) -->
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

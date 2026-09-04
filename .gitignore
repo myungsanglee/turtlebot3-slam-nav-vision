@@ -32,3 +32,6 @@ __pycache__/
 # 실측/개인 환경 관련 임시 파일
 *.local
 *.log
+
+# Vision AI 모델 가중치 (컨테이너가 /overlay_ws/models 에 다운로드·캐시)
+remote_pc/models/

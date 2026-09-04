@@ -36,7 +36,7 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | Navigation | Nav2 |
 | 원격 통신 | **Zenoh Bridge** (zenoh-bridge-ros2dds) — Fast DDS 의 VPN 한계 진단 후 전환 |
 | 카메라 | RealSense D435i — **자체 pyrealsense2 노드** (공식 노드의 Pi4 USB 불안정을 캘리브레이션 캐시·프로세스 분리로 우회), 컬러 + 컬러 정렬 depth compressed 원격 전송 |
-| Vision AI | 자체 파이프라인 (RF-DETR/RTMDet + TensorRT) — 예정 |
+| Vision AI | **RF-DETR** (PyTorch CUDA) + 정렬 depth 거리 → 3D 위치. TensorRT 변환 예정 |
 | 센서 융합 | robot_localization (EKF) — 예정 |
 | 시각화 | RViz2 |
 
@@ -64,7 +64,7 @@ turtlebot3-slam-nav-vision/
 | **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전) | ✅ Pi 배포·TF 검증 | [docs/description.md](./docs/description.md) |
 | **realsense_bringup** | D435i 브링업 — **자체 pyrealsense2 노드**: 컬러 + 컬러에 정렬된 depth(PNG 16bit, mm) compressed publish. 공식 노드가 Pi4 에서 간헐 실패하는 문제를 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 해결 | ✅ 원격 수신 검증 (기본 6fps, 15fps 까지 확인) | [docs/realsense_bringup.md](./docs/realsense_bringup.md) |
 | **인프라/네트워크** | Tailscale + **Zenoh Bridge** (Fast DDS Discovery Server 의 VPN 한계를 진단 후 전환) | ✅ 검증 완료 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
-| my_vision | Vision AI 노드 (TensorRT 추론) | ⏳ 예정 | — |
+| **my_vision** | RF-DETR 물체 검출 + 정렬 depth 로 거리·카메라 좌표 3D 위치 (`Detection2DArray`), 주석 영상, 카메라 뷰어 | 🔧 개발 중 | [docs/my_vision.md](./docs/my_vision.md) |
 
 ## 시작하기
 
@@ -106,10 +106,22 @@ ros2 topic hz /scan               # 로봇 연결 확인 (~5Hz)
 
 카메라 영상을 눈으로 확인 (color · 정렬 depth · 오버레이 한 창, 중앙 거리 표시; VNC 로 봄):
 ```bash
+cd /overlay_ws && colcon build --symlink-install && source install/setup.bash   # 최초 1회
 export DISPLAY=:0
-python3 /overlay_ws/src/my_vision/tools/camera_viewer.py                    # q 로 종료
-python3 /overlay_ws/src/my_vision/tools/camera_viewer.py --snapshot /tmp/cam.jpg   # 창 없이 한 장 저장
+ros2 run my_vision camera_viewer                                   # q 로 종료
+ros2 run my_vision camera_viewer --snapshot /tmp/cam.jpg           # 창 없이 한 장 저장
 ```
+
+### 2-1. Vision AI — 물체 검출 + 거리 (서버, GPU)
+
+```bash
+ros2 launch my_vision vision.launch.py            # RF-DETR(medium) 검출 → /vision/detections, /vision/annotated/compressed
+#   크기 변경: model:=nano|small|medium|large
+ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 보기
+ros2 topic echo /vision/detections               # 클래스·점수·박스·카메라 좌표 3D 위치
+```
+> 첫 실행 때 가중치를 `remote_pc/models/` 에 내려받는다(RF_HOME). 이미지는 `vision` 스테이지로
+> 빌드돼 있어야 한다 (`docker compose build remote-pc`, [docs/server_setup.md](./docs/server_setup.md)).
 
 ### 3. SLAM — 지도 만들기 (서버)
 
