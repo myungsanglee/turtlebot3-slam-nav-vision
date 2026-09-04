@@ -155,6 +155,18 @@ def _capture_process(q, cfg):
     profile = pipeline.start(rs_cfg)          # 멈추거나 던지면 부모가 감지해 재시작
     stage(f'pipeline.start() 성공 ({time.monotonic() - t0:.1f}s)')
 
+    # RealSense 컬러 센서는 기본값(auto_exposure_priority 켜짐)에서 어두우면 노출 시간을
+    # 지키려고 fps 를 떨어뜨린다(Intel 문서상 동작). 끄면 fps 가 고정되고 대신 어두운 프레임을
+    # 감수한다 — Vision 파이프라인엔 일정한 주기가 더 중요. 실패해도 스트리밍엔 지장 없음.
+    if cfg.get('constant_fps', True):
+        try:
+            for sensor in profile.get_device().query_sensors():
+                if sensor.supports(rs.option.auto_exposure_priority):
+                    sensor.set_option(rs.option.auto_exposure_priority, 0)
+                    stage('auto_exposure_priority 끔 → fps 고정')
+        except Exception as e:
+            q.put(('log', f'auto_exposure_priority 설정 실패(무시): {e}'))
+
     try:
         try:
             depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
@@ -250,6 +262,7 @@ class RsCameraNode(Node):
         self.declare_parameter('fps', 15)
         self.declare_parameter('jpeg_quality', 80)      # color JPEG 품질 (0~100)
         self.declare_parameter('png_compression', 1)    # depth PNG 압축 (0~9, 낮을수록 빠름)
+        self.declare_parameter('constant_fps', True)    # 어두워도 fps 유지 (auto_exposure_priority 끔)
         self.declare_parameter('frame_id', 'camera_color_optical_frame')
         # 자식의 "한 단계" 상한 (단계 메시지마다 타이머 리셋). ★ 넉넉해야 한다:
         #   콜드 스타트는 장치 열거만 ~11s 이고, 열거/start 도중인 자식을 죽이면 카메라가
@@ -268,7 +281,7 @@ class RsCameraNode(Node):
         p = self.get_parameter
         self.cfg = {k: p(k).value for k in (
             'width', 'height', 'fps', 'jpeg_quality', 'png_compression',
-            'stall_timeout_ms', 'calib_retry_period_sec', 'calib_max_retries')}
+            'stall_timeout_ms', 'calib_retry_period_sec', 'calib_max_retries', 'constant_fps')}
         self.frame_id = p('frame_id').value
         self.start_timeout = p('start_timeout_sec').value
         self.stall_timeout = p('stall_timeout_ms').value / 1000.0
