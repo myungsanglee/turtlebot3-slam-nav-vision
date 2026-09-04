@@ -104,6 +104,13 @@ ros2 topic hz /scan               # 로봇 연결 확인 (~5Hz)
 > 드물게 "토픽은 보이는데 데이터 0"이면 브리지만 재시작하면 복구됩니다
 > (`docker compose restart zenoh-bridge` / Pi: `sudo systemctl restart zenoh-bridge`).
 
+카메라 영상을 눈으로 확인 (color · 정렬 depth · 오버레이 한 창, 중앙 거리 표시; VNC 로 봄):
+```bash
+export DISPLAY=:0
+python3 /overlay_ws/src/my_vision/tools/camera_viewer.py                    # q 로 종료
+python3 /overlay_ws/src/my_vision/tools/camera_viewer.py --snapshot /tmp/cam.jpg   # 창 없이 한 장 저장
+```
+
 ### 3. SLAM — 지도 만들기 (서버)
 
 ```bash
