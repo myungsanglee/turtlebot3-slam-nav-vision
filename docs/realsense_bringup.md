@@ -40,8 +40,9 @@ Pi 의 `~/realsense_ros_ws/src/realsense_bringup` 이 이 디렉터리로 심볼
   ```python
   depth_mm = cv2.imdecode(np.frombuffer(msg.data, np.uint8), cv2.IMREAD_UNCHANGED)  # uint16, mm
   ```
-- 실측 대역폭 (640x480x15): color ≈ 36KB/프레임(0.55MB/s), depth ≈ 93KB/프레임(1.4MB/s),
-  **합계 ≈ 1.9MB/s** — Tailscale 로 15fps 전송 확인. 부족하면 `fps:=6` 등으로 낮춘다.
+- 실측 (640x480): color ≈ 36KB/프레임, depth ≈ 93KB/프레임. 15fps 면 합계 ≈ 1.9MB/s 로
+  Tailscale 전송 확인. **기본값은 6fps**(합계 ≈ 0.8MB/s) — Pi 부하(전원 처짐)와 대역폭을
+  고려한 선택이며 Vision 추론 주기에 충분. 카메라 지원값은 6/15/30/60 (5 는 없음).
 
 ## 4. 원리 — 처음 보는 사람을 위한 설명
 
@@ -138,7 +139,7 @@ publish 가 4코어를 나눠 쓴다.
 ros2 launch realsense_bringup full_bringup.launch.py
 # Pi — 카메라만
 ros2 launch realsense_bringup rs_camera.launch.py
-ros2 launch realsense_bringup rs_camera.launch.py fps:=6 jpeg_quality:=70   # 대역폭 절약
+ros2 launch realsense_bringup rs_camera.launch.py fps:=15                  # 고속 (지원값 6/15/30/60)
 # 공식 노드로 비교하고 싶을 때
 ros2 launch realsense_bringup full_bringup.launch.py camera_driver:=realsense2
 ```

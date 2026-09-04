@@ -62,7 +62,7 @@ turtlebot3-slam-nav-vision/
 | **my_slam** | slam_toolbox 기반 2D SLAM. 로봇 라이다(`/scan`)로 지도 작성 + 위치추정 | ✅ 실물 검증 | [docs/my_slam.md](./docs/my_slam.md) |
 | **my_navigation** | Nav2 자율주행. 지도 만들며 주행(기본) / 저장 지도+AMCL 모드 | ✅ 실기 검증 (실주행 예정) | [docs/my_navigation.md](./docs/my_navigation.md) |
 | **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전) | ✅ Pi 배포·TF 검증 | [docs/description.md](./docs/description.md) |
-| **realsense_bringup** | D435i 브링업 — **자체 pyrealsense2 노드**: 컬러 + 컬러에 정렬된 depth(PNG 16bit, mm) compressed publish. 공식 노드가 Pi4 에서 간헐 실패하는 문제를 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 해결 | ✅ 15fps 원격 수신 | [docs/realsense_bringup.md](./docs/realsense_bringup.md) |
+| **realsense_bringup** | D435i 브링업 — **자체 pyrealsense2 노드**: 컬러 + 컬러에 정렬된 depth(PNG 16bit, mm) compressed publish. 공식 노드가 Pi4 에서 간헐 실패하는 문제를 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 해결 | ✅ 원격 수신 검증 (기본 6fps, 15fps 까지 확인) | [docs/realsense_bringup.md](./docs/realsense_bringup.md) |
 | **인프라/네트워크** | Tailscale + **Zenoh Bridge** (Fast DDS Discovery Server 의 VPN 한계를 진단 후 전환) | ✅ 검증 완료 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
 | my_vision | Vision AI 노드 (TensorRT 추론) | ⏳ 예정 | — |
 
@@ -85,8 +85,8 @@ ros2 launch realsense_bringup full_bringup.launch.py
 개별 실행:
 ```bash
 ros2 launch turtlebot3_bringup robot.launch.py      # 셸 1 — 로봇 기본
-ros2 launch realsense_bringup rs_camera.launch.py   # 셸 2 — 카메라 (자체 노드, 기본)
-#   대역폭 절약: fps:=6 jpeg_quality:=70
+ros2 launch realsense_bringup rs_camera.launch.py   # 셸 2 — 카메라 (자체 노드, 기본 640x480@6fps)
+#   고속: fps:=15 (지원값 6/15/30/60)
 ```
 
 > 카메라 노드는 USB 가 꼬여도 스스로 복구한다(로그의 `[자식]` 단계 메시지·10초 stats 참고).

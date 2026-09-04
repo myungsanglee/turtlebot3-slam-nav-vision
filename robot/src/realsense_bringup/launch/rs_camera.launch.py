@@ -11,7 +11,8 @@
 #
 # [실행 예] Pi 에서:
 #   ros2 launch realsense_bringup rs_camera.launch.py
-#   ros2 launch realsense_bringup rs_camera.launch.py fps:=6 jpeg_quality:=70   # 대역폭 절약
+#   ros2 launch realsense_bringup rs_camera.launch.py fps:=15                  # 고속 (Pi 부하·대역폭 ↑)
+#   ※ fps 는 카메라가 지원하는 값만 가능 — 640x480 에서 6/15/30/60 (5 는 없음)
 #
 # [respawn] 노드는 내부에서 캡처 프로세스를 감시·재시작하므로 스스로 죽는 일이 드물지만,
 #   부모 프로세스 자체가 죽는 경우(예외 등)를 대비해 런치 수준 respawn 도 건다.
@@ -26,7 +27,8 @@ def generate_launch_description():
     declares = [
         DeclareLaunchArgument('width', default_value='640'),
         DeclareLaunchArgument('height', default_value='480'),
-        DeclareLaunchArgument('fps', default_value='15'),
+        DeclareLaunchArgument('fps', default_value='6',
+                              description='640x480 지원값 6/15/30/60. Pi 부하·대역폭 때문에 기본 6'),
         DeclareLaunchArgument('jpeg_quality', default_value='80',
                               description='color JPEG 품질 (0~100)'),
         DeclareLaunchArgument('png_compression', default_value='1',

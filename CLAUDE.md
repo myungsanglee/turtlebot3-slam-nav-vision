@@ -48,7 +48,8 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
   systemd 서비스 `zenoh-bridge`)
 - 브리징 토픽은 양쪽 config 의 **allow 리스트**로 제한 (정규식 `/camera/.*/compressed`,
   `/camera/.*/camera_info`). ★ 카메라는 **compressed 만** 브리징 (raw 640x480 ≈ 14MB/s 는
-  Tailscale 초과; 현재 color JPEG 0.55MB/s + 정렬 depth PNG16 1.4MB/s ≈ 1.9MB/s 로 15fps 확인)
+  Tailscale 초과; 15fps 기준 color JPEG 0.55MB/s + 정렬 depth PNG16 1.4MB/s ≈ 1.9MB/s 확인.
+  **기본값은 640x480@6fps** — Pi 부하·전원 고려, 카메라 지원값 6/15/30/60)
 - ROS_DISCOVERY_SERVER / 인터페이스 화이트리스트 / ROS_SUPER_CLIENT 전부 불필요
   (CLI 도 그냥 동작). 같은 LAN 테스트도 동일 구성으로 동작.
 

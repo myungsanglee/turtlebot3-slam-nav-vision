@@ -200,12 +200,12 @@ cp ~/turtlebot3-slam-nav-vision/description/urdf/turtlebot3_burger.urdf "$TARGET
 ```bash
 # Pi — 로봇 + 카메라(자체 노드) 통합
 ros2 launch realsense_bringup full_bringup.launch.py
-#   로그에 "[자식] pipeline.start() 성공", "스트리밍 시작", 10초마다 "15.0 fps | color ... | depth ..."
+#   로그에 "[자식] pipeline.start() 성공", "스트리밍 시작", 10초마다 "6.0 fps | color ... | depth ..."
 
 # 서버 컨테이너에서
 ros2 topic hz /scan                                        # ~5Hz
-ros2 topic hz /camera/color/compressed                     # ~15fps
-ros2 topic hz /camera/depth/compressed                     # ~15fps (컬러 정렬 depth)
+ros2 topic hz /camera/color/compressed                     # ~6fps (기본값)
+ros2 topic hz /camera/depth/compressed                     # ~6fps (컬러 정렬 depth)
 ros2 run tf2_ros tf2_echo base_link base_scan              # -0.100, 0, 0.125 (보정 URDF 확인)
 ```
 

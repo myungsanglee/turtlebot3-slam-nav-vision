@@ -259,7 +259,7 @@ class RsCameraNode(Node):
 
         self.declare_parameter('width', 640)
         self.declare_parameter('height', 480)
-        self.declare_parameter('fps', 15)
+        self.declare_parameter('fps', 6)          # D435i 640x480 지원값: 6/15/30/60 (5 는 없음)
         self.declare_parameter('jpeg_quality', 80)      # color JPEG 품질 (0~100)
         self.declare_parameter('png_compression', 1)    # depth PNG 압축 (0~9, 낮을수록 빠름)
         self.declare_parameter('constant_fps', True)    # 어두워도 fps 유지 (auto_exposure_priority 끔)

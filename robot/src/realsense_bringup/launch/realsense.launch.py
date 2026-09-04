@@ -41,9 +41,9 @@ def generate_launch_description():
     imu = LaunchConfiguration('imu')
 
     declares = [
-        DeclareLaunchArgument('color_profile', default_value='640x480x15',
+        DeclareLaunchArgument('color_profile', default_value='640x480x6',
                               description='RGB 해상도 WxHxFPS'),
-        DeclareLaunchArgument('depth_profile', default_value='640x480x15',
+        DeclareLaunchArgument('depth_profile', default_value='640x480x6',
                               description='Depth 해상도 WxHxFPS'),
         # align_depth: 비전 파이프라인에서 depth-color 좌표 매칭에 필요 → 기본 on
         DeclareLaunchArgument('align_depth', default_value='true',
