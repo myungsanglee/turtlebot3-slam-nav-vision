@@ -212,20 +212,26 @@ def _capture_process(q, cfg):
                 except queue.Full:
                     pass                                # 부모가 밀리면 최신 유지를 위해 버림
 
-            if manual is None and rs_align is None and \
-                    time.monotonic() - t_calib >= cfg['calib_retry_period_sec']:
+            # rs.align 을 못 쓰는 세션(캐시 수동 정렬 또는 depth 보류)은 주기적으로 XU 를
+            # 다시 읽어본다. 성공하면 rs.align(C++, 15fps)으로 승격 — 수동 정렬은 Pi4 에서
+            # ~8fps 가 상한이고 PNG 도 커지므로(float 경유 하위비트 흔들림) 대체 수단일 뿐이다.
+            if rs_align is None and time.monotonic() - t_calib >= cfg['calib_retry_period_sec']:
                 t_calib = time.monotonic()
                 calib = read_calibration(profile)
                 if calib is not None:
                     q.put(('calib', calib))
-                    manual = make_manual_aligner(calib, depth_scale)
-                    stage('캘리브레이션 확보 → 정렬 depth publish 시작')
+                    rs_align = rs.align(rs.stream.color)
+                    manual = None
+                    stage('캘리브레이션 읽기 성공 → rs.align 으로 전환')
                 else:
                     calib_fails += 1
                     if calib_fails >= cfg['calib_max_retries']:
                         # 컨트롤 경로 상태는 세션(장치 open) 단위라, 이 세션에선 안 되는 것.
-                        # 스스로 깨끗이 종료(pipeline.stop)해 부모가 새 세션을 열게 한다 (kill 아님).
-                        raise RuntimeError('이 세션에선 캘리브레이션을 못 읽음 → 새 세션 시도')
+                        # 캐시 수동 정렬로 버틸 수는 있지만 ~8fps 상한이므로, 스스로 깨끗이
+                        # 종료(pipeline.stop, kill 아님)해 부모가 새 세션을 열어 다시 굴리게 한다.
+                        # 세션마다 성공/실패가 갈리므로 몇 번 안에 rs.align 세션을 만난다.
+                        raise RuntimeError('이 세션에선 캘리브레이션을 못 읽음 → 새 세션 시도'
+                                           + (' (수동 정렬 중이었음)' if manual else ''))
     finally:
         try:
             pipeline.stop()

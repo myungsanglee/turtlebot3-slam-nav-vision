@@ -53,8 +53,10 @@ class CameraViewer(Node):
         super().__init__('camera_viewer')
         self.snapshot = snapshot
         self.pending = {}            # stamp → {'color': img, 'depth': img}
-        self.n, self.t0 = 0, time.monotonic()
+        self.n = 0
+        self.recent = []             # 최근 프레임 도착 시각 (슬라이딩 창 fps 용)
         self.last_frame = None
+        self.dirty = False           # 새 프레임이 있을 때만 다시 그림 (imshow 는 비싸다)
         qos = qos_profile_sensor_data   # 퍼블리셔와 동일 (best effort) — 아니면 매칭 안 됨
         self.create_subscription(CompressedImage, '/camera/color/compressed',
                                  lambda m: self._on_msg('color', m), qos)
@@ -90,12 +92,15 @@ class CameraViewer(Node):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
         self.n += 1
-        fps = self.n / max(time.monotonic() - self.t0, 1e-6)
+        now = time.monotonic()
+        self.recent = [t for t in self.recent if now - t <= 2.0] + [now]
+        fps = len(self.recent) / 2.0   # 최근 2초 창의 순간 fps (누적 평균이면 끊김이 안 보임)
         for img, name in ((color, 'color'), (depth_vis, 'aligned depth'), (overlay, 'overlay')):
             cv2.putText(img, name, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         cv2.putText(color, f'{fps:.1f} fps', (w - 110, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
         self.last_frame = np.hstack([color, depth_vis, overlay])
+        self.dirty = True
         if self.n % 30 == 1:
             valid_pct = 100 * np.count_nonzero(depth_mm) / depth_mm.size
             self.get_logger().info(f'{fps:.1f} fps | depth 유효 {valid_pct:.0f}% | 중앙 {dist_txt}')
@@ -105,8 +110,11 @@ class CameraViewer(Node):
             raise SystemExit(0)
 
     def _gui_tick(self):
-        if self.last_frame is not None:
+        # 구독 콜백과 같은 스레드에서 돌므로, 매 틱 imshow 하면 X 출력이 느릴 때
+        # 메시지 처리를 굶겨 프레임이 떨어진다 → 새 프레임이 있을 때만 그린다
+        if self.dirty and self.last_frame is not None:
             cv2.imshow('rs_camera viewer  [q: quit]', self.last_frame)
+            self.dirty = False
         if cv2.waitKey(1) & 0xFF == ord('q'):
             raise SystemExit(0)
 
