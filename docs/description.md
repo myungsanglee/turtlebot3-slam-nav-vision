@@ -146,7 +146,10 @@ ros2 launch turtlebot3_bringup robot.launch.py
 **RealSense 카메라 TF (2026-09-08 실측·추가)**
 - base_link → 마운트 나사 구멍 실측 x +47.5, y 0, z +48 mm. xacro·check_urdf 통과, 합성 변환 확인
   (RGB 렌즈 58.1, 32.5, 60.5 mm / optical z 축이 로봇 앞을 향함).
-- Pi 배포 + `tf2_echo base_link camera_color_optical_frame` 실기 확인은 배포 직후 기록 예정.
+- Pi 배포(2026-09-08) 후 bringup 정상 기동, 서버에서 실기 확인:
+  `tf2_echo base_link camera_color_optical_frame` → Translation `[0.058, 0.033, 0.060]`,
+  RPY `[-1.571, 0, -1.571]` ✓ / `camera_link` → `[0.058, 0.018, 0.060]` ✓ / `base_scan` 기존값 유지 ✓
+  (기울기는 수평 가정 — 실측 시 pitch 반영).
 
 ## 6. 다음 단계
 

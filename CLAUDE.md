@@ -186,8 +186,8 @@ turtlebot3-slam-nav-vision/
   상세는 `docs/my_vision.md`
 
 **다음 (우선순위 순)**
-1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) — 남은 것: Pi 배포 후 tf2_echo 확인,
-   Vision 3D 위치의 base_link 변환(TF2) 노드 반영
+1. ~~base_link→camera_link TF~~ ✅ (2026-09-08, Pi 배포·tf2_echo 실기 검증 완료) — 남은 것:
+   Vision 3D 위치의 base_link 변환(TF2) 노드 반영, 카메라 기울기 실측(수평 가정 중)
 2. **Nav2 footprint 실측 교체** — nav2_params.yaml 의 robot_radius(임시 0.105) →
    실측 다각형 footprint
 3. **Pi 전원 보강** — OpenCR 5V 출력이 Pi4+D435i 에 한계(undervoltage 재발,
