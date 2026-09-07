@@ -20,6 +20,7 @@ import time
 import cv2
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CompressedImage
@@ -126,7 +127,7 @@ def main():
     node = CameraViewer(args.color_topic, args.snapshot, args.save_dir, args.save_count)
     try:
         rclpy.spin(node)
-    except (KeyboardInterrupt, SystemExit):
+    except (KeyboardInterrupt, SystemExit, ExternalShutdownException):   # Ctrl+C / 런치 종료 → 조용히
         pass
     finally:
         cv2.destroyAllWindows()

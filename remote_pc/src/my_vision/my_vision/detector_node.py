@@ -34,6 +34,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, CompressedImage
@@ -228,7 +229,7 @@ def main():
     node = DetectorNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit, ExternalShutdownException):   # Ctrl+C / 런치 종료 → 조용히
         pass
     finally:
         node.destroy_node()
