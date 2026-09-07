@@ -38,6 +38,7 @@ y=왼쪽(+)/오른쪽(−), z=위(+)/아래(−). rpy 중 yaw 는 z축 회전(�
 |---|---|---|---|---|
 | `scan_joint` | LDS 위치 xyz | `-0.032, 0, 0.172` | **`-0.100, 0, 0.125`** | 라이다를 뒤로·낮게 개조 |
 | `imu_joint` | IMU 회전 rpy | `0, 0, 0` | **`0, 0, -1.57`** | OpenCR 을 시계방향 90° 돌려 장착 |
+| `camera_mount_joint` (신규) | RealSense 마운트 나사 구멍 xyz | (표준엔 없음) | **`0.0475, 0, 0.048`** | D435i 를 앞쪽 위에 장착 (2026-09-08 실측) |
 
 바꾸지 않은 것: `wheel_*_joint`/`base_joint`(바퀴 폭이 표준과 동일 → 오도메트리
 파라미터 유지), `caster_back_joint`(센싱 무관), 각 링크의 visual/collision/inertial
@@ -69,6 +70,27 @@ OpenCR 보드를 **위에서 봤을 때 시계방향 90°** 회전하여 고정�
 - ★ **위치(xyz)는 아직 미실측**이라 표준값(`-0.032 0 0.068`)을 유지했다.
   IMU 는 현재 SLAM 에서 쓰지 않으므로 당장 문제는 없지만,
   **robot_localization(EKF) 단계 전에 IMU 위치도 실측하여 교체**해야 한다.
+
+### 3.3 카메라 — 실측은 한 점, 렌즈 위치는 인텔 공식 오프셋
+
+RealSense D435i 는 렌즈가 여럿(RGB, 왼쪽/오른쪽 IR, 프로젝터)이라 렌즈를 직접 재면 오차와
+혼동이 생긴다. 그래서 **바닥의 1/4인치 마운트 나사 구멍(=몸체 정중앙)** 한 점만 실측하고,
+그 아래는 인텔 `realsense2_description` 의 `_d435.urdf.xacro` 상수를 그대로 옮겼다:
+
+```
+base_link ─(실측 47.5, 0, 48mm)─▶ camera_bottom_screw_frame
+   ─(+10.6, +17.5, +12.5)─▶ camera_link            = 왼쪽 IR 이미저 = depth 원점
+        ├─(0, 0, 0)─▶ camera_depth_frame ─(광학 회전)─▶ camera_depth_optical_frame
+        └─(0, +15, 0)─▶ camera_color_frame ─(광학 회전)─▶ camera_color_optical_frame  ★ 우리 노드의 frame_id
+```
+- 카메라 시점에서 왼쪽→오른쪽 순서는 **RGB — 왼쪽 IR — 프로젝터 — 오른쪽 IR** 이고 RGB 는 왼쪽 IR 의
+  15mm 왼쪽이다. 우리 카메라의 공장 익스트린식(캘리브레이션 캐시, depth→color 14.9mm)과 일치.
+- **광학 프레임(optical)**: 이미지 처리 규약(z 앞, x 오른쪽, y 아래)으로 축만 돌린 프레임. 자체 카메라
+  노드가 내보내는 정렬 depth·camera_info·검출 3D 위치는 전부 `camera_color_optical_frame` 기준이다.
+  URDF 의 `rpy="-1.5708 0 -1.5708"` 이 ROS 몸체 규약(x 앞, y 왼쪽, z 위)을 광학 규약으로 바꾸는 회전.
+- 결과 (base_link 기준): RGB 렌즈 = (58.1, 32.5, 60.5) mm. 수평 장착 가정(pitch 0) — 기울어져
+  있으면 `camera_mount_joint` 의 pitch 하나만 고치면 된다.
+- 이 TF 가 있어야 Vision 노드의 "카메라 좌표 3D 위치"를 `base_link`/`map` 좌표로 옮길 수 있다.
 
 ## 4. 배포 방법 — bringup 은 건드리지 않는다
 
@@ -121,11 +143,15 @@ ros2 launch turtlebot3_bringup robot.launch.py
   → **URDF yaw=-1.57 이 실물과 부합함을 물리적으로 확정.**
 - 남은 것: IMU **위치(xyz)** 는 여전히 표준값(미실측) — EKF 전 실측 교체.
 
+**RealSense 카메라 TF (2026-09-08 실측·추가)**
+- base_link → 마운트 나사 구멍 실측 x +47.5, y 0, z +48 mm. xacro·check_urdf 통과, 합성 변환 확인
+  (RGB 렌즈 58.1, 32.5, 60.5 mm / optical z 축이 로봇 앞을 향함).
+- Pi 배포 + `tf2_echo base_link camera_color_optical_frame` 실기 확인은 배포 직후 기록 예정.
+
 ## 6. 다음 단계
 
 1. **제자리 회전 정밀 검증** — 공간 확보 시 (위 검증 기록 참고).
-2. **RealSense camera_link 추가** — base_link → camera_link static transform 을
-   실측값으로 이 URDF 에 추가 (다음 우선 작업).
+2. **카메라 기울기 확인** — 수평 가정. 숙여 장착돼 있으면 `camera_mount_joint` pitch 반영.
 3. **IMU 위치(xyz) 실측 교체** — robot_localization(EKF) 전.
 4. **Nav2 footprint 실측 반영** — 로봇 외형이 표준과 다르므로 nav2_params.yaml 의
    robot_radius(임시 0.105) 를 실측 다각형 footprint 로 교체.

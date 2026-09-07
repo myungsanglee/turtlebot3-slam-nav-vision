@@ -87,8 +87,9 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 - ✅ **LDS(라이다) 위치/높이 다름** → `base_link → base_scan` 실측 보정 **완료**
   (xyz=-0.100,0,0.125 — docs/description.md). IMU 회전(yaw=-1.57)도 반영·
   물리 검증 완료(전진 밀기→y축 반응 확인). IMU 위치 xyz 는 미실측(EKF 전 교체).
-- ⏳ **RealSense 추가** → `base_link → camera_link` static transform 을 실측값으로
-  URDF 에 추가 (다음 우선 작업).
+- ✅ **RealSense TF 추가** → `base_link → camera_bottom_screw_frame` 실측(x 47.5, y 0,
+  z 48 mm, 2026-09-08) + 인텔 공식 오프셋으로 camera_link/depth/color/optical 체인 URDF 반영.
+  Vision 의 3D 위치를 base_link 로 옮기는 전제 완성 (기울기는 수평 가정).
 - ⏳ Nav2 풋프린트: `robot_radius`(임시 0.105) 대신 실제 외형 실측 다각형
   `footprint` 로 교체.
 
@@ -185,7 +186,8 @@ turtlebot3-slam-nav-vision/
   상세는 `docs/my_vision.md`
 
 **다음 (우선순위 순)**
-1. **base_link→camera_link TF 추가** — 카메라 장착 위치 실측 → URDF 반영 (5번 규칙)
+1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) — 남은 것: Pi 배포 후 tf2_echo 확인,
+   Vision 3D 위치의 base_link 변환(TF2) 노드 반영
 2. **Nav2 footprint 실측 교체** — nav2_params.yaml 의 robot_radius(임시 0.105) →
    실측 다각형 footprint
 3. **Pi 전원 보강** — OpenCR 5V 출력이 Pi4+D435i 에 한계(undervoltage 재발,
