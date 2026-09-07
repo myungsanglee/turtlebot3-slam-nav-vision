@@ -89,7 +89,7 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
   물리 검증 완료(전진 밀기→y축 반응 확인). IMU 위치 xyz 도 실측(-0.030,0,0.060 보드 중심, 2026-09-08).
 - ✅ **RealSense TF 추가** → `base_link → camera_bottom_screw_frame` 실측(x 47.5, y 0,
   z 48 mm, 2026-09-08) + 인텔 공식 오프셋으로 camera_link/depth/color/optical 체인 URDF 반영.
-  Vision 의 3D 위치를 base_link 로 옮기는 전제 완성 (기울기는 수평 가정).
+  Vision 의 3D 위치를 base_link 로 옮기는 전제 완성 (기울기 실측 수평, tf2_echo 실기 검증).
 - ✅ Nav2 풋프린트: 실측 직사각형 `footprint`(앞 +0.062 카메라 전면 / 뒤 -0.220 / 좌우 ±0.090)
   로 교체 (2026-09-08). 실주행에서 inflation 과 함께 미세 조정 예정.
 
@@ -163,7 +163,8 @@ turtlebot3-slam-nav-vision/
 - **커스텀 로봇 URDF 보정** — description/urdf/turtlebot3_burger.urdf 에 실측 반영:
   scan_joint(LDS) xyz=-0.100,0,0.125 / imu_joint yaw=-1.57(OpenCR 90° 회전).
   Pi 배포 + TF 실기 검증 완료. 제자리 회전 정밀 검증은 공간 확보 시 예정.
-  IMU 위치 xyz 는 미실측(표준값 유지, EKF 전 교체). 상세는 `docs/description.md`
+  IMU 위치 xyz 도 보드 중심 실측(-0.030,0,0.060, 2026-09-08) 반영·TF 검증. 카메라 프레임 체인
+  (나사 구멍 실측 + 인텔 오프셋)도 추가·검증. 상세는 `docs/description.md`
 - **realsense_bringup (Pi)** — **자체 pyrealsense2 노드**(`rs_camera_node.py`)로
   color JPEG + **color 에 정렬된 depth(PNG 16bit, mm)** + camera_info 를
   `/camera/color/compressed`·`/camera/depth/compressed`·`/camera/color/camera_info` 로
@@ -187,7 +188,7 @@ turtlebot3-slam-nav-vision/
 
 **다음 (우선순위 순)**
 1. ~~base_link→camera_link TF~~ ✅ (2026-09-08, Pi 배포·tf2_echo 실기 검증 완료) — 남은 것:
-   Vision 3D 위치의 base_link 변환(TF2) 노드 반영, 카메라 기울기 실측(수평 가정 중)
+   Vision 3D 위치의 base_link 변환(TF2) 노드 반영
 2. ~~Nav2 footprint 실측 교체~~ ✅ (2026-09-08)
 3. **Pi 전원 보강** — OpenCR 5V 출력이 Pi4+D435i 에 한계(undervoltage 재발,
    troubleshooting 2026-09-01(2)). 부품 결정됨: 배터리(T-plug)→5V/5A 컨버터

@@ -143,16 +143,17 @@ ros2 launch turtlebot3_bringup robot.launch.py
   로봇을 **앞으로 밀면 y 축**이, **좌우로 흔들면 x 축**이 반응 —
   "위에서 봤을 때 시계방향 90° 회전 장착"과 정확히 일치.
   → **URDF yaw=-1.57 이 실물과 부합함을 물리적으로 확정.**
-- 남은 것: IMU **위치(xyz)** 는 여전히 표준값(미실측) — EKF 전 실측 교체.
+- 위치(xyz)는 2026-09-08 보드 중심 실측으로 교체 (3.2 절, 아래 검증 기록).
 
 **RealSense 카메라 TF (2026-09-08 실측·추가)**
 - base_link → 마운트 나사 구멍 실측 x +47.5, y 0, z +48 mm. xacro·check_urdf 통과, 합성 변환 확인
   (RGB 렌즈 58.1, 32.5, 60.5 mm / optical z 축이 로봇 앞을 향함).
 - 카메라 기울기: 실측 결과 수평 → pitch 0 확정.
+- IMU 위치 실측 배포 후 `tf2_echo base_link imu_link` → `[-0.030, 0.000, 0.060]`, yaw `-1.570` ✓ (2026-09-08)
 - Pi 배포(2026-09-08) 후 bringup 정상 기동, 서버에서 실기 확인:
   `tf2_echo base_link camera_color_optical_frame` → Translation `[0.058, 0.033, 0.060]`,
   RPY `[-1.571, 0, -1.571]` ✓ / `camera_link` → `[0.058, 0.018, 0.060]` ✓ / `base_scan` 기존값 유지 ✓
-  (기울기는 수평 가정 — 실측 시 pitch 반영).
+  (기울기 실측 수평 → pitch 0 확정).
 
 ## 6. 다음 단계
 
