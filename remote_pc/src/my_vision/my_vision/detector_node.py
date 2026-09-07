@@ -21,7 +21,8 @@
 #
 # [모델] RF-DETR (Apache-2.0, COCO 사전학습) — rfdetr 1.9 의 Nano/Small/Medium/Large.
 #   가중치는 RF_HOME(=weights_dir) 에 없으면 첫 실행 때 자동 다운로드되어 캐시된다.
-#   TensorRT 변환은 다음 단계 (ONNX export 지원).
+# [백엔드] backend:=torch(기본, rfdetr predict) | tensorrt(엔진; 없으면 이 컨테이너에서 빌드·캐시)
+#   — backends.py 참고. 둘 다 같은 출력 계약.
 # =============================================================================
 import os
 import time
@@ -35,6 +36,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, CompressedImage
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
+from my_vision.backends import TensorRTBackend, TorchBackend
 from my_vision.camera_io import FramePairer, decode_color, decode_depth_mm, deproject, depth_in_box
 
 
@@ -43,6 +45,8 @@ class DetectorNode(Node):
     def __init__(self):
         super().__init__('detector')
         self.declare_parameter('model', 'medium')          # RF-DETR 크기: nano | small | medium | large
+        self.declare_parameter('backend', 'torch')         # torch | tensorrt
+        self.declare_parameter('fp16', True)               # tensorrt 엔진 정밀도
         self.declare_parameter('weights_dir', '/overlay_ws/models')
         self.declare_parameter('threshold', 0.5)           # 검출 점수 임계값
         self.declare_parameter('resolution', 0)            # RF-DETR 입력 해상도. 0 = 모델 기본값 (크기별로 다름)
@@ -58,8 +62,9 @@ class DetectorNode(Node):
         self.jpeg_params = [cv2.IMWRITE_JPEG_QUALITY, p('jpeg_quality').value]
         self.log_period = p('log_period_sec').value
 
-        self.model, self.class_names = self._load_model(
-            p('model').value, Path(p('weights_dir').value), p('resolution').value)
+        self.backend, self.class_names = self._load_model(
+            p('model').value, p('backend').value, Path(p('weights_dir').value),
+            p('resolution').value, p('fp16').value)
 
         qos = qos_profile_sensor_data
         self.pub_det = self.create_publisher(Detection2DArray, '/vision/detections', 10)
@@ -77,7 +82,7 @@ class DetectorNode(Node):
         self.get_logger().info('구독 시작 — 카메라 프레임 대기 중')
 
     # ------------------------------------------------------------------ 모델
-    def _load_model(self, size, weights_dir, resolution):
+    def _load_model(self, size, backend, weights_dir, resolution, fp16):
         weights_dir.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault('RF_HOME', str(weights_dir))   # rfdetr 가중치 캐시 위치 (import 전에)
         import torch
@@ -96,7 +101,15 @@ class DetectorNode(Node):
         ckpt_names = getattr(getattr(model, 'model', None), 'class_names', None)
         names = {i: n for i, n in enumerate(ckpt_names)} if ckpt_names else dict(COCO_CLASSES)
         self.get_logger().info(f'모델 준비 완료 (입력 {res}px, 클래스 {len(names)}개)')
-        return model, names
+        if backend == 'tensorrt':
+            be = TensorRTBackend(model, size, res, len(names), weights_dir, self.threshold, fp16,
+                                 log=self.get_logger().info)
+            del model                       # 엔진이 있으니 torch 모델은 GPU 에서 내린다
+            torch.cuda.empty_cache()
+        else:
+            be = TorchBackend(model, self.threshold)
+        self.get_logger().info(f'백엔드: {be.name}')
+        return be, names
 
     # ------------------------------------------------------------------ 콜백
     def _on_info(self, msg):
@@ -115,12 +128,12 @@ class DetectorNode(Node):
 
         t0 = time.monotonic()
         rgb = cv2.cvtColor(color, cv2.COLOR_BGR2RGB)   # ([:, :, ::-1] 은 음수 stride 뷰라 torch 가 거부)
-        dets = self.model.predict(rgb, threshold=self.threshold)
+        xyxy, confs, cids = self.backend.infer(rgb)
         self.infer_ms.append((time.monotonic() - t0) * 1000)
 
         out = Detection2DArray()
         out.header = color_msg.header
-        for (x1, y1, x2, y2), score, cid in zip(dets.xyxy, dets.confidence, dets.class_id):
+        for (x1, y1, x2, y2), score, cid in zip(xyxy, confs, cids):
             name = self.class_names.get(int(cid), str(cid))
             if self.class_filter and name not in self.class_filter:
                 continue

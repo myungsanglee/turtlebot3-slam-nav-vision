@@ -141,5 +141,15 @@ RUN pip install --no-cache-dir \
 #   torch 레이어 캐시를 유지한다.
 RUN pip install --no-cache-dir "numpy<2"
 
+# --- TensorRT 경로 (ONNX export + 엔진 빌드·추론을 전부 이 컨테이너 안에서) ---
+#   rfdetr[onnx]: onnx/onnxsim/graphsurgeon/polygraphy (export 용).
+#   ★ TensorRT 는 `rfdetr[tensorrt]` 가 끌어오는 메타 패키지 `tensorrt` 대신 `tensorrt-cu12` 를
+#     명시한다 — 메타 패키지는 cu13 변종을 고르는데(실측) 위 torch 는 CUDA 12.8 이라 한 프로세스에
+#     CUDA 런타임 두 세대가 섞인다. numpy<2 는 같은 명령에 넣어 고정 유지.
+#   엔진(.trt)은 TensorRT 버전·GPU 에 묶여 이식 불가 → 이미지에 굽지 않고 첫 실행 때
+#   /overlay_ws/models/trt/ 에 빌드·캐시한다 (my_vision/backends.py).
+RUN pip install --no-cache-dir "rfdetr[onnx]==1.9.4" "tensorrt-cu12==10.15.1.29" \
+      polygraphy onnxruntime-gpu "numpy<2"
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

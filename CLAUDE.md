@@ -76,7 +76,7 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 | Localization | AMCL 또는 slam_toolbox localization 모드 | 지도 완성 후 주행 단계 |
 | 원격 통신 | **zenoh-bridge-ros2dds** | Fast DDS Discovery Server 의 VPN 한계로 전환 (3번) |
 | 카메라 | **자체 pyrealsense2 노드** (`rs_camera_node.py`) | D435i. 공식 realsense2_camera 는 Pi4+RSUSB 에서 RGB 컨트롤 경로(XU 캘리브레이션)가 세션 단위로 간헐 불통 → 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 자체 해결 (docs/realsense_bringup.md). librealsense 는 RSUSB 소스 빌드 (troubleshooting 08-27) |
-| Vision AI | **RF-DETR** (PyTorch CUDA, Apache-2.0) → TensorRT 예정 | `my_vision/detector_node`: `/camera/*` 구독→검출→정렬 depth 로 거리·3D 위치→`Detection2DArray`. RTMDet 은 mmcv 설치 부담으로 제외. 컨테이너 `vision` 스테이지(docker/Dockerfile)에 torch+rfdetr |
+| Vision AI | **RF-DETR** (Apache-2.0) + **TensorRT fp16** | `my_vision/detector_node`: `/camera/*` 구독→검출→정렬 depth 로 거리·3D 위치→`Detection2DArray`. backend torch(12ms)/tensorrt(7ms). 엔진은 이식 불가라 **컨테이너 안에서 빌드·캐시**(models/trt/, 환경명 포함). RTMDet 은 mmcv 설치 부담으로 제외. 컨테이너 `vision` 스테이지에 torch cu128 + rfdetr + tensorrt-cu12 |
 | 시각화 | RViz2 (+ 추후 Foxglove) | SLAM+Nav+영상 통합 .rviz 한 창 |
 
 ## 5. 커스텀 로봇 — 반드시 반영할 것 (표준 데모 그대로 못 씀)
@@ -175,6 +175,13 @@ turtlebot3-slam-nav-vision/
   전환 (위 3번). 엔드투엔드 검증 완료: /scan 5Hz, /odom 20Hz, 카메라 compressed
   15fps(≈1MB/s), tf/camera_info 정상. Pi 브리지 systemd 서비스 등록.
 
+- **my_vision (서버, GPU)** — RF-DETR 검출 + 정렬 depth 로 거리·카메라 좌표 3D 위치 →
+  `/vision/detections`(Detection2DArray, pose=3D 점) + `/vision/annotated/compressed`.
+  backend torch(12ms) / **tensorrt fp16(7ms, 450MB)** — 엔진은 컨테이너 안에서 빌드해
+  `models/trt/<크기-해상도-TRT버전-GPU>/` 에 캐시(이식 불가 특성 대응). 전·후처리는 rfdetr
+  함수 재사용으로 세 경로(torch/TRT/ONNX) 수치 일치 확인. 뷰어 `camera_viewer` 포함.
+  상세는 `docs/my_vision.md`
+
 **다음 (우선순위 순)**
 1. **base_link→camera_link TF 추가** — 카메라 장착 위치 실측 → URDF 반영 (5번 규칙)
 2. **Nav2 footprint 실측 교체** — nav2_params.yaml 의 robot_radius(임시 0.105) →
@@ -185,11 +192,8 @@ turtlebot3-slam-nav-vision/
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
 5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — 전에 IMU 위치 실측
 6. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
-7. **Vision AI 노드 (진행 중, 2026-09-04~)** — `my_vision` 패키지: RF-DETR 검출 + 정렬
-   depth 로 거리·카메라 좌표 3D 위치 → `/vision/detections`(Detection2DArray) +
-   `/vision/annotated/compressed`. 컨테이너에 torch(cu128)+rfdetr 추가(`vision` 스테이지).
-   다음: 실기 검증 → docs/my_vision.md → TensorRT(ONNX export) 변환 → camera_link TF 로
-   base_link 좌표 변환
+7. ~~Vision AI 노드~~ ✅ 완료 (2026-09-04~07) — 아래 "완료" 참고. 남은 것: camera_link TF 로
+   base_link 좌표 변환(1번 실측 후), 필요 시 추적/파인튜닝/INT8
 
 ## 9. 규칙 / 선호
 

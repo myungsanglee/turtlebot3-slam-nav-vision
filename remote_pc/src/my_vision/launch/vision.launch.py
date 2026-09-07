@@ -4,6 +4,7 @@
 # [실행] 서버 컨테이너에서 (colcon build 후)
 #   ros2 launch my_vision vision.launch.py
 #   ros2 launch my_vision vision.launch.py threshold:=0.4 model:=large
+#   ros2 launch my_vision vision.launch.py backend:=tensorrt          # 첫 실행 시 엔진 빌드
 #   결과 확인: ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed
 #             ros2 topic echo /vision/detections
 # =============================================================================
@@ -19,6 +20,8 @@ def generate_launch_description():
                               choices=['nano', 'small', 'medium', 'large'],
                               description='RF-DETR 크기 (medium ≈ 구 base)'),
         DeclareLaunchArgument('threshold', default_value='0.5', description='검출 점수 임계값'),
+        DeclareLaunchArgument('backend', default_value='torch', choices=['torch', 'tensorrt'],
+                              description='tensorrt: 엔진이 없으면 첫 실행 때 이 컨테이너에서 빌드(수 분)'),
         DeclareLaunchArgument('weights_dir', default_value='/overlay_ws/models',
                               description='가중치 캐시 디렉터리 (호스트 remote_pc/models)'),
     ]
@@ -28,6 +31,7 @@ def generate_launch_description():
             'model': LaunchConfiguration('model'),
             'threshold': LaunchConfiguration('threshold'),
             'weights_dir': LaunchConfiguration('weights_dir'),
+            'backend': LaunchConfiguration('backend'),
         }],
     )
     return LaunchDescription([*declares, detector])

@@ -36,7 +36,7 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | Navigation | Nav2 |
 | 원격 통신 | **Zenoh Bridge** (zenoh-bridge-ros2dds) — Fast DDS 의 VPN 한계 진단 후 전환 |
 | 카메라 | RealSense D435i — **자체 pyrealsense2 노드** (공식 노드의 Pi4 USB 불안정을 캘리브레이션 캐시·프로세스 분리로 우회), 컬러 + 컬러 정렬 depth compressed 원격 전송 |
-| Vision AI | **RF-DETR** (PyTorch CUDA) + 정렬 depth 거리 → 3D 위치. TensorRT 변환 예정 |
+| Vision AI | **RF-DETR** + **TensorRT**(fp16, 컨테이너 안에서 엔진 빌드·캐시) + 정렬 depth 거리 → 3D 위치 |
 | 센서 융합 | robot_localization (EKF) — 예정 |
 | 시각화 | RViz2 |
 
@@ -64,7 +64,7 @@ turtlebot3-slam-nav-vision/
 | **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전) | ✅ Pi 배포·TF 검증 | [docs/description.md](./docs/description.md) |
 | **realsense_bringup** | D435i 브링업 — **자체 pyrealsense2 노드**: 컬러 + 컬러에 정렬된 depth(PNG 16bit, mm) compressed publish. 공식 노드가 Pi4 에서 간헐 실패하는 문제를 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 해결 | ✅ 원격 수신 검증 (기본 6fps, 15fps 까지 확인) | [docs/realsense_bringup.md](./docs/realsense_bringup.md) |
 | **인프라/네트워크** | Tailscale + **Zenoh Bridge** (Fast DDS Discovery Server 의 VPN 한계를 진단 후 전환) | ✅ 검증 완료 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
-| **my_vision** | RF-DETR 물체 검출 + 정렬 depth 로 거리·카메라 좌표 3D 위치 (`Detection2DArray`), 주석 영상, 카메라 뷰어 | 🔧 개발 중 | [docs/my_vision.md](./docs/my_vision.md) |
+| **my_vision** | RF-DETR 물체 검출(torch/**TensorRT** 백엔드) + 정렬 depth 로 거리·카메라 좌표 3D 위치 (`Detection2DArray`), 주석 영상, 카메라 뷰어 | ✅ 실물 검증 (TensorRT 7ms) | [docs/my_vision.md](./docs/my_vision.md) |
 
 ## 시작하기
 
@@ -116,7 +116,7 @@ ros2 run my_vision camera_viewer --snapshot /tmp/cam.jpg           # 창 없이 
 
 ```bash
 ros2 launch my_vision vision.launch.py            # RF-DETR(medium) 검출 → /vision/detections, /vision/annotated/compressed
-#   크기 변경: model:=nano|small|medium|large
+#   크기 변경: model:=nano|small|medium|large / TensorRT: backend:=tensorrt (첫 실행 시 엔진 빌드 ~1분)
 ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 보기
 ros2 topic echo /vision/detections               # 클래스·점수·박스·카메라 좌표 3D 위치
 ```

@@ -28,9 +28,14 @@ remote_pc/src/my_vision/
 ├── package.xml / setup.py (ament_python)
 ```
 
+```
+├── my_vision/backends.py  # 추론 백엔드: torch(rfdetr predict) / tensorrt(엔진 빌드·캐시·실행)
+```
+
 실행 환경은 컨테이너 이미지의 `vision` 스테이지(docker/Dockerfile): ROS Humble 위에
-PyTorch(CUDA 12.8 휠) + `rfdetr` + `vision_msgs`. 가중치는 `RF_HOME=/overlay_ws/models`
-(호스트 `remote_pc/models`, gitignore)에 첫 실행 때 자동 다운로드·캐시된다.
+PyTorch(CUDA 12.8 휠) + `rfdetr` + `vision_msgs` + TensorRT(`tensorrt-cu12`) + ONNX 도구.
+가중치는 `RF_HOME=/overlay_ws/models`(호스트 `remote_pc/models`, gitignore)에 첫 실행 때
+자동 다운로드·캐시된다.
 
 ## 3. 출력 토픽
 
@@ -65,14 +70,34 @@ camera_info 의 인트린식 K). 거리 Z 를 알면 이걸 거꾸로 풀 수 �
 `X = (u−ppx)/fx·Z`, `Y = (v−ppy)/fy·Z`. 박스 중심 픽셀과 4.2 의 거리를 넣으면 물체의 3D
 위치가 나온다 (`camera_io.deproject()`). 좌표계는 광학 좌표(z 앞, x 오른쪽, y 아래).
 
-### 4.4 짝 맞춤과 QoS
+### 4.4 TensorRT 백엔드 — "엔진은 실행할 환경에서 만든다"
+TensorRT 는 신경망을 특정 GPU 에 맞춰 최적화한 **엔진(.trt)** 으로 컴파일해 돌리는 NVIDIA 런타임이다.
+빠르지만 엔진 파일은 **빌드한 TensorRT 버전·CUDA·GPU 아키텍처에 묶여 이식되지 않는다.**
+호스트에서 만든 엔진을 컨테이너에서 쓰면 버전이 다를 때 로드가 실패한다. 그래서:
+- 이식 가능한 산출물은 **ONNX** 뿐이고, 엔진은 "실행할 환경에서 생성하는 캐시"로 취급한다.
+- `backend:=tensorrt` 첫 실행 때 rfdetr 의 `export(format='tensorrt')` 가 **이 컨테이너 안에서**
+  ONNX → 엔진(fp16)을 빌드한다 (TensorRT Python API/polygraphy, `trtexec` 불필요, A6000 실측 44초).
+- 캐시 디렉터리 이름에 환경을 새긴다: `models/trt/rf-detr-{크기}-{해상도}-trt{TRT버전}-{GPU}/`
+  → 이미지나 GPU 가 바뀌면 자동으로 다시 빌드. 이후 실행은 엔진만 로드(초 단위).
+- 실행: 엔진의 I/O 텐서마다 torch 로 GPU 버퍼를 잡아 주소를 고정(`set_tensor_address`)하고
+  전용 CUDA 스트림에서 `execute_async_v3`. 전처리(리사이즈 규약·ImageNet 정규화)와 후처리
+  (sigmoid·배경 슬롯 제외·top-k)는 **rfdetr 의 함수를 그대로 import** 해 torch 경로와 수치가
+  일치하게 한다 — 같은 프레임에서 torch/TensorRT/ONNX 세 경로의 점수가 동일함을 확인했다.
+- 엔진 로드 후 torch 모델은 GPU 에서 내려 메모리를 아낀다.
+
+### 4.5 짝 맞춤과 QoS
 color/depth 는 best effort 로 오므로 한쪽이 유실될 수 있다. 세 토픽의 `stamp` 가 같다는
 계약을 이용해 `FramePairer` 가 같은 stamp 끼리만 짝을 지어 처리한다(짝이 안 맞은 옛 프레임은 버림).
 구독 QoS 는 퍼블리셔와 같은 `sensor_data`(best effort) — 다르면 매칭이 안 돼 아무것도 안 온다.
 
-## 5. 실측 (2026-09-04, A6000, medium, 카메라 640x480@6fps)
+## 5. 실측 (A6000, medium 576px, 카메라 640x480@6fps)
 
-- 추론 12ms/프레임, 처리율 6fps(입력 fps 에 묶임 — 카메라를 15fps 로 올려도 여유 충분)
+| 백엔드 | 추론 지연 | GPU 상주 메모리 | 비고 |
+|---|---|---|---|
+| torch (기본) | 12ms | (torch 모델 전체) | 설치만으로 동작, 파인튜닝·export 의 기준 |
+| tensorrt fp16 | **7ms** | **450MB** | 첫 실행 시 엔진 빌드 44초, 이후 캐시. 점수는 torch 와 동일 |
+
+- 처리율은 둘 다 6fps(입력 fps 에 묶임 — 카메라를 15fps 로 올려도 여유 충분)
 - 검출 예: refrigerator 1.47m, chair 1.78m, book 1.97m — 뷰어의 중앙 십자선 거리(1.96m)와 일치
 - 주석 영상에서 박스가 물체 윤곽과 맞고 거리가 물체별로 구분됨 (camera_viewer 로 확인)
 
@@ -82,11 +107,12 @@ color/depth 는 best effort 로 오므로 한쪽이 유실될 수 있다. 세 �
 cd /overlay_ws && colcon build --symlink-install && source install/setup.bash   # 최초 1회
 ros2 launch my_vision vision.launch.py                     # 기본 medium, threshold 0.5
 ros2 launch my_vision vision.launch.py model:=small threshold:=0.4
+ros2 launch my_vision vision.launch.py backend:=tensorrt   # 첫 실행 시 이 컨테이너에서 엔진 빌드(~1분), 이후 캐시
 ros2 topic echo /vision/detections                         # 검출 목록
 export DISPLAY=:0; ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 눈으로
 ```
-파라미터: `model`, `threshold`, `resolution`(0=모델 기본), `depth_roi_frac`(0.5), `class_filter`
-(예: `['person','chair']`), `weights_dir`. 로그에 5초마다 fps·추론 시간·검출 요약이 찍힌다.
+파라미터: `model`, `backend`(torch|tensorrt), `fp16`, `threshold`, `resolution`(0=모델 기본),
+`depth_roi_frac`(0.5), `class_filter`(예: `['person','chair']`), `weights_dir`. 로그에 5초마다 fps·추론 시간·검출 요약이 찍힌다.
 
 ## 7. 개발 중 부딪힌 것 (기록)
 
@@ -96,9 +122,15 @@ export DISPLAY=:0; ros2 run my_vision camera_viewer --color-topic /vision/annota
   COCO 클래스는 `rfdetr.assets.coco_classes`, 가중치 캐시는 `RF_HOME`. 크기별 입력 해상도가
   달라(medium 576, 32 의 배수) 해상도를 강제하지 않고 모델 기본값을 쓴다.
 - `img[:, :, ::-1]`(BGR→RGB) 은 음수 stride 뷰라 torch 가 거부 → `cv2.cvtColor`.
+- `pip install rfdetr[tensorrt]` 는 메타 패키지 `tensorrt` 를 통해 **cu13 변종**을 골랐다(실측) — torch 는
+  CUDA 12.8 이라 한 프로세스에 CUDA 런타임 두 세대가 섞인다. `tensorrt-cu12` 를 명시해 해결.
+- rfdetr export 의 엔진 파일명은 버전마다 다르다(`rfdetr-medium.trt`) → 이름을 가정하지 않고
+  export 반환 경로 / 디렉터리의 `*.trt` 를 쓴다.
+- "검출 0" 이 TensorRT 버그처럼 보였지만, 같은 프레임 비교로 세 경로가 동일함을 확인 — 장면의
+  최고 점수(0.47)가 임계값(0.5) 아래였을 뿐. 백엔드를 의심하기 전에 **같은 입력으로 나란히 비교**할 것.
 
 ## 8. 다음 단계
 
-1. **TensorRT 변환** — rfdetr 의 ONNX export → `trtexec`/TensorRT 런타임으로 추론 (지연·GPU 점유 ↓).
-2. **base_link 좌표 변환** — camera_link TF 실측 반영 후 3D 위치를 로봇 좌표로 (TF2).
-3. 필요 시 커스텀 데이터로 파인튜닝 (rfdetr `train()`), 추적(ID 유지), RViz 마커 표시.
+1. **base_link 좌표 변환** — camera_link TF 실측 반영 후 3D 위치를 로봇 좌표로 (TF2).
+2. 필요 시 커스텀 데이터로 파인튜닝 (rfdetr `train()`), 추적(ID 유지), RViz 마커 표시.
+3. TensorRT 는 fp16 까지 적용 — 필요하면 INT8(캘리브레이션 데이터 필요) 검토.
