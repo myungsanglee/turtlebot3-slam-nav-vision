@@ -115,9 +115,9 @@ ros2 run my_vision camera_viewer --snapshot /tmp/cam.jpg           # 창 없이 
 ### 2-1. Vision AI — 물체 검출 + 거리 (서버, GPU)
 
 ```bash
-ros2 launch my_vision vision.launch.py            # RF-DETR(medium) 검출 → /vision/detections, /vision/annotated/compressed
-#   크기 변경: model:=nano|small|medium|large / TensorRT: backend:=tensorrt (첫 실행 시 엔진 빌드 ~1분)
-#   빌드 옵션: trt_precision:=fp32|fp16|int8 trt_opt_level:=0..5 trt_calib_dir:=... (독립 빌드/벤치: ros2 run my_vision build_trt --help)
+ros2 launch my_vision vision.launch.py            # 설정: remote_pc/src/my_vision/config/vision_params.yaml (모델·가중치 경로·임계값·백엔드·TensorRT 옵션)
+#   다른 설정 파일: params_file:=... / 급한 덮어쓰기: threshold:=0.3 backend:=tensorrt weights:=/overlay_ws/models/my.pth
+#   전이학습 모델: YAML 의 weights 에 .pth 경로 (클래스 수 자동 추론, 엔진 캐시 자동 분리)
 ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 보기
 ros2 topic echo /vision/detections               # 클래스·점수·박스·카메라 좌표 3D 위치
 ```

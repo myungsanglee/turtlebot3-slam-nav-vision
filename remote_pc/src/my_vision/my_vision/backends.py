@@ -42,7 +42,8 @@ class TensorRTBackend:
     DEFAULT_OPTS = dict(precision='fp16', opt_level=3, workspace_gib=4.0, tf32=True,
                         timing_cache=True, calib_dir='', verify=True)
 
-    def __init__(self, model, size, resolution, num_classes, weights_dir, threshold, opts=None, log=print):
+    def __init__(self, model, size, resolution, num_classes, weights_dir, threshold, opts=None,
+                 ckpt_tag='coco', log=print):
         import tensorrt as trt
         import torch
         from rfdetr.export._onnx.inference import (_exclude_background_class, _preprocess_pil_to_nchw,
@@ -52,9 +53,9 @@ class TensorRTBackend:
         self.threshold = threshold
         o = dict(self.DEFAULT_OPTS, **(opts or {}))
 
-        # 캐시 키에 환경(TRT 버전·GPU)과 정밀도를 새긴다 → 바뀌면 자동 재빌드, fp16/int8 이 섞이지 않음
+        # 캐시 키에 체크포인트(ckpt_tag)·정밀도·환경(TRT 버전·GPU)을 새긴다 → 무엇이 바뀌든 자동 재빌드, 서로 섞이지 않음
         gpu = re.sub(r'[^A-Za-z0-9]+', '-', torch.cuda.get_device_name(0)).strip('-').lower()
-        self.dir = Path(weights_dir) / 'trt' / f'rf-detr-{size}-{resolution}-{o["precision"]}-trt{trt.__version__}-{gpu}'
+        self.dir = Path(weights_dir) / 'trt' / f'rf-detr-{size}-{resolution}-{ckpt_tag}-{o["precision"]}-trt{trt.__version__}-{gpu}'
         engine_path = self.dir / 'engine.trt'
         if not engine_path.exists():
             self.dir.mkdir(parents=True, exist_ok=True)

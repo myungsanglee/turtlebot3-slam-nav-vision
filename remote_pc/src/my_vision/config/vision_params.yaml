@@ -1,0 +1,45 @@
+# =============================================================================
+# vision_params.yaml — my_vision 검출 노드 설정 (단일 소스)
+#
+# 이 파일을 고친 뒤 `ros2 launch my_vision vision.launch.py` 하면 그대로 적용된다.
+# 다른 파일을 쓰려면 `params_file:=/path/to/my.yaml`, 값 하나만 급히 바꾸려면
+# `threshold:=0.3` 처럼 런치 인자로 주면 그 값만 이 파일을 덮어쓴다.
+# 노드 이름(detector)은 launch 의 name 과 일치해야 한다.
+# =============================================================================
+detector:
+  ros__parameters:
+
+    # ---------------- 모델 ----------------
+    model: medium            # RF-DETR 크기: nano | small | medium | large (아키텍처 선택)
+    weights: ''              # '' = 위 크기의 공식 COCO 사전학습 가중치 (weights_dir 에 자동 다운로드·캐시)
+                             # 전이학습(파인튜닝) 모델을 쓰려면 그 .pth 경로: 예) /overlay_ws/models/my_robot.pth
+                             #   - 클래스 수는 체크포인트에서 자동 추론
+                             #   - 아키텍처(model)는 파인튜닝 때 쓴 크기와 같아야 한다
+    class_names: ['']        # 체크포인트에 클래스명이 없을 때 id 순서대로 지정 (rfdetr train() 은 보통 저장함).
+                             # '' 하나만 있으면 "미지정" → 체크포인트 → COCO 순으로 fallback
+    resolution: 0            # 입력 해상도. 0 = 모델 기본값 (medium 576). 크기별 배수 제약이 있어 보통 0
+    threshold: 0.5           # 검출 점수 임계값 (낮출수록 많이·불확실하게 잡음)
+    class_filter: ['']       # 이 이름들만 publish. 예) ['person', 'chair']. '' 하나만 있으면 전체
+    weights_dir: /overlay_ws/models   # 가중치·엔진 캐시 루트 (호스트 remote_pc/models, gitignore)
+
+    # ---------------- 추론 백엔드 ----------------
+    backend: torch           # torch | tensorrt
+                             # tensorrt: 엔진이 없으면 첫 실행 때 이 컨테이너에서 ONNX export→엔진 빌드(~1분) 후
+                             # weights_dir/trt/<크기-해상도-체크포인트-정밀도-TRT버전-GPU>/ 에 캐시
+    trt_precision: fp16      # fp32 | fp16 | int8 (int8 은 trt_calib_dir 필요; 이 조합에선 fp16 대비 이득 없음 — docs 5장)
+    trt_opt_level: 3         # 빌더 최적화 레벨 0(빠른 빌드)~5(최선 엔진, 느린 빌드)
+    trt_workspace_gib: 4.0   # 빌드 시 tactic 시험용 GPU 스크래치 상한
+    trt_tf32: true           # Ampere+ TF32 (엄격 FP32 재현이 필요하면 false)
+    trt_timing_cache: true   # tactic 벤치 결과 캐시로 재빌드 가속
+    trt_calib_dir: ''        # INT8 캘리브레이션 이미지 디렉터리 (camera_viewer --save-dir 로 수집)
+    trt_verify: true         # 빌드 직후 ONNX Runtime 과 비교해 수치 차이를 로그로
+
+    # ---------------- 거리 계산 ----------------
+    depth_roi_frac: 0.5      # 박스 중앙 몇 %를 depth 중앙값 계산에 쓸지 (가장자리는 배경이 섞임)
+
+    # ---------------- 입출력 ----------------
+    color_topic: /camera/color/compressed
+    depth_topic: /camera/depth/compressed
+    info_topic: /camera/color/camera_info
+    jpeg_quality: 80         # 주석 영상(/vision/annotated/compressed) JPEG 품질
+    log_period_sec: 5.0      # fps·추론 시간·검출 요약 로그 주기

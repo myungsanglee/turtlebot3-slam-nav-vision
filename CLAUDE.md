@@ -180,7 +180,8 @@ turtlebot3-slam-nav-vision/
   backend torch(12ms) / **tensorrt fp16(6ms, 450MB)** — 빌더는 자체 `trt_build.py`(TensorRT Python API,
   fp32/fp16/int8·opt level·타이밍 캐시 등, INT8 은 이 조합에서 이득 없음 확인) — 엔진은 컨테이너 안에서 빌드해
   `models/trt/<크기-해상도-TRT버전-GPU>/` 에 캐시(이식 불가 특성 대응). 전·후처리는 rfdetr
-  함수 재사용으로 세 경로(torch/TRT/ONNX) 수치 일치 확인. 뷰어 `camera_viewer` 포함.
+  함수 재사용으로 세 경로(torch/TRT/ONNX) 수치 일치 확인. 설정은 `config/vision_params.yaml`
+  단일 소스(가중치 경로로 전이학습 모델 교체, 엔진 캐시는 체크포인트별 분리). 뷰어 `camera_viewer` 포함.
   상세는 `docs/my_vision.md`
 
 **다음 (우선순위 순)**

@@ -131,16 +131,42 @@ color/depth 는 best effort 로 오므로 한쪽이 유실될 수 있다. 세 �
 
 ## 6. 사용법 (서버 컨테이너)
 
+### 6.1 설정은 `config/vision_params.yaml` 하나로
+노드의 모든 설정(모델·가중치·임계값·백엔드·TensorRT 빌드 옵션·거리 계산·토픽)은
+`remote_pc/src/my_vision/config/vision_params.yaml` 에 주석과 함께 있다. **이 파일을 고친 뒤 실행하면
+그대로 적용된다** (symlink-install 이라 재빌드 불필요). 값 하나만 급히 바꿀 땐 런치 인자로:
+
 ```bash
 cd /overlay_ws && colcon build --symlink-install && source install/setup.bash   # 최초 1회
-ros2 launch my_vision vision.launch.py                     # 기본 medium, threshold 0.5
-ros2 launch my_vision vision.launch.py model:=small threshold:=0.4
-ros2 launch my_vision vision.launch.py backend:=tensorrt   # 첫 실행 시 이 컨테이너에서 엔진 빌드(~1분), 이후 캐시
-ros2 topic echo /vision/detections                         # 검출 목록
+ros2 launch my_vision vision.launch.py                                   # config/vision_params.yaml
+ros2 launch my_vision vision.launch.py params_file:=/overlay_ws/my.yaml  # 다른 설정 파일
+ros2 launch my_vision vision.launch.py threshold:=0.3 backend:=tensorrt  # 준 인자만 YAML 을 덮어씀
+ros2 topic echo /vision/detections                                       # 검출 목록
 export DISPLAY=:0; ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 눈으로
 ```
-파라미터: `model`, `backend`(torch|tensorrt), `fp16`, `threshold`, `resolution`(0=모델 기본),
-`depth_roi_frac`(0.5), `class_filter`(예: `['person','chair']`), `weights_dir`. 로그에 5초마다 fps·추론 시간·검출 요약이 찍힌다.
+런치 인자로 덮어쓸 수 있는 것: `model`, `weights`, `threshold`, `backend`, `trt_precision`,
+`trt_opt_level`, `trt_calib_dir`. 나머지는 YAML 에서.
+
+### 6.2 다른 모델 / 전이학습 모델 쓰기
+```yaml
+model: medium                                   # 아키텍처 (파인튜닝 때 쓴 크기와 같아야 함)
+weights: /overlay_ws/models/my_robot.pth        # '' 이면 공식 COCO 사전학습, 경로면 그 체크포인트
+class_names: ['']                               # 체크포인트에 이름이 없을 때만 id 순서대로
+```
+- `weights` 를 주면 rfdetr 이 그 `.pth` 를 로드하고 **클래스 수를 체크포인트에서 자동 추론**한다.
+  클래스명은 체크포인트 저장값 → `class_names` → COCO 표 순으로 쓴다 (rfdetr `train()` 은 보통 저장).
+- `backend: tensorrt` 면 엔진 캐시 디렉터리 이름에 **체크포인트 태그(파일명+해시)** 가 들어가
+  `models/trt/rf-detr-medium-576-my_robot-1a2b3c4d-fp16-trt…/` 처럼 분리된다 — COCO 모델의 엔진과
+  절대 섞이지 않고, 체크포인트를 바꾸면 자동으로 새 엔진을 빌드한다.
+- 공식 가중치를 오프라인으로 쓰려면 `weights_dir`(기본 `/overlay_ws/models`)에 `rf-detr-<크기>.pth` 를
+  두면 된다 (MD5 가 맞으면 다운로드 생략).
+
+실제 검증: 공식 `.pth` 를 다른 이름으로 복사해 `weights` 로 지정 + tensorrt → 새 캐시
+`…-my_finetuned-eb849b85-fp16-…` 에 엔진 빌드(39초) 후 정상 검출.
+
+### 6.3 로그
+5초마다 `fps | 추론 ms | 검출 요약`, 시작 시 가중치 출처·클래스명 출처·백엔드·엔진 경로가 찍힌다.
+독립 엔진 빌드/벤치: `ros2 run my_vision build_trt --help`.
 
 ## 7. 개발 중 부딪힌 것 (기록)
 
