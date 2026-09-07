@@ -13,6 +13,8 @@
 #   ros2 run my_vision camera_viewer --save-dir /overlay_ws/models/calib --save-count 50   # 원본 color 프레임 저장 (INT8 캘리브레이션용)
 # =============================================================================
 import argparse
+import os
+import sys
 import time
 
 import cv2
@@ -97,7 +99,13 @@ class CameraViewer(Node):
 
     def _gui_tick(self):
         if self.dirty and self.last_frame is not None:
-            cv2.imshow('rs_camera viewer  [q: quit]', self.last_frame)
+            try:
+                cv2.imshow('rs_camera viewer  [q: quit]', self.last_frame)
+            except cv2.error as e:   # DISPLAY 없음/접근 불가 → GTK 초기화 실패
+                self.get_logger().error(
+                    '창을 열 수 없음 (DISPLAY 문제). 서버 물리 세션 번호로 `export DISPLAY=:0` 후 다시 실행하거나, '
+                    f'창 없이 --snapshot /tmp/cam.jpg 로 한 장 저장하세요. ({str(e).splitlines()[-1][:80]})')
+                raise SystemExit(1)
             self.dirty = False
         if cv2.waitKey(1) & 0xFF == ord('q'):
             raise SystemExit(0)
@@ -111,6 +119,9 @@ def main():
     ap.add_argument('--save-dir', help='원본 color 프레임(JPEG)을 이 디렉터리에 저장 (INT8 캘리브레이션 데이터 수집)')
     ap.add_argument('--save-count', type=int, default=50, help='--save-dir 저장 장수')
     args, ros_args = ap.parse_known_args()
+    if not args.snapshot and not args.save_dir and not os.environ.get('DISPLAY'):
+        sys.exit('DISPLAY 가 비어 있어 창을 열 수 없습니다. `export DISPLAY=:0` (서버 물리 세션 번호, `who` 로 확인) 후 '
+                 '다시 실행하거나, --snapshot /tmp/cam.jpg 또는 --save-dir 로 창 없이 사용하세요.')
     rclpy.init(args=ros_args)
     node = CameraViewer(args.color_topic, args.snapshot, args.save_dir, args.save_count)
     try:
