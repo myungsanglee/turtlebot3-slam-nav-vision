@@ -86,12 +86,12 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 - **바퀴 폭(wheel separation): 표준과 동일** → 휠 오도메트리 파라미터는 그대로 OK.
 - ✅ **LDS(라이다) 위치/높이 다름** → `base_link → base_scan` 실측 보정 **완료**
   (xyz=-0.100,0,0.125 — docs/description.md). IMU 회전(yaw=-1.57)도 반영·
-  물리 검증 완료(전진 밀기→y축 반응 확인). IMU 위치 xyz 는 미실측(EKF 전 교체).
+  물리 검증 완료(전진 밀기→y축 반응 확인). IMU 위치 xyz 도 실측(-0.030,0,0.060 보드 중심, 2026-09-08).
 - ✅ **RealSense TF 추가** → `base_link → camera_bottom_screw_frame` 실측(x 47.5, y 0,
   z 48 mm, 2026-09-08) + 인텔 공식 오프셋으로 camera_link/depth/color/optical 체인 URDF 반영.
   Vision 의 3D 위치를 base_link 로 옮기는 전제 완성 (기울기는 수평 가정).
-- ⏳ Nav2 풋프린트: `robot_radius`(임시 0.105) 대신 실제 외형 실측 다각형
-  `footprint` 로 교체.
+- ✅ Nav2 풋프린트: 실측 직사각형 `footprint`(앞 +0.062 카메라 전면 / 뒤 -0.220 / 좌우 ±0.090)
+  로 교체 (2026-09-08). 실주행에서 inflation 과 함께 미세 조정 예정.
 
 > 이 "커스텀 로봇에 맞춘 TF/URDF 보정" 과정 자체가 포트폴리오의 차별점이므로
 > 문서화(README, 커밋 메시지)를 잘 남긴다.
@@ -188,13 +188,12 @@ turtlebot3-slam-nav-vision/
 **다음 (우선순위 순)**
 1. ~~base_link→camera_link TF~~ ✅ (2026-09-08, Pi 배포·tf2_echo 실기 검증 완료) — 남은 것:
    Vision 3D 위치의 base_link 변환(TF2) 노드 반영, 카메라 기울기 실측(수평 가정 중)
-2. **Nav2 footprint 실측 교체** — nav2_params.yaml 의 robot_radius(임시 0.105) →
-   실측 다각형 footprint
+2. ~~Nav2 footprint 실측 교체~~ ✅ (2026-09-08)
 3. **Pi 전원 보강** — OpenCR 5V 출력이 Pi4+D435i 에 한계(undervoltage 재발,
    troubleshooting 2026-09-01(2)). 부품 결정됨: 배터리(T-plug)→5V/5A 컨버터
    (Pololu D24V50F5 또는 UBEC) → Pi 직결. 개발 중엔 벽 어댑터로 대체 가능
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
-5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — 전에 IMU 위치 실측
+5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — IMU 위치·방향 실측 완료, 착수 가능
 6. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
 7. ~~Vision AI 노드~~ ✅ 완료 (2026-09-04~07) — 아래 "완료" 참고. 남은 것: camera_link TF 로
    base_link 좌표 변환(1번 실측 후), 필요 시 추적/파인튜닝/INT8

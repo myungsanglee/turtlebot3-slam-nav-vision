@@ -38,6 +38,7 @@ y=왼쪽(+)/오른쪽(−), z=위(+)/아래(−). rpy 중 yaw 는 z축 회전(�
 |---|---|---|---|---|
 | `scan_joint` | LDS 위치 xyz | `-0.032, 0, 0.172` | **`-0.100, 0, 0.125`** | 라이다를 뒤로·낮게 개조 |
 | `imu_joint` | IMU 회전 rpy | `0, 0, 0` | **`0, 0, -1.57`** | OpenCR 을 시계방향 90° 돌려 장착 |
+| `imu_joint` | IMU 위치 xyz | `-0.032, 0, 0.068` | **`-0.030, 0, 0.060`** | OpenCR 보드 기하학적 중심 실측 (2026-09-08) |
 | `camera_mount_joint` (신규) | RealSense 마운트 나사 구멍 xyz | (표준엔 없음) | **`0.0475, 0, 0.048`** | D435i 를 앞쪽 위에 장착 (2026-09-08 실측) |
 
 바꾸지 않은 것: `wheel_*_joint`/`base_joint`(바퀴 폭이 표준과 동일 → 오도메트리
@@ -67,9 +68,10 @@ OpenCR 보드를 **위에서 봤을 때 시계방향 90°** 회전하여 고정�
 = **−1.57 rad**. IMU 데이터(방향/각속도)는 imu_link 프레임 기준으로 해석되는데,
 이 프레임이 실제 장착 방향과 어긋나면 융합 결과가 틀어진다.
 
-- ★ **위치(xyz)는 아직 미실측**이라 표준값(`-0.032 0 0.068`)을 유지했다.
-  IMU 는 현재 SLAM 에서 쓰지 않으므로 당장 문제는 없지만,
-  **robot_localization(EKF) 단계 전에 IMU 위치도 실측하여 교체**해야 한다.
+- 위치(xyz)는 2026-09-08 **OpenCR 보드의 기하학적 중심**을 실측해 `-0.030 0 0.060` 으로 교체했다
+  (바퀴 축에서 뒤로 30mm, 중앙, base_link 기준 60mm 위). 엄밀히는 보드 위 IMU 칩 위치가 맞지만,
+  이 로봇 속도에선 수 mm 오프셋이 EKF 의 원심가속도 보정에 미치는 영향이 잡음보다 작아
+  보드 중심으로 충분하다. 중요한 건 방향(yaw)이며 그건 물리 검증이 끝났다.
 
 ### 3.3 카메라 — 실측은 한 점, 렌즈 위치는 인텔 공식 오프셋
 
@@ -146,6 +148,7 @@ ros2 launch turtlebot3_bringup robot.launch.py
 **RealSense 카메라 TF (2026-09-08 실측·추가)**
 - base_link → 마운트 나사 구멍 실측 x +47.5, y 0, z +48 mm. xacro·check_urdf 통과, 합성 변환 확인
   (RGB 렌즈 58.1, 32.5, 60.5 mm / optical z 축이 로봇 앞을 향함).
+- 카메라 기울기: 실측 결과 수평 → pitch 0 확정.
 - Pi 배포(2026-09-08) 후 bringup 정상 기동, 서버에서 실기 확인:
   `tf2_echo base_link camera_color_optical_frame` → Translation `[0.058, 0.033, 0.060]`,
   RPY `[-1.571, 0, -1.571]` ✓ / `camera_link` → `[0.058, 0.018, 0.060]` ✓ / `base_scan` 기존값 유지 ✓
@@ -154,7 +157,6 @@ ros2 launch turtlebot3_bringup robot.launch.py
 ## 6. 다음 단계
 
 1. **제자리 회전 정밀 검증** — 공간 확보 시 (위 검증 기록 참고).
-2. **카메라 기울기 확인** — 수평 가정. 숙여 장착돼 있으면 `camera_mount_joint` pitch 반영.
-3. **IMU 위치(xyz) 실측 교체** — robot_localization(EKF) 전.
-4. **Nav2 footprint 실측 반영** — 로봇 외형이 표준과 다르므로 nav2_params.yaml 의
-   robot_radius(임시 0.105) 를 실측 다각형 footprint 로 교체.
+2. ~~카메라 기울기~~ 수평 확인 / ~~IMU 위치 실측~~ 완료 / ~~Nav2 footprint~~ 완료 (my_navigation.md)
+   — 2026-09-08 실측 세션으로 URDF·footprint 실측 항목은 전부 반영됨.
+3. robot_localization(EKF) 설정 시 imu_link 위치·방향 그대로 사용.

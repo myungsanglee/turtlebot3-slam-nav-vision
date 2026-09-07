@@ -11,9 +11,10 @@
       이 값이 실물과 어긋나면 제자리 회전 시 지도 벽이 이중으로 번진다.
    2) imu_joint (OpenCR/IMU)    rpy 0,0,0  =>  0,0,-1.57
       OpenCR 을 위에서 시계방향 90도 회전 장착 (yaw=-90도).
-      ※ IMU 위치 xyz 는 미실측이라 표준값 유지. EKF 단계 전 실측 교체할 것.
+      위치 xyz -0.032,0,0.068  =>  -0.030,0,0.060 (OpenCR 보드 기하학적 중심 실측, 2026-09-08.
+      IMU 칩이 아닌 보드 중심이지만 이 로봇 속도에선 수 mm 차이가 EKF 에 무의미).
    3) RealSense D435i 추가 (표준엔 없음)
-      base_link 에서 카메라 바닥 1/4인치 마운트 나사 구멍까지 실측 => x +47.5mm, y 0, z +48mm, 수평 장착.
+      base_link 에서 카메라 바닥 1/4인치 마운트 나사 구멍까지 실측 => x +47.5mm, y 0, z +48mm, 수평 장착(실측 확인).
       나사 구멍 아래 프레임 체인(camera_link, depth/color, optical)은 인텔 공식 URDF 상수 그대로.
 
   바퀴 폭은 표준과 동일하므로 wheel_*/base_joint 등은 미변경.
@@ -181,12 +182,12 @@
     </inertial>
   </link>
 
-  <!-- IMU (OpenCR) 위에서 시계방향 90도 회전 장착 => yaw=-1.57 (실측 보정).
-       위치 xyz 는 표준값 유지 - EKF 단계 전 실측 교체 필요. -->
+  <!-- IMU (OpenCR) 위에서 시계방향 90도 회전 장착 => yaw=-1.57 (실측 보정, 물리 검증 완료).
+       위치는 OpenCR 보드 기하학적 중심 실측 (2026-09-08) - 바퀴축에서 뒤로 30mm, 중앙, 높이 60mm. -->
   <joint name="${namespace}imu_joint" type="fixed">
     <parent link="${namespace}base_link"/>
     <child link="${namespace}imu_link"/>
-    <origin xyz="-0.032 0 0.068" rpy="0 0 -1.57"/>
+    <origin xyz="-0.030 0 0.060" rpy="0 0 -1.57"/>
   </joint>
 
   <link name="${namespace}imu_link"/>
@@ -223,7 +224,7 @@
 
   <!-- RealSense D435i (실측 + 인텔 공식 오프셋) — 2026-09-08 실측
        base_link -> camera_bottom_screw_frame (바닥 1/4인치 마운트 나사 구멍)  실측 x +47.5mm, y 0, z +48mm
-       수평 장착 가정 (rpy 0 0 0). 기울어져 있으면 아래 camera_mount_joint 의 pitch 만 수정.
+       수평 장착 (실측 확인, rpy 0 0 0). 기울기가 생기면 아래 camera_mount_joint 의 pitch 만 수정.
        나사 구멍 이하는 인텔 realsense2_description 의 _d435.urdf.xacro 상수를 그대로 옮긴 것 -
          camera_link = 왼쪽 IR 이미저(depth 원점) = 나사 구멍에서 x +10.6, y +17.5, z +12.5 mm
          camera_color_frame = camera_link 에서 y +15mm (RGB 렌즈는 왼쪽 IR 의 왼쪽)

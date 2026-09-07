@@ -7,9 +7,10 @@
 #    (최대속도 0.22m/s, 차동구동이라 y 속도 0, 제어주기 10Hz 등)
 #  - 개념 설명은 docs/my_navigation.md 참고
 #
-# [★ 실측 교체 필요]
-#  - robot_radius 0.105 는 표준 burger 값(임시). 이 로봇은 낮고 길게 개조되어
-#    있으므로 실측 후 다각형 footprint 로 교체할 것 (아래 주석 예시 참고).
+# [footprint 실측 반영 — 2026-09-08]
+#  - 표준 burger 의 robot_radius 0.105(원) 대신 실측 다각형 footprint 사용.
+#    base_footprint(=바퀴 축 중심) 기준 앞 +0.062(카메라 전면), 뒤 -0.220, 좌우 ±0.090 m.
+#    앞 값은 카메라 마운트 나사 구멍 실측(0.0475) + 인텔 치수(나사→유리면 0.0149).
 #
 # [프레임] 이 프로젝트 공통 규약: 기준 프레임은 base_footprint (slam_toolbox 와 동일)
 # =============================================================================
@@ -201,9 +202,8 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.105           # ★ 표준 burger 임시값 — 실측 후 footprint 로 교체
-      # footprint: "[[0.13, 0.09], [0.13, -0.09], [-0.13, -0.09], [-0.13, 0.09]]"
-      #   ↑ 실측 예시 형식 (base_footprint 원점 기준 외곽 꼭짓점, m 단위, 시계반대방향)
+      # 실측 footprint (2026-09-08): 앞 카메라 전면 +0.062, 뒤 -0.220, 좌우 ±0.090 — 시계반대방향 꼭짓점
+      footprint: "[[0.062, 0.090], [-0.220, 0.090], [-0.220, -0.090], [0.062, -0.090]]"
       plugins: ["obstacle_layer", "inflation_layer"]   # 2D 라이다만 있으므로 voxel 대신 obstacle
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -234,7 +234,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_footprint
       use_sim_time: False
-      robot_radius: 0.105           # ★ 표준 burger 임시값 — 실측 후 footprint 로 교체
+      footprint: "[[0.062, 0.090], [-0.220, 0.090], [-0.220, -0.090], [0.062, -0.090]]"   # 실측 (local 과 동일)
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
