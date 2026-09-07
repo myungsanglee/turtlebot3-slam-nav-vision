@@ -10,6 +10,7 @@
 #   ros2 run my_vision camera_viewer                                   # q 로 종료
 #   ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed
 #   ros2 run my_vision camera_viewer --snapshot /tmp/cam.jpg           # 창 없이 한 장 저장
+#   ros2 run my_vision camera_viewer --save-dir /overlay_ws/models/calib --save-count 50   # 원본 color 프레임 저장 (INT8 캘리브레이션용)
 # =============================================================================
 import argparse
 import time
@@ -26,9 +27,13 @@ from my_vision.camera_io import FramePairer, colorize_depth, decode_color, decod
 
 class CameraViewer(Node):
 
-    def __init__(self, color_topic, snapshot=None):
+    def __init__(self, color_topic, snapshot=None, save_dir=None, save_count=50):
         super().__init__('camera_viewer')
         self.snapshot = snapshot
+        self.save_dir, self.save_count, self.saved = save_dir, save_count, 0
+        if save_dir:
+            import os
+            os.makedirs(save_dir, exist_ok=True)
         self.pairer = FramePairer()
         self.n = 0
         self.recent = []             # 최근 프레임 도착 시각 (슬라이딩 창 fps)
@@ -38,11 +43,22 @@ class CameraViewer(Node):
         self.create_subscription(CompressedImage, color_topic, lambda m: self._on_msg('color', m), qos)
         self.create_subscription(CompressedImage, '/camera/depth/compressed',
                                  lambda m: self._on_msg('depth', m), qos)
-        if snapshot is None:
+        if snapshot is None and save_dir is None:
             self.create_timer(1 / 30, self._gui_tick)
         self.get_logger().info(f'구독: {color_topic} + /camera/depth/compressed (best effort)')
 
     def _on_msg(self, kind, msg):
+        if self.save_dir and kind == 'color':                 # 저장 모드: 원본 JPEG 를 그대로 파일로 (재인코딩 없음)
+            import os
+            path = os.path.join(self.save_dir, f'frame_{self.saved:04d}.jpg')
+            with open(path, 'wb') as f:
+                f.write(bytes(msg.data))
+            self.saved += 1
+            if self.saved % 10 == 0 or self.saved == self.save_count:
+                self.get_logger().info(f'저장 {self.saved}/{self.save_count} → {self.save_dir}')
+            if self.saved >= self.save_count:
+                raise SystemExit(0)
+            return
         pair = self.pairer.add(kind, msg)
         if pair is not None:
             self._render(decode_color(pair[0]), decode_depth_mm(pair[1]))
@@ -92,9 +108,11 @@ def main():
     ap.add_argument('--color-topic', default='/camera/color/compressed',
                     help='예: /vision/annotated/compressed (검출 결과 영상)')
     ap.add_argument('--snapshot', help='한 장을 이 경로에 저장하고 종료 (창 없이)')
+    ap.add_argument('--save-dir', help='원본 color 프레임(JPEG)을 이 디렉터리에 저장 (INT8 캘리브레이션 데이터 수집)')
+    ap.add_argument('--save-count', type=int, default=50, help='--save-dir 저장 장수')
     args, ros_args = ap.parse_known_args()
     rclpy.init(args=ros_args)
-    node = CameraViewer(args.color_topic, args.snapshot)
+    node = CameraViewer(args.color_topic, args.snapshot, args.save_dir, args.save_count)
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, SystemExit):

@@ -117,6 +117,7 @@ ros2 run my_vision camera_viewer --snapshot /tmp/cam.jpg           # 창 없이 
 ```bash
 ros2 launch my_vision vision.launch.py            # RF-DETR(medium) 검출 → /vision/detections, /vision/annotated/compressed
 #   크기 변경: model:=nano|small|medium|large / TensorRT: backend:=tensorrt (첫 실행 시 엔진 빌드 ~1분)
+#   빌드 옵션: trt_precision:=fp32|fp16|int8 trt_opt_level:=0..5 trt_calib_dir:=... (독립 빌드/벤치: ros2 run my_vision build_trt --help)
 ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 보기
 ros2 topic echo /vision/detections               # 클래스·점수·박스·카메라 좌표 3D 위치
 ```

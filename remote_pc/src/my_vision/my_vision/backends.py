@@ -10,6 +10,9 @@
 #   (polygraphy, trtexec 불필요)하고 models/trt/<크기-해상도-TRT버전-GPU>/ 에 캐시한다.
 #   디렉터리 이름에 환경을 새겨 두어, 이미지나 GPU 가 바뀌면 자동으로 다시 빌드된다.
 #
+# [빌드 옵션] 엔진 빌드는 trt_build.build_engine (TensorRT Python API 직접) — fp32/fp16/int8,
+#   최적화 레벨·workspace·타이밍 캐시·TF32 등을 노드 파라미터(trt_*)로 조절한다.
+#
 # [전처리·후처리는 rfdetr 의 함수를 재사용]
 #   리사이즈 규약(bilinear, antialias 없음)·ImageNet 정규화·배경 클래스 제외·top-k 선택은
 #   rfdetr 이 ONNX 추론용으로 제공하는 함수를 그대로 import 해 torch 경로와 수치가 일치하게 한다.
@@ -35,65 +38,55 @@ class TorchBackend:
 class TensorRTBackend:
     name = 'tensorrt'
 
-    def __init__(self, model, size, resolution, num_classes, weights_dir, threshold, fp16=True, log=print):
+    #: 노드 파라미터 → build_engine 인자 기본값 (trt_build.build_engine 참고)
+    DEFAULT_OPTS = dict(precision='fp16', opt_level=3, workspace_gib=4.0, tf32=True,
+                        timing_cache=True, calib_dir='', verify=True)
+
+    def __init__(self, model, size, resolution, num_classes, weights_dir, threshold, opts=None, log=print):
         import tensorrt as trt
         import torch
         from rfdetr.export._onnx.inference import (_exclude_background_class, _preprocess_pil_to_nchw,
                                                     _select_topk_multiclass)
+        from my_vision.trt_build import EngineRunner, build_engine, verify_engine
         self._pre, self._exclude, self._topk = _preprocess_pil_to_nchw, _exclude_background_class, _select_topk_multiclass
         self.threshold = threshold
-        self.torch = torch
+        o = dict(self.DEFAULT_OPTS, **(opts or {}))
 
+        # 캐시 키에 환경(TRT 버전·GPU)과 정밀도를 새긴다 → 바뀌면 자동 재빌드, fp16/int8 이 섞이지 않음
         gpu = re.sub(r'[^A-Za-z0-9]+', '-', torch.cuda.get_device_name(0)).strip('-').lower()
-        self.dir = Path(weights_dir) / 'trt' / f'rf-detr-{size}-{resolution}-trt{trt.__version__}-{gpu}'
-        engine_path = next(self.dir.glob('*.trt'), None)     # 파일명은 rfdetr 버전마다 달라 가정하지 않는다
-        if engine_path is None:
-            log(f'TensorRT 엔진 없음 → 이 컨테이너에서 ONNX export + 엔진 빌드 (수 분 소요): {self.dir}')
+        self.dir = Path(weights_dir) / 'trt' / f'rf-detr-{size}-{resolution}-{o["precision"]}-trt{trt.__version__}-{gpu}'
+        engine_path = self.dir / 'engine.trt'
+        if not engine_path.exists():
             self.dir.mkdir(parents=True, exist_ok=True)
-            engine_path = Path(model.export(output_dir=str(self.dir), format='tensorrt', fp16=fp16, verbose=False))
-            log(f'엔진 빌드 완료: {engine_path.name}')
+            onnx_path = next(self.dir.glob('*.onnx'), None)          # 이식 가능한 산출물: 있으면 재사용
+            if onnx_path is None:
+                log(f'ONNX 없음 → rfdetr export: {self.dir}')
+                onnx_path = Path(model.export(output_dir=str(self.dir), format='onnx', verbose=False))
+            log(f'TensorRT 엔진 없음 → 이 컨테이너에서 빌드 ({o["precision"]}, opt_level {o["opt_level"]})')
+            build_engine(str(onnx_path), str(engine_path), precision=o['precision'],
+                         opt_level=o['opt_level'], workspace_gib=o['workspace_gib'], tf32=o['tf32'],
+                         timing_cache=str(self.dir / 'timing.cache') if o['timing_cache'] else None,
+                         calib_dir=o['calib_dir'] or None, log=log)
+            if o['verify']:   # 같은 입력으로 ONNX Runtime 과 비교해 수치 차이를 기록
+                verify_engine(str(onnx_path), str(engine_path),
+                              images=o['calib_dir'] or None, n=3, threshold=threshold, log=log)
 
-        self.logger = trt.Logger(trt.Logger.WARNING)
-        trt.init_libnvinfer_plugins(self.logger, '')
-        with open(engine_path, 'rb') as f, trt.Runtime(self.logger) as runtime:
-            self.engine = runtime.deserialize_cuda_engine(f.read())
-        self.ctx = self.engine.create_execution_context()
-
-        # I/O 텐서마다 GPU 버퍼(torch 텐서)를 잡고 주소를 엔진에 고정한다
-        to_torch = {np.float32: torch.float32, np.float16: torch.float16,
-                    np.int32: torch.int32, np.int64: torch.int64, np.bool_: torch.bool}
-        self.inputs, self.outputs = {}, {}
-        for i in range(self.engine.num_io_tensors):
-            n = self.engine.get_tensor_name(i)
-            shape = tuple(self.engine.get_tensor_shape(n))
-            dtype = to_torch[np.dtype(trt.nptype(self.engine.get_tensor_dtype(n))).type]
-            buf = torch.empty(shape, dtype=dtype, device='cuda')
-            (self.inputs if self.engine.get_tensor_mode(n) == trt.TensorIOMode.INPUT else self.outputs)[n] = buf
-            self.ctx.set_tensor_address(n, buf.data_ptr())
-        self.in_name = next(iter(self.inputs))
-        _, _, self.h, self.w = self.inputs[self.in_name].shape
-        self.dets_name = next(n for n in self.outputs if 'dets' in n)
-        self.labels_name = next(n for n in self.outputs if 'labels' in n)
+        self.runner = EngineRunner(str(engine_path))
+        _, _, self.h, self.w = self.runner.input_shape
+        self.dets_name = next(n for n in self.runner.outputs if 'dets' in n)
+        self.labels_name = next(n for n in self.runner.outputs if 'labels' in n)
         # 마지막 클래스 슬롯이 배경이면 제외 (logits 폭 = 클래스 수 + 1 인 경우)
-        n_slots = self.outputs[self.labels_name].shape[-1]
+        n_slots = self.runner.outputs[self.labels_name].shape[-1]
         self.background_id = -1 if n_slots == num_classes + 1 else None
-        self.stream = torch.cuda.Stream()   # 전용 스트림 (기본 스트림은 TensorRT 가 추가 동기화로 느려짐)
-        log(f'TensorRT {trt.__version__} 엔진 로드: 입력 {self.w}x{self.h} '
-            f'{"fp16" if self.inputs[self.in_name].dtype == torch.float16 else "fp32"} I/O, '
-            f'쿼리 {self.outputs[self.dets_name].shape[1]}, 클래스 슬롯 {n_slots}')
+        log(f'TensorRT {trt.__version__} 엔진 로드 ({o["precision"]}): 입력 {self.w}x{self.h}, '
+            f'쿼리 {self.runner.outputs[self.dets_name].shape[1]}, 클래스 슬롯 {n_slots} — {engine_path}')
         self.infer(np.zeros((self.h, self.w, 3), np.uint8))   # 워밍업
 
     def infer(self, rgb):
         from PIL import Image
-        torch = self.torch
-        inp = self._pre(Image.fromarray(rgb), self.h, self.w, 3)             # (1,3,H,W) float32, rfdetr 규약
-        with torch.cuda.stream(self.stream):
-            self.inputs[self.in_name].copy_(torch.from_numpy(inp).to(self.inputs[self.in_name].dtype))
-            self.ctx.execute_async_v3(self.stream.cuda_stream)
-            boxes = self.outputs[self.dets_name][0].float().cpu()            # (Q,4) 정규화 cxcywh
-            logits = self.outputs[self.labels_name][0].float().cpu()         # (Q,C)
-        self.stream.synchronize()
-        boxes, logits = boxes.numpy(), logits.numpy()
+        inp = self._pre(Image.fromarray(rgb), self.h, self.w, 3)   # (1,3,H,W) float32, rfdetr 규약
+        out = self.runner.run(inp)
+        boxes, logits = out[self.dets_name][0], out[self.labels_name][0]   # (Q,4) 정규화 cxcywh, (Q,C)
 
         scores_all = 1.0 / (1.0 + np.exp(-np.clip(logits, -88, 88)))
         scores_all, class_ids = self._exclude(scores_all, self.background_id)

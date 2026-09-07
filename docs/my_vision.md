@@ -29,7 +29,8 @@ remote_pc/src/my_vision/
 ```
 
 ```
-├── my_vision/backends.py  # 추론 백엔드: torch(rfdetr predict) / tensorrt(엔진 빌드·캐시·실행)
+├── my_vision/backends.py  # 추론 백엔드: torch(rfdetr predict) / tensorrt(엔진 캐시·실행)
+├── my_vision/trt_build.py # ONNX→TensorRT 빌더(TensorRT Python API 직접, 옵션 풍부) + 엔진 러너 + 검증 + CLI build_trt
 ```
 
 실행 환경은 컨테이너 이미지의 `vision` 스테이지(docker/Dockerfile): ROS Humble 위에
@@ -79,11 +80,33 @@ TensorRT 는 신경망을 특정 GPU 에 맞춰 최적화한 **엔진(.trt)** �
   ONNX → 엔진(fp16)을 빌드한다 (TensorRT Python API/polygraphy, `trtexec` 불필요, A6000 실측 44초).
 - 캐시 디렉터리 이름에 환경을 새긴다: `models/trt/rf-detr-{크기}-{해상도}-trt{TRT버전}-{GPU}/`
   → 이미지나 GPU 가 바뀌면 자동으로 다시 빌드. 이후 실행은 엔진만 로드(초 단위).
-- 실행: 엔진의 I/O 텐서마다 torch 로 GPU 버퍼를 잡아 주소를 고정(`set_tensor_address`)하고
-  전용 CUDA 스트림에서 `execute_async_v3`. 전처리(리사이즈 규약·ImageNet 정규화)와 후처리
-  (sigmoid·배경 슬롯 제외·top-k)는 **rfdetr 의 함수를 그대로 import** 해 torch 경로와 수치가
-  일치하게 한다 — 같은 프레임에서 torch/TensorRT/ONNX 세 경로의 점수가 동일함을 확인했다.
+- 실행(`trt_build.EngineRunner`): 엔진의 I/O 텐서마다 torch 로 GPU 버퍼를 잡아 주소를 고정
+  (`set_tensor_address`)하고 전용 CUDA 스트림에서 `execute_async_v3`. 전처리(리사이즈 규약·ImageNet
+  정규화)와 후처리(sigmoid·배경 슬롯 제외·top-k)는 **rfdetr 의 함수를 그대로 import** 해 torch
+  경로와 수치가 일치하게 한다 — 같은 프레임에서 torch/TensorRT/ONNX 세 경로의 점수가 동일함을 확인했다.
 - 엔진 로드 후 torch 모델은 GPU 에서 내려 메모리를 아낀다.
+
+#### 빌드 옵션 — `trt_build.build_engine` (TensorRT Python API 직접)
+polygraphy 한 줄로는 정밀도 플래그 정도만 되므로, 빌더를 직접 다뤄 trtexec 수준의 옵션을 연다
+(각 옵션의 주석에 대응 `trtexec` 플래그를 적어 두었다):
+
+| 옵션 (노드 파라미터) | 의미 | trtexec 대응 |
+|---|---|---|
+| `trt_precision` fp32/fp16/**int8** | int8 은 PTQ: 캘리브레이션 이미지로 활성값 통계를 모아 스케일 결정, 캐시(.calib) 재사용. INT8 커널이 없거나 정확도가 나쁜 레이어는 FP16 fallback | `--fp16` / `--int8 --calib=` |
+| `trt_opt_level` 0~5 | 빌더가 tactic 을 얼마나 오래 탐색하나 (0 빠른 빌드 … 5 최선 엔진) | `--builderOptimizationLevel` |
+| `trt_workspace_gib` | tactic 시험용 GPU 스크래치 상한 | `--memPoolSize=workspace:` |
+| `trt_timing_cache` | tactic 벤치 결과 캐시 → 재빌드 시간 단축 | `--timingCacheFile` |
+| `trt_tf32` | Ampere+ 의 TF32 matmul (엄격 FP32 재현 시 끔) | `--noTF32` |
+| (CLI) 동적 shape, 희소성, 프로파일링 메타, DLA | 배치/해상도 범위 프로파일, 2:4 프루닝 커널, 레이어별 프로파일 정보, Jetson DLA | `--minShapes/--optShapes/--maxShapes`, `--sparsity`, `--profilingVerbosity`, `--useDLACore` |
+
+빌드 후 `verify_engine` 이 같은 입력을 ONNX Runtime 과 엔진에 넣어 비교한다. DETR 은 쿼리 300개
+대부분이 점수 낮은 '버릴' 쿼리라 그 박스는 정밀도에 따라 크게 요동하므로, **임계값 이상인 실제
+검출 쿼리끼리만** 점수·박스 차를 잰다 (전체 최대 차는 의미 없음 — 실측으로 배움).
+
+INT8 절차: `ros2 run my_vision camera_viewer --save-dir /overlay_ws/models/calib --save-count 50` 으로
+실제 로봇 카메라 프레임을 모은 뒤 `trt_precision:=int8 trt_calib_dir:=/overlay_ws/models/calib`.
+캘리브레이션 전처리는 rfdetr 함수를 재사용해 추론 전처리와 bit-exact 하다 (cv2.resize 로 흉내 내면
+리사이즈 규약이 달라 통계가 어긋난다). 독립 빌드/벤치는 `ros2 run my_vision build_trt --help`.
 
 ### 4.5 짝 맞춤과 QoS
 color/depth 는 best effort 로 오므로 한쪽이 유실될 수 있다. 세 토픽의 `stamp` 가 같다는
@@ -92,10 +115,15 @@ color/depth 는 best effort 로 오므로 한쪽이 유실될 수 있다. 세 �
 
 ## 5. 실측 (A6000, medium 576px, 카메라 640x480@6fps)
 
-| 백엔드 | 추론 지연 | GPU 상주 메모리 | 비고 |
-|---|---|---|---|
-| torch (기본) | 12ms | (torch 모델 전체) | 설치만으로 동작, 파인튜닝·export 의 기준 |
-| tensorrt fp16 | **7ms** | **450MB** | 첫 실행 시 엔진 빌드 44초, 이후 캐시. 점수는 torch 와 동일 |
+| 백엔드 | 추론 지연 | GPU 상주 메모리 | 빌드 | ONNX 대비 검출 쿼리 최대 차 (점수 / 박스) |
+|---|---|---|---|---|
+| torch (기본) | 12ms | (torch 모델 전체) | — | 기준 |
+| tensorrt **fp16** (기본) | **6ms** | **450MB** | 39초 | 0.15 / 0.25 (경계선 검출의 요동, 검출 수·최고 점수는 일치) |
+| tensorrt int8 (PTQ, 50장) | 6ms | 450MB | 139초 | 0.25 / 0.51 |
+
+- **INT8 은 이 조합(A6000 + RF-DETR)에선 이득이 없다**: 트랜스포머 디코더의 상당 레이어가 "scale 없음 →
+  FP16 fallback" 되어 지연·엔진 크기가 fp16 과 같고, 정확도만 더 흔들린다. 그래서 기본은 fp16.
+  INT8 이 의미 있는 곳은 Jetson 급이나 CNN 계열이며, 그때도 Q/DQ 명시적 양자화(ModelOpt)가 더 낫다.
 
 - 처리율은 둘 다 6fps(입력 fps 에 묶임 — 카메라를 15fps 로 올려도 여유 충분)
 - 검출 예: refrigerator 1.47m, chair 1.78m, book 1.97m — 뷰어의 중앙 십자선 거리(1.96m)와 일치
@@ -122,6 +150,8 @@ export DISPLAY=:0; ros2 run my_vision camera_viewer --color-topic /vision/annota
   COCO 클래스는 `rfdetr.assets.coco_classes`, 가중치 캐시는 `RF_HOME`. 크기별 입력 해상도가
   달라(medium 576, 32 의 배수) 해상도를 강제하지 않고 모델 기본값을 쓴다.
 - `img[:, :, ::-1]`(BGR→RGB) 은 음수 stride 뷰라 torch 가 거부 → `cv2.cvtColor`.
+- 원격 셸에서 `pkill -f 패턴` 은 같은 명령줄 뒤쪽에 그 문자열이 또 있으면 **자기 셸을 죽인다**
+  (정지와 실행을 한 명령에 넣었을 때). 정지는 별도 호출로, 패턴은 실행 줄에 없는 단어로.
 - `pip install rfdetr[tensorrt]` 는 메타 패키지 `tensorrt` 를 통해 **cu13 변종**을 골랐다(실측) — torch 는
   CUDA 12.8 이라 한 프로세스에 CUDA 런타임 두 세대가 섞인다. `tensorrt-cu12` 를 명시해 해결.
 - rfdetr export 의 엔진 파일명은 버전마다 다르다(`rfdetr-medium.trt`) → 이름을 가정하지 않고
@@ -133,4 +163,4 @@ export DISPLAY=:0; ros2 run my_vision camera_viewer --color-topic /vision/annota
 
 1. **base_link 좌표 변환** — camera_link TF 실측 반영 후 3D 위치를 로봇 좌표로 (TF2).
 2. 필요 시 커스텀 데이터로 파인튜닝 (rfdetr `train()`), 추적(ID 유지), RViz 마커 표시.
-3. TensorRT 는 fp16 까지 적용 — 필요하면 INT8(캘리브레이션 데이터 필요) 검토.
+3. 양자화가 필요해지면 PTQ 대신 Q/DQ 명시적 양자화(ModelOpt) 로 — PTQ INT8 은 이 모델에서 이득 없음 확인.

@@ -46,7 +46,14 @@ class DetectorNode(Node):
         super().__init__('detector')
         self.declare_parameter('model', 'medium')          # RF-DETR 크기: nano | small | medium | large
         self.declare_parameter('backend', 'torch')         # torch | tensorrt
-        self.declare_parameter('fp16', True)               # tensorrt 엔진 정밀도
+        # --- tensorrt 빌드 옵션 (엔진이 없을 때 첫 실행에서 사용; trt_build.py 참고) ---
+        self.declare_parameter('trt_precision', 'fp16')    # fp32 | fp16 | int8 (int8 은 trt_calib_dir 필요)
+        self.declare_parameter('trt_opt_level', 3)         # 0(빠른 빌드) ~ 5(최선 엔진)
+        self.declare_parameter('trt_workspace_gib', 4.0)
+        self.declare_parameter('trt_tf32', True)
+        self.declare_parameter('trt_timing_cache', True)   # 재빌드 가속 캐시 파일 사용
+        self.declare_parameter('trt_calib_dir', '')        # INT8 캘리브레이션 이미지 디렉터리
+        self.declare_parameter('trt_verify', True)         # 빌드 후 ONNX Runtime 대비 검증 로그
         self.declare_parameter('weights_dir', '/overlay_ws/models')
         self.declare_parameter('threshold', 0.5)           # 검출 점수 임계값
         self.declare_parameter('resolution', 0)            # RF-DETR 입력 해상도. 0 = 모델 기본값 (크기별로 다름)
@@ -62,9 +69,13 @@ class DetectorNode(Node):
         self.jpeg_params = [cv2.IMWRITE_JPEG_QUALITY, p('jpeg_quality').value]
         self.log_period = p('log_period_sec').value
 
+        trt_opts = dict(precision=p('trt_precision').value, opt_level=p('trt_opt_level').value,
+                        workspace_gib=p('trt_workspace_gib').value, tf32=p('trt_tf32').value,
+                        timing_cache=p('trt_timing_cache').value, calib_dir=p('trt_calib_dir').value,
+                        verify=p('trt_verify').value)
         self.backend, self.class_names = self._load_model(
             p('model').value, p('backend').value, Path(p('weights_dir').value),
-            p('resolution').value, p('fp16').value)
+            p('resolution').value, trt_opts)
 
         qos = qos_profile_sensor_data
         self.pub_det = self.create_publisher(Detection2DArray, '/vision/detections', 10)
@@ -82,7 +93,7 @@ class DetectorNode(Node):
         self.get_logger().info('구독 시작 — 카메라 프레임 대기 중')
 
     # ------------------------------------------------------------------ 모델
-    def _load_model(self, size, backend, weights_dir, resolution, fp16):
+    def _load_model(self, size, backend, weights_dir, resolution, trt_opts):
         weights_dir.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault('RF_HOME', str(weights_dir))   # rfdetr 가중치 캐시 위치 (import 전에)
         import torch
@@ -102,7 +113,7 @@ class DetectorNode(Node):
         names = {i: n for i, n in enumerate(ckpt_names)} if ckpt_names else dict(COCO_CLASSES)
         self.get_logger().info(f'모델 준비 완료 (입력 {res}px, 클래스 {len(names)}개)')
         if backend == 'tensorrt':
-            be = TensorRTBackend(model, size, res, len(names), weights_dir, self.threshold, fp16,
+            be = TensorRTBackend(model, size, res, len(names), weights_dir, self.threshold, trt_opts,
                                  log=self.get_logger().info)
             del model                       # 엔진이 있으니 torch 모델은 GPU 에서 내린다
             torch.cuda.empty_cache()

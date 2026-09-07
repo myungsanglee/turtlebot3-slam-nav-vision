@@ -23,6 +23,7 @@ setup(
         'console_scripts': [
             'detector_node = my_vision.detector_node:main',
             'camera_viewer = my_vision.camera_viewer:main',
+            'build_trt = my_vision.trt_build:main',
         ],
     },
 )
