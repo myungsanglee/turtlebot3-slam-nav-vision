@@ -23,6 +23,8 @@
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
 | 카메라 depth 는 뜨는데 RGB 만 실패 (`set_xu`/`control_transfer` EAGAIN) | Pi4 USB(VL805) 에서 RGB 컨트롤 경로(XU 캘리브레이션 읽기)가 세션 단위로 간헐 불통 | **자체 노드(rs_camera.launch.py)** 사용 — 캘리브레이션 캐시로 XU 독립 + 자기 복구 (2026-09-02, 09-03 항목) |
+| 서버에서 토픽이 발행 fps 의 **정수배**(6→12Hz)로 수신, 검출 노드 정체 | 서버 브리지 재시작 뒤 Pi 브리지의 zenoh 세션이 이중으로 남아 샘플을 두 번 전달 | **Pi 브리지 재시작** — `kill $(pgrep -f "zenoh-bridge-ros2dd[s]")` (systemd 자동 재시작, sudo 불필요) (2026-09-08 항목) |
+| RViz Image 디스플레이 "No Image" (`compressed_sub does not exist`) | 컨테이너에 image_transport compressed 플러그인 없음 | 이미지 재빌드 (Dockerfile 에 image-transport-plugins 포함됨, 2026-09-08) |
 | 카메라가 `lsusb` 에서 사라짐 (No such device) | 열거/start 도중인 카메라 프로세스를 kill 했거나 USB 리셋을 연타함 | 소프트웨어 복구 불가 — **물리 재연결**. 재발 방지는 2026-09-03 항목 |
 
 ---
