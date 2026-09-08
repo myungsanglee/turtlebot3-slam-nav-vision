@@ -128,7 +128,7 @@ ros2 topic echo /vision/objects                  # 클래스·점수·박스 + b
 ### 3. SLAM — 지도 만들기 (서버)
 
 ```bash
-export DISPLAY=:1                          # RViz 를 서버 세션에 표시
+export DISPLAY=:0                          # RViz 를 서버 물리 세션에 표시 (번호는 who 로 확인)
 ros2 launch my_slam slam.launch.py
 # 로봇을 teleop 으로 천천히 몰면 지도가 그려짐. 완성되면:
 ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map
