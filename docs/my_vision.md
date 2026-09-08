@@ -43,10 +43,13 @@ PyTorch(CUDA 12.8 휠) + `rfdetr` + `vision_msgs` + TensorRT(`tensorrt-cu12`) + 
 | 토픽 | 타입 | 내용 |
 |---|---|---|
 | `/vision/detections` | `vision_msgs/Detection2DArray` | 검출마다 `bbox`(픽셀 중심·크기), `results[0].hypothesis.class_id`(이름)·`score`, **`results[0].pose.pose.position`(x,y,z, m)** — 카메라 광학 좌표계 3D 위치. z=0 이면 그 박스에서 유효 depth 를 못 구한 것 |
+| `/vision/objects` | `vision_msgs/Detection2DArray` | 위와 같은 검출을 **`target_frame`(기본 `base_link`, SLAM 중이면 `map`)으로 TF2 변환**한 것. `pose.position` = 로봇/지도 좌표 3D 위치. 3D 를 못 구한 검출은 제외 |
+| `/vision/markers` | `visualization_msgs/MarkerArray` | RViz 용 구(위치) + 텍스트(이름·점수·거리), `target_frame` 기준 |
 | `/vision/annotated/compressed` | `sensor_msgs/CompressedImage` | 박스·클래스·점수·거리를 그린 JPEG (뷰어/RViz 용) |
 
-`header.frame_id` 는 입력 영상의 `camera_color_optical_frame`. 이 좌표를 로봇 좌표(`base_link`)로
-옮기려면 `base_link → camera_link` TF 가 필요하다 (CLAUDE.md 5번 — 카메라 위치 실측 후 URDF 반영).
+`/vision/detections` 의 `header.frame_id` 는 입력 영상의 `camera_color_optical_frame` (카메라 계약 그대로).
+`/vision/objects` 는 URDF 의 카메라 TF 체인(description.md 3.3)을 통해 `base_link` — 또는 `map` — 좌표로
+옮긴 결과라 "로봇 앞 1.5m 왼쪽 0.3m" / "지도 위 어디" 로 바로 쓸 수 있다.
 
 ## 4. 원리 — 처음 보는 사람을 위한 설명
 
@@ -108,7 +111,23 @@ INT8 절차: `ros2 run my_vision camera_viewer --save-dir /overlay_ws/models/cal
 캘리브레이션 전처리는 rfdetr 함수를 재사용해 추론 전처리와 bit-exact 하다 (cv2.resize 로 흉내 내면
 리사이즈 규약이 달라 통계가 어긋난다). 독립 빌드/벤치는 `ros2 run my_vision build_trt --help`.
 
-### 4.5 짝 맞춤과 QoS
+### 4.5 좌표 변환 — 카메라 좌표를 로봇/지도 좌표로 (TF2)
+4.3 의 3D 위치는 **카메라 광학 프레임** 값이다 (z 앞, x 오른쪽, y 아래). 로봇 입장에선 "내 앞 몇 m, 왼쪽
+몇 m" 가 필요하고, 지도에 찍으려면 `map` 좌표가 필요하다. ROS 의 TF2 가 이 변환을 담당한다:
+- URDF 가 `base_link → camera_bottom_screw_frame → camera_link → camera_color_frame →
+  camera_color_optical_frame` 의 **정적 변환**을 publish 하고(bringup 의 robot_state_publisher,
+  실측 기반 — description.md 3.3), SLAM 이 `map → odom`, 로봇이 `odom → base_footprint` 를 publish 한다.
+- 노드는 `tf2_ros.Buffer` 로 이 체인을 모아 두었다가 `lookup_transform(target, camera_optical)` 로
+  합성 변환을 얻고 `do_transform_point` 로 점을 옮긴다. 회전(광학 규약 → 몸체 규약)과 평행이동
+  (카메라가 로봇 중심에서 앞 58mm·왼쪽 33mm·위 60mm)이 한 번에 적용된다.
+- **시각은 "최신 TF"** 를 쓴다. 정적 체인은 시각과 무관하고, `map→odom` 은 동적이지만 Pi 와 서버의
+  시계가 완벽히 같지 않아 영상 stamp 로 조회하면 실패할 수 있다. 느린 로봇이라 수십 ms 차이는 무시 가능.
+- `target_frame` 의 TF 가 없으면(예: SLAM 이 안 떠서 `map` 없음) `base_link` 로 fallback 하고 한 번만 경고.
+
+검산 (2026-09-08 실기): base_link 결과 냉장고 (1.54, −0.57, −0.07) 를 역산하면 카메라 좌표 (오른쪽 0.60,
+아래 0.13, 앞 1.48) — 영상 오른쪽에 있던 그 물체와 일치. `/vision/objects` 6.7Hz.
+
+### 4.6 짝 맞춤과 QoS
 color/depth 는 best effort 로 오므로 한쪽이 유실될 수 있다. 세 토픽의 `stamp` 가 같다는
 계약을 이용해 `FramePairer` 가 같은 stamp 끼리만 짝을 지어 처리한다(짝이 안 맞은 옛 프레임은 버림).
 구독 QoS 는 퍼블리셔와 같은 `sensor_data`(best effort) — 다르면 매칭이 안 돼 아무것도 안 온다.
@@ -145,7 +164,8 @@ ros2 topic echo /vision/detections                                       # 검�
 export DISPLAY=:0; ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 눈으로
 ```
 런치 인자로 덮어쓸 수 있는 것: `model`, `weights`, `threshold`, `backend`, `trt_precision`,
-`trt_opt_level`, `trt_calib_dir`. 나머지는 YAML 에서.
+`trt_opt_level`, `trt_calib_dir`. 나머지는 YAML 에서. 지도 좌표로 받으려면 YAML 의 `target_frame: map`
+(SLAM 실행 중일 때). RViz 에서 `/vision/markers` (MarkerArray) 를 추가하면 검출 물체가 구·라벨로 보인다.
 
 ### 6.2 다른 모델 / 전이학습 모델 쓰기
 ```yaml
@@ -187,6 +207,7 @@ class_names: ['']                               # 체크포인트에 이름이 �
 
 ## 8. 다음 단계
 
-1. **base_link 좌표 변환** — camera_link TF 실측 반영 후 3D 위치를 로봇 좌표로 (TF2).
-2. 필요 시 커스텀 데이터로 파인튜닝 (rfdetr `train()`), 추적(ID 유지), RViz 마커 표시.
+1. ~~base_link 좌표 변환~~ ✅ (2026-09-08, `/vision/objects` + `/vision/markers`)
+2. 통합 런치·RViz 구성에서 마커를 지도 위에 표시 (target_frame map).
+3. 필요 시 커스텀 데이터로 파인튜닝 (rfdetr `train()`), 추적(ID 유지).
 3. 양자화가 필요해지면 PTQ 대신 Q/DQ 명시적 양자화(ModelOpt) 로 — PTQ INT8 은 이 모델에서 이득 없음 확인.

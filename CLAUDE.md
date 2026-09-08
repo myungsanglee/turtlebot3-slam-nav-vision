@@ -183,12 +183,13 @@ turtlebot3-slam-nav-vision/
   fp32/fp16/int8·opt level·타이밍 캐시 등, INT8 은 이 조합에서 이득 없음 확인) — 엔진은 컨테이너 안에서 빌드해
   `models/trt/<크기-해상도-TRT버전-GPU>/` 에 캐시(이식 불가 특성 대응). 전·후처리는 rfdetr
   함수 재사용으로 세 경로(torch/TRT/ONNX) 수치 일치 확인. 설정은 `config/vision_params.yaml`
-  단일 소스(가중치 경로로 전이학습 모델 교체, 엔진 캐시는 체크포인트별 분리). 뷰어 `camera_viewer` 포함.
+  단일 소스(가중치 경로로 전이학습 모델 교체, 엔진 캐시는 체크포인트별 분리). TF2 로 검출 3D 위치를
+  `target_frame`(base_link/map)으로 변환한 `/vision/objects` + RViz `/vision/markers`. 뷰어 `camera_viewer` 포함.
   상세는 `docs/my_vision.md`
 
 **다음 (우선순위 순)**
-1. ~~base_link→camera_link TF~~ ✅ (2026-09-08, Pi 배포·tf2_echo 실기 검증 완료) — 남은 것:
-   Vision 3D 위치의 base_link 변환(TF2) 노드 반영
+1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) + ~~Vision 3D 위치의 base_link/map 변환~~ ✅
+   (`/vision/objects`, `/vision/markers`, 실기 검증)
 2. ~~Nav2 footprint 실측 교체~~ ✅ (2026-09-08)
 3. **Pi 전원 보강** — OpenCR 5V 출력이 Pi4+D435i 에 한계(undervoltage 재발,
    troubleshooting 2026-09-01(2)). 부품 결정됨: 배터리(T-plug)→5V/5A 컨버터
@@ -196,8 +197,7 @@ turtlebot3-slam-nav-vision/
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
 5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — IMU 위치·방향 실측 완료, 착수 가능
 6. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
-7. ~~Vision AI 노드~~ ✅ 완료 (2026-09-04~07) — 아래 "완료" 참고. 남은 것: camera_link TF 로
-   base_link 좌표 변환(1번 실측 후), 필요 시 추적/파인튜닝/INT8
+7. ~~Vision AI 노드~~ ✅ 완료 (2026-09-04~08, 좌표 변환 포함). 남은 것: 필요 시 추적/파인튜닝
 
 ## 9. 규칙 / 선호
 

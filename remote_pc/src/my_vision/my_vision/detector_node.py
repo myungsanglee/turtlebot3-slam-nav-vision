@@ -11,7 +11,16 @@
 #         bbox: 픽셀 박스, results[0].hypothesis: class_id(이름)·score,
 #         results[0].pose.pose.position: (x,y,z) [m], frame_id = camera_color_optical_frame
 #         (z 가 0 이면 그 박스에서 유효 depth 를 못 구한 것)
+#     /vision/objects               같은 Detection2DArray 를 target_frame(기본 base_link, SLAM 중엔
+#         map 가능)으로 TF2 변환한 것 — "로봇 앞 1.5m 왼쪽 0.3m" / "지도 위 어디" 로 쓰는 결과.
+#         3D 를 못 구한 검출은 제외. TF 를 못 찾으면 base_link 로 fallback(1회 경고)
+#     /vision/markers               visualization_msgs/MarkerArray — RViz 에 구 + 라벨 (target_frame)
 #     /vision/annotated/compressed  박스·라벨·거리를 그린 JPEG (camera_viewer 로 확인)
+#
+# [좌표 변환] 카메라 광학 프레임(z 앞, x 오른쪽, y 아래)의 점을 URDF 의 정적 TF 체인
+#   camera_color_optical_frame → … → base_link (description.md 3.3) 로 옮긴다. 정적 변환이라
+#   시각은 무관하고, map 까지 갈 땐 map→odom→base_footprint 가 동적이므로 "최신 TF" 를 쓴다
+#   (Pi 와 서버의 시계 차에 강건, 느린 로봇이라 수십 ms 차이는 무시 가능).
 #
 # [왜 depth 로 거리를 이렇게 구하나]
 #   depth 가 color 에 정렬돼 있어 검출 박스의 픽셀을 그대로 depth 에 대면 된다. 박스 전체는
@@ -37,8 +46,12 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import CameraInfo, CompressedImage
+from tf2_geometry_msgs import do_transform_point
+from tf2_ros import Buffer, TransformException, TransformListener
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
+from visualization_msgs.msg import Marker, MarkerArray
 
 from my_vision.backends import TensorRTBackend, TorchBackend
 from my_vision.camera_io import FramePairer, decode_color, decode_depth_mm, deproject, depth_in_box
@@ -70,6 +83,9 @@ class DetectorNode(Node):
         self.declare_parameter('color_topic', '/camera/color/compressed')
         self.declare_parameter('depth_topic', '/camera/depth/compressed')
         self.declare_parameter('info_topic', '/camera/color/camera_info')
+        self.declare_parameter('target_frame', 'base_link')   # /vision/objects·markers 의 프레임 (map 가능)
+        self.declare_parameter('markers', True)                # RViz 마커 publish
+        self.declare_parameter('marker_lifetime_sec', 0.5)
 
         p = self.get_parameter
         self.threshold = p('threshold').value
@@ -89,7 +105,15 @@ class DetectorNode(Node):
 
         qos = qos_profile_sensor_data
         self.pub_det = self.create_publisher(Detection2DArray, '/vision/detections', 10)
+        self.pub_obj = self.create_publisher(Detection2DArray, '/vision/objects', 10)
+        self.pub_mk = self.create_publisher(MarkerArray, '/vision/markers', 10)
         self.pub_img = self.create_publisher(CompressedImage, '/vision/annotated/compressed', qos)
+        self.target_frame = p('target_frame').value
+        self.markers_on = p('markers').value
+        self.marker_lifetime = p('marker_lifetime_sec').value
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self._tf_warned = False
         self.pairer = FramePairer()
         self.K = None
         self.create_subscription(CameraInfo, p('info_topic').value, self._on_info, qos)
@@ -196,6 +220,11 @@ class DetectorNode(Node):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
 
         self.pub_det.publish(out)
+        objects = self._to_target_frame(out)
+        if objects is not None:
+            self.pub_obj.publish(objects)
+            if self.markers_on:
+                self.pub_mk.publish(self._markers(objects))
         ok, jpg = cv2.imencode('.jpg', color, self.jpeg_params)
         if ok:
             img = CompressedImage()
@@ -209,10 +238,78 @@ class DetectorNode(Node):
         if now - self.t_log >= self.log_period:
             fps = self.n / (now - self.t_log)
             ms = np.mean(self.infer_ms) if self.infer_ms else 0
+            src = objects if objects is not None and objects.detections else out
+            frame = src.header.frame_id
             summary = ', '.join(
-                f'{d.id} {d.results[0].pose.pose.position.z:.2f}m' for d in out.detections[:4]) or '없음'
-            self.get_logger().info(f'{fps:.1f} fps | 추론 {ms:.0f} ms | 검출 {len(out.detections)}: {summary}')
+                f'{d.id} ({d.results[0].pose.pose.position.x:.2f}, {d.results[0].pose.pose.position.y:.2f}, '
+                f'{d.results[0].pose.pose.position.z:.2f})' for d in src.detections[:3]) or '없음'
+            self.get_logger().info(
+                f'{fps:.1f} fps | 추론 {ms:.0f} ms | 검출 {len(out.detections)} [{frame} xyz m]: {summary}')
             self.n, self.infer_ms, self.t_log = 0, [], now
+
+
+    # ------------------------------------------------------------------ TF 변환 / 마커
+    def _to_target_frame(self, dets):
+        """카메라 광학 프레임의 3D 점들을 target_frame 으로. 3D 없는 검출은 뺀다.
+        target_frame 의 TF 가 없으면(예: SLAM 이 안 떠서 map 없음) base_link 로 fallback."""
+        src = dets.header.frame_id
+        tf = None
+        for frame in (self.target_frame, 'base_link'):
+            try:
+                tf = self.tf_buffer.lookup_transform(frame, src, rclpy.time.Time())   # 최신 TF
+                break
+            except TransformException as e:
+                if frame == self.target_frame and not self._tf_warned:
+                    self.get_logger().warn(f'{src}→{frame} TF 없음 ({str(e)[:60]}) — base_link 로 fallback')
+                    self._tf_warned = True
+        if tf is None:
+            return None
+        out = Detection2DArray()
+        out.header.stamp = dets.header.stamp
+        out.header.frame_id = tf.header.frame_id
+        for d in dets.detections:
+            pos = d.results[0].pose.pose.position
+            if pos.z == 0.0:
+                continue
+            pt = PointStamped()
+            pt.header = dets.header
+            pt.point.x, pt.point.y, pt.point.z = pos.x, pos.y, pos.z
+            q = do_transform_point(pt, tf).point
+            o = Detection2D()
+            o.header = out.header
+            o.id, o.bbox = d.id, d.bbox
+            h = ObjectHypothesisWithPose()
+            h.hypothesis = d.results[0].hypothesis
+            h.pose.pose.position.x, h.pose.pose.position.y, h.pose.pose.position.z = q.x, q.y, q.z
+            h.pose.pose.orientation.w = 1.0
+            o.results.append(h)
+            out.detections.append(o)
+        return out
+
+    def _markers(self, objects):
+        """검출마다 구(위치) + 텍스트(이름·점수·거리). lifetime 으로 자동 소멸."""
+        arr = MarkerArray()
+        life = rclpy.duration.Duration(seconds=self.marker_lifetime).to_msg()
+        for i, d in enumerate(objects.detections):
+            h = d.results[0]
+            pos = h.pose.pose.position
+            hue = (hash(d.id) % 360) / 360.0
+            r, g, b = cv2.cvtColor(np.array([[[hue * 179, 200, 255]]], np.uint8), cv2.COLOR_HSV2RGB)[0, 0] / 255.0
+            for kind, mid in ((Marker.SPHERE, 2 * i), (Marker.TEXT_VIEW_FACING, 2 * i + 1)):
+                m = Marker()
+                m.header = objects.header
+                m.ns, m.id, m.type, m.action = 'vision', mid, kind, Marker.ADD
+                m.pose.position.x, m.pose.position.y = pos.x, pos.y
+                m.pose.position.z = pos.z + (0.15 if kind == Marker.TEXT_VIEW_FACING else 0.0)
+                m.pose.orientation.w = 1.0
+                m.scale.x = m.scale.y = m.scale.z = 0.12 if kind == Marker.SPHERE else 0.08
+                m.color.r, m.color.g, m.color.b, m.color.a = float(r), float(g), float(b), 0.9
+                m.lifetime = life
+                if kind == Marker.TEXT_VIEW_FACING:
+                    dist = float(np.hypot(pos.x, pos.y))
+                    m.text = f'{d.id} {h.hypothesis.score:.2f} | {dist:.2f}m'
+                arr.markers.append(m)
+        return arr
 
 
 def _file_tag(path, n_bytes=4 << 20):

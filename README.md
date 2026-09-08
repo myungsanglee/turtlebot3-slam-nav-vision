@@ -64,7 +64,7 @@ turtlebot3-slam-nav-vision/
 | **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전·위치, **RealSense 카메라 프레임 체인**) | ✅ Pi 배포·TF 실기 검증 (전 항목 실측 완료) | [docs/description.md](./docs/description.md) |
 | **realsense_bringup** | D435i 브링업 — **자체 pyrealsense2 노드**: 컬러 + 컬러에 정렬된 depth(PNG 16bit, mm) compressed publish. 공식 노드가 Pi4 에서 간헐 실패하는 문제를 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 해결 | ✅ 원격 수신 검증 (기본 6fps, 15fps 까지 확인) | [docs/realsense_bringup.md](./docs/realsense_bringup.md) |
 | **인프라/네트워크** | Tailscale + **Zenoh Bridge** (Fast DDS Discovery Server 의 VPN 한계를 진단 후 전환) | ✅ 검증 완료 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
-| **my_vision** | RF-DETR 물체 검출(torch/**TensorRT** 백엔드) + 정렬 depth 로 거리·카메라 좌표 3D 위치 (`Detection2DArray`), 주석 영상, 카메라 뷰어 | ✅ 실물 검증 (TensorRT 7ms) | [docs/my_vision.md](./docs/my_vision.md) |
+| **my_vision** | RF-DETR 물체 검출(torch/**TensorRT** 백엔드) + 정렬 depth 로 거리·3D 위치 → **TF2 로 base_link/map 좌표 변환**(`/vision/objects`), RViz 마커, 주석 영상, 카메라 뷰어 | ✅ 실물 검증 (TensorRT 6ms) | [docs/my_vision.md](./docs/my_vision.md) |
 
 ## 시작하기
 
@@ -119,7 +119,8 @@ ros2 launch my_vision vision.launch.py            # 설정: remote_pc/src/my_vis
 #   다른 설정 파일: params_file:=... / 급한 덮어쓰기: threshold:=0.3 backend:=tensorrt weights:=/overlay_ws/models/my.pth
 #   전이학습 모델: YAML 의 weights 에 .pth 경로 (클래스 수 자동 추론, 엔진 캐시 자동 분리)
 ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 보기
-ros2 topic echo /vision/detections               # 클래스·점수·박스·카메라 좌표 3D 위치
+ros2 topic echo /vision/objects                  # 클래스·점수·박스 + base_link(또는 map) 좌표 3D 위치
+#   RViz 에 /vision/markers(MarkerArray) 추가 → 검출 물체 구·라벨 표시. 지도 좌표는 YAML target_frame: map
 ```
 > 첫 실행 때 가중치를 `remote_pc/models/` 에 내려받는다(RF_HOME). 이미지는 `vision` 스테이지로
 > 빌드돼 있어야 한다 (`docker compose build remote-pc`, [docs/server_setup.md](./docs/server_setup.md)).

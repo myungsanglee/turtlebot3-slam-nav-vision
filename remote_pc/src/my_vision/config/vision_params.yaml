@@ -41,5 +41,9 @@ detector:
     color_topic: /camera/color/compressed
     depth_topic: /camera/depth/compressed
     info_topic: /camera/color/camera_info
+    target_frame: base_link  # /vision/objects·/vision/markers 의 좌표계. SLAM 실행 중이면 map 으로 두면
+                             # 검출 물체가 지도 위 절대 위치로 찍힌다 (TF 없으면 base_link 로 자동 fallback)
+    markers: true            # RViz 마커(구 + 라벨) publish
+    marker_lifetime_sec: 0.5 # 마커가 갱신 없이 남는 시간
     jpeg_quality: 80         # 주석 영상(/vision/annotated/compressed) JPEG 품질
     log_period_sec: 5.0      # fps·추론 시간·검출 요약 로그 주기
