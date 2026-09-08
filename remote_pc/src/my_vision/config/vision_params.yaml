@@ -23,7 +23,7 @@ detector:
     weights_dir: /overlay_ws/models   # 가중치·엔진 캐시 루트 (호스트 remote_pc/models, gitignore)
 
     # ---------------- 추론 백엔드 ----------------
-    backend: torch           # torch | tensorrt
+    backend: tensorrt           # torch | tensorrt
                              # tensorrt: 엔진이 없으면 첫 실행 때 이 컨테이너에서 ONNX export→엔진 빌드(~1분) 후
                              # weights_dir/trt/<크기-해상도-체크포인트-정밀도-TRT버전-GPU>/ 에 캐시
     trt_precision: fp16      # fp32 | fp16 | int8 (int8 은 trt_calib_dir 필요; 이 조합에선 fp16 대비 이득 없음 — docs 5장)

@@ -4,7 +4,7 @@
 # 설정은 config/vision_params.yaml 이 단일 소스다. 이 파일을 고쳐 실행하면 그대로 적용된다.
 #   ros2 launch my_vision vision.launch.py                                  # config/vision_params.yaml
 #   ros2 launch my_vision vision.launch.py params_file:=/overlay_ws/my.yaml # 다른 설정 파일
-#   ros2 launch my_vision vision.launch.py threshold:=0.3 backend:=tensorrt # 준 인자만 YAML 을 덮어씀
+#   ros2 launch my_vision vision.launch.py threshold:=0.3 backend:=torch    # 준 인자만 YAML 을 덮어씀 (YAML 기본 backend 는 tensorrt)
 #   결과 확인: ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed
 #             ros2 topic echo /vision/detections
 # =============================================================================
