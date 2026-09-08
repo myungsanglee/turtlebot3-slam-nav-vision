@@ -159,7 +159,7 @@ turtlebot3-slam-nav-vision/
 - **my_navigation 패키지** — Nav2 설정/런치/RViz. 기본 모드는 SLAM 동시 실행
   (지도 만들며 주행), 저장 지도+AMCL 모드 지원. 전체 lifecycle 활성화·코스트맵
   publish 실기 검증 완료(실주행 테스트는 사용자 입회 하 예정). footprint 는
-  표준 burger 임시값(★실측 교체 필요). 상세는 `docs/my_navigation.md`
+  실측 직사각형으로 교체 완료(2026-09-08). 상세는 `docs/my_navigation.md`
 - **커스텀 로봇 URDF 보정** — description/urdf/turtlebot3_burger.urdf 에 실측 반영:
   scan_joint(LDS) xyz=-0.100,0,0.125 / imu_joint yaw=-1.57(OpenCR 90° 회전).
   Pi 배포 + TF 실기 검증 완료. 제자리 회전 정밀 검증은 공간 확보 시 예정.
