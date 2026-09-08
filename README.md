@@ -71,94 +71,80 @@ turtlebot3-slam-nav-vision/
 
 > 최초 환경 구축(새 머신)은 [docs/pi_setup.md](./docs/pi_setup.md)(로봇) ·
 > [docs/server_setup.md](./docs/server_setup.md)(서버) 참고.
-> 아래는 구축이 끝난 상태에서의 일상 실행 절차입니다.
+> 아래는 구축이 끝난 상태에서의 **일상 실행 절차** — 터미널은 Pi 1개 + 서버 1개면 된다.
 
-### 1. 로봇(Pi) 쪽 실행
-
-zenoh-bridge 는 systemd 로 부팅 시 자동 실행됩니다 (`systemctl status zenoh-bridge`).
+### 1. 로봇(Pi) — 터미널 1개
 
 ```bash
-# 통합 실행 — 로봇 기본(모터·오도메트리·라이다) + RealSense 카메라 한 번에
-ros2 launch realsense_bringup full_bringup.launch.py
+ssh michael@100.71.74.81                      # 맥에서 (SSH 키 등록돼 있으면 비밀번호 없음)
+ros2 launch realsense_bringup full_bringup.launch.py   # 로봇 기본(모터·오도메트리·라이다·TF) + RealSense 카메라
 #   카메라 제외: camera:=false / 공식 드라이버로 비교: camera_driver:=realsense2
 ```
+- zenoh-bridge 는 systemd 로 부팅 시 자동 실행 → 따로 할 것 없음 (`systemctl status zenoh-bridge`)
+- 정상 로그: `[자식] pipeline.start() 성공` → `스트리밍 시작` → 10초마다 `6.0 fps | color … | depth …`
+  (콜드 스타트는 장치 열거에 ~11초 걸리는 게 정상)
+- 끝낼 땐 Ctrl+C — 스트리밍 중에 끄는 것이라 안전
 
-개별 실행:
+개별 실행이 필요할 때:
 ```bash
 ros2 launch turtlebot3_bringup robot.launch.py      # 셸 1 — 로봇 기본
-ros2 launch realsense_bringup rs_camera.launch.py   # 셸 2 — 카메라 (자체 노드, 기본 640x480@6fps)
-#   고속: fps:=15 (지원값 6/15/30/60)
+ros2 launch realsense_bringup rs_camera.launch.py   # 셸 2 — 카메라 (자체 노드, 기본 640x480@6fps, 고속 fps:=15)
 ```
 
-> 카메라 노드는 USB 가 꼬여도 스스로 복구한다(로그의 `[자식]` 단계 메시지·10초 stats 참고).
-> ⚠️ 시작 중인 카메라 프로세스를 `kill -9` 하지 말 것 — 카메라가 USB 버스에서 떨어져
-> 물리 재연결이 필요해진다 ([docs/realsense_bringup.md](./docs/realsense_bringup.md) 7장).
+> ⚠️ 시작 중인(아직 fps 로그가 안 찍힌) 카메라 프로세스를 `kill -9` 하지 말 것 — 카메라가 USB 버스에서
+> 떨어져 물리 재연결이 필요해진다 ([docs/realsense_bringup.md](./docs/realsense_bringup.md) 7장).
 
-### 2. 서버 컨테이너 실행
+### 2. 서버 — 터미널 1개 ★ 통합 실행 (SLAM + Nav2 + Vision + RViz 한 창)
 
 ```bash
-docker compose up -d              # zenoh-bridge + remote-pc 기동
-docker compose exec remote-pc bash
-ros2 topic hz /scan               # 로봇 연결 확인 (~5Hz)
+docker compose up -d                 # 컨테이너가 내려가 있을 때만 (zenoh-bridge + remote-pc)
+docker compose exec remote-pc bash   # 컨테이너 진입 (ROS·워크스페이스 자동 source)
+
+export DISPLAY=:0                    # RViz 를 서버 물리 세션에 띄움 (VNC 로 봄; 번호는 who 로 확인)
+ros2 launch my_bringup system.launch.py
 ```
-
-> 드물게 "토픽은 보이는데 데이터 0"이면 브리지만 재시작하면 복구됩니다
-> (`docker compose restart zenoh-bridge` / Pi: `sudo systemctl restart zenoh-bridge`).
-
-카메라 영상을 눈으로 확인 (color · 정렬 depth · 오버레이 한 창, 중앙 거리 표시; VNC 로 봄):
-```bash
-cd /overlay_ws && colcon build --symlink-install && source install/setup.bash   # 최초 1회
-export DISPLAY=:0
-ros2 run my_vision camera_viewer                                   # q 로 종료
-ros2 run my_vision camera_viewer --snapshot /tmp/cam.jpg           # 창 없이 한 장 저장
-```
-
-### 2-1. Vision AI — 물체 검출 + 거리 (서버, GPU)
-
-```bash
-ros2 launch my_vision vision.launch.py            # 설정: remote_pc/src/my_vision/config/vision_params.yaml (모델·가중치 경로·임계값·백엔드·TensorRT 옵션)
-#   다른 설정 파일: params_file:=... / 급한 덮어쓰기: threshold:=0.3 backend:=tensorrt weights:=/overlay_ws/models/my.pth
-#   전이학습 모델: YAML 의 weights 에 .pth 경로 (클래스 수 자동 추론, 엔진 캐시 자동 분리)
-ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 보기
-ros2 topic echo /vision/objects                  # 클래스·점수·박스 + base_link(또는 map) 좌표 3D 위치
-#   RViz 에 /vision/markers(MarkerArray) 추가 → 검출 물체 구·라벨 표시. 지도 좌표는 YAML target_frame: map
-```
-> 첫 실행 때 가중치를 `remote_pc/models/` 에 내려받는다(RF_HOME). 이미지는 `vision` 스테이지로
-> 빌드돼 있어야 한다 (`docker compose build remote-pc`, [docs/server_setup.md](./docs/server_setup.md)).
-
-### 2-2. 통합 실행 — SLAM + Nav2 + Vision + RViz 한 창 (서버) ★ 데모
-
-```bash
-export DISPLAY=:0
-ros2 launch my_bringup system.launch.py                       # 지도 만들며 주행 + 검출 물체가 지도 위 마커로
-ros2 launch my_bringup system.launch.py use_slam:=false map:=/overlay_ws/maps/my_map.yaml   # 저장 지도 + AMCL
-ros2 launch my_bringup system.launch.py backend:=tensorrt threshold:=0.3                   # Vision 옵션 통과
-```
-RViz 한 창에 지도·코스트맵·경로·**실측 footprint**·로봇 모델·**검출 마커(map 좌표)**·검출 영상이 뜬다
-([docs/my_bringup.md](./docs/my_bringup.md)). 아래 3·4 는 개별 실행이 필요할 때.
+이 한 줄로 **slam_toolbox + Nav2 + Vision(TensorRT, 검출 물체를 map 좌표 마커로) + RViz** 가 뜬다.
+RViz 툴바의 **2D Goal Pose** 로 목표를 찍으면 주행하고, 카메라가 검출한 물체는 지도 위 마커로 보인다
+([docs/my_bringup.md](./docs/my_bringup.md)).
 
 ![통합 RViz — 카메라가 검출한 책·키보드가 지도 위 책장 위치에 마커로 찍힘](./docs/images/rviz_system_demo.png)
 
-### 3. SLAM — 지도 만들기 (서버)
+자주 쓰는 변형:
+```bash
+ros2 launch my_bringup system.launch.py use_slam:=false map:=/overlay_ws/maps/my_map.yaml   # 저장 지도 + AMCL
+ros2 launch my_bringup system.launch.py threshold:=0.3            # 검출 더 민감하게 (backend:=torch 로 비교 가능)
+ros2 launch my_bringup system.launch.py vision:=false             # SLAM + Nav2 만
+ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map # 지도 저장 (SLAM 모드, 다른 터미널에서)
+```
+Vision 설정(모델·가중치 경로·임계값·백엔드·TensorRT 옵션)은 `remote_pc/src/my_vision/config/vision_params.yaml`
+한 곳에서 바꾼다. 전이학습 모델은 YAML 의 `weights` 에 .pth 경로 (클래스 수 자동 추론, 엔진 캐시 자동 분리).
+
+### 3. 확인·디버깅 (서버, 다른 터미널에서 `docker compose exec remote-pc bash`)
 
 ```bash
-export DISPLAY=:0                          # RViz 를 서버 물리 세션에 표시 (번호는 who 로 확인)
-ros2 launch my_slam slam.launch.py
-# 로봇을 teleop 으로 천천히 몰면 지도가 그려짐. 완성되면:
-ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map
+ros2 topic hz /scan                          # 로봇 연결 (~5Hz)
+ros2 topic hz /camera/color/compressed       # 카메라 (~6fps). ★ 12Hz 처럼 정수배면 브리지 중복 → 아래 주의 2
+ros2 topic echo /vision/objects              # 검출 물체: 클래스·점수 + map(또는 base_link) 좌표 3D 위치
+export DISPLAY=:0
+ros2 run my_vision camera_viewer                                              # 카메라 원본: color | 정렬 depth | 오버레이
+ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 박스가 그려진 영상 (q 로 종료)
+ros2 run my_vision camera_viewer --snapshot /tmp/cam.jpg                      # 창 없이 한 장 저장
+ros2 run tf2_ros tf2_echo base_link camera_color_optical_frame               # 카메라 TF (0.058, 0.033, 0.060)
 ```
+개별 컴포넌트만 띄우려면 `ros2 launch my_slam slam.launch.py` / `my_navigation navigation.launch.py` /
+`my_vision vision.launch.py` (각 docs 참고).
 
-### 4. Navigation — 자율주행 (서버)
+### 4. 순서·주의
 
-```bash
-# 모드 1: SLAM 하며 주행 (지도 만들며 목표점 이동)
-ros2 launch my_navigation navigation.launch.py
-
-# 모드 2: 저장된 지도로 주행
-ros2 launch my_navigation navigation.launch.py \
-    use_slam:=false map:=/overlay_ws/maps/my_map.yaml
-```
-RViz 툴바의 **2D Goal Pose** 로 목표점을 찍으면 로봇이 이동합니다.
+1. **Pi 먼저(bringup+카메라) → 서버(system.launch)** 가 자연스럽지만, 반대여도 붙는다.
+2. **서버 브리지를 재시작·재생성했다면 Pi 브리지도 같이** — Pi 에서 `kill $(pgrep -f "zenoh-bridge-ros2dd[s]")`
+   (systemd 가 3초 뒤 자동 재시작, sudo 불필요). 안 하면 토픽이 2배로 중복 수신되어 검출이 멈출 수 있다
+   ([docs/troubleshooting.md](./docs/troubleshooting.md) 2026-09-08).
+3. "토픽은 보이는데 데이터 0" 이면 브리지 재시작: 서버 `docker compose restart zenoh-bridge` + 위 2번.
+4. Pi 전원이 OpenCR 5V 나 5V/3A 어댑터면 카메라 부하에서 CPU 가 600MHz 로 스로틀돼 fps 가 떨어진다 —
+   전원 보강 전까진 정상 현상 (`vcgencmd get_throttled` 의 bit0).
+5. 새 패키지/파일이 추가된 커밋을 받았을 때만 재빌드: 서버 `cd /overlay_ws && colcon build --symlink-install`,
+   Pi `cd ~/realsense_ros_ws && colcon build --packages-select realsense_bringup --symlink-install`.
 
 ### 참고
 
