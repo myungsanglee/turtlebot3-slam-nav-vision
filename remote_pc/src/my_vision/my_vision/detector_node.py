@@ -33,7 +33,8 @@
 # [모델] RF-DETR (Apache-2.0) — rfdetr 1.9 의 Nano/Small/Medium/Large. weights='' 면 공식 COCO
 #   사전학습(RF_HOME=weights_dir 에 자동 다운로드·캐시), 경로를 주면 그 .pth(전이학습 모델)를 로드하고
 #   클래스 수는 체크포인트에서 자동 추론. 클래스명: 체크포인트 → class_names 파라미터 → COCO 표.
-# [백엔드] backend:=torch(기본, rfdetr predict) | tensorrt(엔진; 없으면 이 컨테이너에서 빌드·캐시)
+# [백엔드] backend = torch(rfdetr predict) | tensorrt(엔진; 없으면 이 컨테이너에서 빌드·캐시).
+#   YAML(vision_params.yaml) 기본은 tensorrt. 아래 declare 의 'torch' 는 YAML 없이 ros2 run 할 때의 안전값.
 #   — backends.py 참고. 둘 다 같은 출력 계약.
 # =============================================================================
 import os
