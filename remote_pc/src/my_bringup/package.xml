@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Remote PC 통합 런치 — SLAM(또는 저장 지도+AMCL) + Nav2 + Vision AI + RViz 한 창.
+    각 패키지(my_slam, my_navigation, my_vision)의 런치를 조합만 하며, 설정은 각 패키지에 둔다.
+  </description>
+  <maintainer email="mslee@robotegra.com">Myungsang Lee</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>my_slam</exec_depend>
+  <exec_depend>my_navigation</exec_depend>
+  <exec_depend>my_vision</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

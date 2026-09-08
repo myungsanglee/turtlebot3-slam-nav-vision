@@ -229,7 +229,7 @@ class DetectorNode(Node):
         if ok:
             img = CompressedImage()
             img.header = color_msg.header
-            img.format = 'jpeg'
+            img.format = 'bgr8; jpeg compressed bgr8'   # image_transport 표준 (RViz Image 디스플레이 호환)
             img.data = jpg.tobytes()
             self.pub_img.publish(img)
 
@@ -300,9 +300,9 @@ class DetectorNode(Node):
                 m.header = objects.header
                 m.ns, m.id, m.type, m.action = 'vision', mid, kind, Marker.ADD
                 m.pose.position.x, m.pose.position.y = pos.x, pos.y
-                m.pose.position.z = pos.z + (0.15 if kind == Marker.TEXT_VIEW_FACING else 0.0)
+                m.pose.position.z = pos.z + (0.2 if kind == Marker.TEXT_VIEW_FACING else 0.0)
                 m.pose.orientation.w = 1.0
-                m.scale.x = m.scale.y = m.scale.z = 0.12 if kind == Marker.SPHERE else 0.08
+                m.scale.x = m.scale.y = m.scale.z = 0.2 if kind == Marker.SPHERE else 0.12   # 지도 뷰에서 보이는 크기
                 m.color.r, m.color.g, m.color.b, m.color.a = float(r), float(g), float(b), 0.9
                 m.lifetime = life
                 if kind == Marker.TEXT_VIEW_FACING:

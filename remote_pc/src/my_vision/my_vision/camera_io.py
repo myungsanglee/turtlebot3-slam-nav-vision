@@ -29,14 +29,18 @@ class FramePairer:
     def __init__(self, max_pending=30):
         self._pending = {}
         self._max = max_pending
+        self._last = None            # 마지막으로 짝을 돌려준 stamp — 그 이하의 늦은 중복은 무시
 
     def add(self, kind, msg):
         key = stamp_key(msg)
+        if self._last is not None and key <= self._last:   # 중복 전달(브리지 세션 이중화 등) 방어
+            return None
         slot = self._pending.setdefault(key, {})
         slot[kind] = msg
         if 'color' in slot and 'depth' in slot:
             for k in [k for k in self._pending if k <= key]:   # 이 stamp 이전 미완 항목은 버림
                 del self._pending[k]
+            self._last = key
             return slot['color'], slot['depth']
         if len(self._pending) > self._max:                     # 메모리 보호
             for k in sorted(self._pending)[:-10]:

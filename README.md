@@ -48,7 +48,7 @@ turtlebot3-slam-nav-vision/
 ├── docker/                    # Remote PC 컨테이너 (Dockerfile, entrypoint)
 ├── docker-compose.yml         # zenoh-bridge + remote-pc 서비스
 ├── config/                    # zenoh 브리지 설정 등 공용 설정
-├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_vision)
+├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_vision, my_bringup 통합런치)
 ├── robot/src/                 # Raspberry Pi 패키지 (realsense_bringup)
 └── description/               # URDF/xacro (커스텀 로봇 센서 TF 실측 보정)
 ```
@@ -64,6 +64,7 @@ turtlebot3-slam-nav-vision/
 | **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전·위치, **RealSense 카메라 프레임 체인**) | ✅ Pi 배포·TF 실기 검증 (전 항목 실측 완료) | [docs/description.md](./docs/description.md) |
 | **realsense_bringup** | D435i 브링업 — **자체 pyrealsense2 노드**: 컬러 + 컬러에 정렬된 depth(PNG 16bit, mm) compressed publish. 공식 노드가 Pi4 에서 간헐 실패하는 문제를 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 해결 | ✅ 원격 수신 검증 (기본 6fps, 15fps 까지 확인) | [docs/realsense_bringup.md](./docs/realsense_bringup.md) |
 | **인프라/네트워크** | Tailscale + **Zenoh Bridge** (Fast DDS Discovery Server 의 VPN 한계를 진단 후 전환) | ✅ 검증 완료 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
+| **my_bringup** | 통합 런치 — SLAM/AMCL + Nav2 + Vision(map 좌표 마커) + RViz 한 창 (`system.launch.py`, `system.rviz`) | ✅ 실기 검증 | [docs/my_bringup.md](./docs/my_bringup.md) |
 | **my_vision** | RF-DETR 물체 검출(torch/**TensorRT** 백엔드) + 정렬 depth 로 거리·3D 위치 → **TF2 로 base_link/map 좌표 변환**(`/vision/objects`), RViz 마커, 주석 영상, 카메라 뷰어 | ✅ 실물 검증 (TensorRT 6ms) | [docs/my_vision.md](./docs/my_vision.md) |
 
 ## 시작하기
@@ -124,6 +125,19 @@ ros2 topic echo /vision/objects                  # 클래스·점수·박스 + b
 ```
 > 첫 실행 때 가중치를 `remote_pc/models/` 에 내려받는다(RF_HOME). 이미지는 `vision` 스테이지로
 > 빌드돼 있어야 한다 (`docker compose build remote-pc`, [docs/server_setup.md](./docs/server_setup.md)).
+
+### 2-2. 통합 실행 — SLAM + Nav2 + Vision + RViz 한 창 (서버) ★ 데모
+
+```bash
+export DISPLAY=:0
+ros2 launch my_bringup system.launch.py                       # 지도 만들며 주행 + 검출 물체가 지도 위 마커로
+ros2 launch my_bringup system.launch.py use_slam:=false map:=/overlay_ws/maps/my_map.yaml   # 저장 지도 + AMCL
+ros2 launch my_bringup system.launch.py backend:=tensorrt threshold:=0.3                   # Vision 옵션 통과
+```
+RViz 한 창에 지도·코스트맵·경로·**실측 footprint**·로봇 모델·**검출 마커(map 좌표)**·검출 영상이 뜬다
+([docs/my_bringup.md](./docs/my_bringup.md)). 아래 3·4 는 개별 실행이 필요할 때.
+
+![통합 RViz — 카메라가 검출한 책·키보드가 지도 위 책장 위치에 마커로 찍힘](./docs/images/rviz_system_demo.png)
 
 ### 3. SLAM — 지도 만들기 (서버)
 

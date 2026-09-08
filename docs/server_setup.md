@@ -59,7 +59,7 @@ docker compose ps             # 두 서비스 Up 확인
 
 ```bash
 docker compose exec remote-pc bash
-colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_vision)
+colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_vision, my_bringup)
 exit && docker compose exec remote-pc bash   # 재진입하면 자동 source 됨
 ```
 
@@ -85,7 +85,8 @@ ros2 topic hz /scan                                        # ~5Hz
 ros2 topic hz /camera/color/compressed                     # ~6fps (기본값; 자체 카메라 노드)
 ros2 topic hz /camera/depth/compressed                     # ~6fps (컬러 정렬 depth)
 ros2 launch my_slam slam.launch.py                         # SLAM + RViz
-ros2 launch my_vision vision.launch.py                     # Vision AI (첫 실행 시 가중치 ~120MB 다운로드 → remote_pc/models/)
+ros2 launch my_vision vision.launch.py                     # Vision AI (첫 실행 시 가중치 다운로드 → remote_pc/models/)
+ros2 launch my_bringup system.launch.py                    # 통합 (SLAM+Nav2+Vision+RViz, DISPLAY 필요)
 ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 (DISPLAY 필요)
 ```
 

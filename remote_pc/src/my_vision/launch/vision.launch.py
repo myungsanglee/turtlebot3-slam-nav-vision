@@ -19,7 +19,7 @@ from launch_ros.actions import Node
 # 런치 인자로 덮어쓸 수 있는 파라미터와 타입. 비워 두면(기본) YAML 값을 그대로 쓴다.
 OVERRIDES = {
     'model': str, 'weights': str, 'threshold': float, 'backend': str,
-    'trt_precision': str, 'trt_opt_level': int, 'trt_calib_dir': str,
+    'trt_precision': str, 'trt_opt_level': int, 'trt_calib_dir': str, 'target_frame': str,
 }
 
 

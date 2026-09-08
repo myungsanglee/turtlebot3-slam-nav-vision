@@ -11,7 +11,7 @@
 #   항상 안정적이었다. → 스트리밍은 최소 경로로, 캘리브레이션은 캐시로 독립시킨다.
 #
 # [출력 — Vision 파이프라인이 소비하는 계약]
-#   /camera/color/compressed    sensor_msgs/CompressedImage  format "jpeg"
+#   /camera/color/compressed    sensor_msgs/CompressedImage  format "bgr8; jpeg compressed bgr8" (JPEG)
 #   /camera/depth/compressed    sensor_msgs/CompressedImage  format "16UC1; png"
 #                               → PNG 16bit 무손실, 값은 mm 단위 (uint16), color 에 정렬됨.
 #                                 cv2.imdecode(buf, cv2.IMREAD_UNCHANGED) 로 복원.
@@ -448,7 +448,7 @@ class RsCameraNode(Node):
         msg_c = CompressedImage()
         msg_c.header.stamp = stamp
         msg_c.header.frame_id = self.frame_id
-        msg_c.format = 'jpeg'
+        msg_c.format = 'bgr8; jpeg compressed bgr8'   # image_transport 표준 문자열 (RViz 등 호환)
         msg_c.data = jpg
         self.pub_color.publish(msg_c)
 

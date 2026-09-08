@@ -449,3 +449,33 @@ GIL 을 쥔 채 블록되어 파이썬 인터프리터 전체가 얼어붙은 �
 - fps 가 정확히 절반 근처로 떨어지면 코드보다 `get_throttled` 부터 볼 것 (클럭 1500→600).
 - 전원 보강(CLAUDE.md 다음 할 일 3번: 배터리→5V/5A 컨버터→Pi 직결)의 필요성이 라이브
   데이터로 재확인됨. 개발 중엔 굵은 USB-C 케이블 + 정격 어댑터를 Pi 에 직결.
+
+---
+
+## 2026-09-08 — 통합 런치 구성 중 두 가지: 브리지 세션 이중화(메시지 2배 수신) / RViz "No Image"
+
+### (1) 서버에서 카메라 토픽이 정확히 2배 속도로 수신, 검출 노드 정체
+- **증상**: 서버 `ros2 topic hz /camera/color/compressed` 가 6fps 카메라인데 ~12Hz. stamp 별로 메시지가
+  `CCDD` 로 두 번씩 도착(진단 스크립트로 확인). 검출 노드는 살아 있는데 처리 로그·출력이 끊김.
+- **진단**: Pi 로컬은 stamp 당 1회(정상), Pi 카메라 퍼블리셔 1개, 서버 DDS 에서도 브리지 writer 1개 →
+  중복은 **브리지 구간**. 서버 브리지 재시작으론 그대로, **Pi 브리지 재시작으로 해소**.
+- **원인(추정)**: 서버 브리지(컨테이너)를 재시작/재생성했을 때 Pi 브리지가 옛 zenoh 세션을 정리하지
+  못하고 새 세션을 추가로 맺어, 같은 샘플을 두 세션으로 두 번 전달한 것.
+- **해결**: Pi 브리지 재시작. systemd `Restart=always` 라 **프로세스만 죽이면 3초 뒤 자동 재시작 —
+  sudo 불필요**: `kill $(pgrep -f "zenoh-bridge-ros2dd[s]")`. (정석은 `sudo systemctl restart zenoh-bridge`)
+- **재발 방지**: 서버 브리지를 재시작/재생성했으면 **Pi 브리지도 같이 재시작**하는 습관. 검출 노드의
+  FramePairer 에 "이미 처리한 stamp 이하 무시"를 넣어 중복 전달이 와도 정체되지 않게 함.
+- 빠른 판별: `ros2 topic hz` 가 발행 fps 의 정수배로 나오면 중복 전달을 의심.
+
+### (2) RViz Image 디스플레이 "No Image" (`image_transport/compressed_sub does not exist`)
+- **원인**: 컨테이너에 `image_transport` 의 compressed 플러그인이 없음 — RViz 가 `/…/compressed` 토픽을
+  풀 수 없다 (ros-humble-desktop 에 미포함).
+- **해결**: Dockerfile vision 스테이지에 `ros-humble-image-transport-plugins` 추가 (별도 apt 레이어).
+  아울러 자체 카메라 노드·검출 노드의 `format` 문자열을 image_transport 표준
+  `"bgr8; jpeg compressed bgr8"` 로 통일 (디코더 호환, 소비 측 imdecode 는 영향 없음).
+- 참고: RViz Image 디스플레이는 설정의 Reliability 와 무관하게 Reliable 로 구독을 시도해 best effort
+  퍼블리셔와 "incompatible QoS" 경고가 뜰 수 있으나, 실제로는 표시된다 (경고는 무해).
+
+### 교훈 (반복)
+- 정지와 실행을 한 명령에 넣고 `pkill -f 패턴` 을 쓰면 실행 줄의 문자열에 매치돼 셸이 자살한다 —
+  오늘도 `rviz[2]` 패턴이 `rviz2 -d …` 줄에 걸렸다. 정지는 별도 호출로.

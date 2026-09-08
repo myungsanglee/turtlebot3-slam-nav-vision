@@ -121,7 +121,8 @@ turtlebot3-slam-nav-vision/
 │   └── src/
 │       ├── my_slam/           # slam_toolbox 설정/런치
 │       ├── my_navigation/     # Nav2 설정/런치
-│       └── my_vision/         # Vision AI 노드 (TensorRT 추론)
+│       ├── my_vision/         # Vision AI 노드 (TensorRT 추론)
+│       └── my_bringup/        # 통합 런치 (SLAM/AMCL+Nav2+Vision+RViz) — system.launch.py, system.rviz
 ├── robot/                     # Raspberry Pi 에서 도는 것 (RealSense 관련)
 │   └── src/
 │       └── realsense_bringup/ # RealSense 실행 런치 (bringup 은 건드리지 않음)
@@ -186,6 +187,9 @@ turtlebot3-slam-nav-vision/
   단일 소스(가중치 경로로 전이학습 모델 교체, 엔진 캐시는 체크포인트별 분리). TF2 로 검출 3D 위치를
   `target_frame`(base_link/map)으로 변환한 `/vision/objects` + RViz `/vision/markers`. 뷰어 `camera_viewer` 포함.
   상세는 `docs/my_vision.md`
+- **my_bringup (서버)** — 통합 런치 `system.launch.py`: navigation.launch(use_slam/map) + vision.launch
+  (target_frame=map) + RViz `system.rviz`(지도·코스트맵·경로·실측 footprint·RobotModel·검출 마커·
+  검출 영상). 실기 검증(전 노드 active, 마커 map 프레임). 상세는 `docs/my_bringup.md`
 
 **다음 (우선순위 순)**
 1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) + ~~Vision 3D 위치의 base_link/map 변환~~ ✅
@@ -196,7 +200,8 @@ turtlebot3-slam-nav-vision/
    (Pololu D24V50F5 또는 UBEC) → Pi 직결. 개발 중엔 벽 어댑터로 대체 가능
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
 5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — IMU 위치·방향 실측 완료, 착수 가능
-6. SLAM + Nav2 + RealSense + RViz 통합 런치 (한 창에서 다 보기)
+6. ~~SLAM + Nav2 + Vision + RViz 통합 런치~~ ✅ (2026-09-08, `my_bringup/system.launch.py`,
+   docs/my_bringup.md). 남은 것: 실주행 튜닝, "검출 물체 찾아가기" 데모
 7. ~~Vision AI 노드~~ ✅ 완료 (2026-09-04~08, 좌표 변환 포함). 남은 것: 필요 시 추적/파인튜닝
 
 ## 9. 규칙 / 선호

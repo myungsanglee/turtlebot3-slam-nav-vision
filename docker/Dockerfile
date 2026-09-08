@@ -151,5 +151,11 @@ RUN pip install --no-cache-dir "numpy<2"
 RUN pip install --no-cache-dir "rfdetr[onnx]==1.9.4" "tensorrt-cu12==10.15.1.29" \
       polygraphy onnxruntime-gpu "numpy<2"
 
+# --- RViz 에서 compressed 영상 표시 (image_transport 의 compressed 플러그인) ---
+#   없으면 RViz Image 디스플레이가 "image_transport/compressed_sub does not exist" 로 No Image (실측)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ros-${ROS_DISTRO}-image-transport-plugins \
+    && rm -rf /var/lib/apt/lists/*
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
