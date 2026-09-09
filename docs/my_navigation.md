@@ -161,7 +161,7 @@ my_slam 과 마찬가지로 소스 코드가 없다 — 검증된 표준 스택(
 | `max_vel_x`, `max_velocity` | 0.22 | burger 하드웨어 한계와 일치 (velocity_smoother 까지 동일하게) |
 | local costmap `plugins` | obstacle+inflation | 2D 라이다만 있으므로 3D용 voxel_layer 제외 |
 | `allow_unknown` | true | 미탐사 영역 주행 허용 (SLAM 동시 주행에 필수) |
-| `footprint` | 앞 0.062 / 뒤 −0.220 / 좌우 ±0.090 | **실측 다각형** (2026-09-08). 표준 robot_radius 0.105 원 대체 |
+| `footprint` | 앞 0.062 / 뒤 −0.220 / 좌우 ±0.090 | **실측 다각형** (2026-09-08). 표준 robot_radius 0.105 원 대체. 뒤는 카메라 USB 케이블 돌출 포함(몸체 CAD 는 −0.165) |
 
 ## 5. 실행 방법
 

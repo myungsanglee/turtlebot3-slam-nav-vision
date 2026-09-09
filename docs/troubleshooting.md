@@ -25,6 +25,7 @@
 | 카메라 depth 는 뜨는데 RGB 만 실패 (`set_xu`/`control_transfer` EAGAIN) | Pi4 USB(VL805) 에서 RGB 컨트롤 경로(XU 캘리브레이션 읽기)가 세션 단위로 간헐 불통 | **자체 노드(rs_camera.launch.py)** 사용 — 캘리브레이션 캐시로 XU 독립 + 자기 복구 (2026-09-02, 09-03 항목) |
 | 서버에서 토픽이 발행 fps 의 **정수배**(6→12Hz)로 수신, 검출 노드 정체 | 서버 브리지 재시작 뒤 Pi 브리지의 zenoh 세션이 이중으로 남아 샘플을 두 번 전달 | **Pi 브리지 재시작** — `kill $(pgrep -f "zenoh-bridge-ros2dd[s]")` (systemd 자동 재시작, sudo 불필요) (2026-09-08 항목) |
 | RViz Image 디스플레이 "No Image" (`compressed_sub does not exist`) | 컨테이너에 image_transport compressed 플러그인 없음 | 이미지 재빌드 (Dockerfile 에 image-transport-plugins 포함됨, 2026-09-08) |
+| RViz RobotModel 안 보이고 `Package [my_description] does not exist` | 메시 패키지가 overlay 에 있는데 셸이 `/opt/ros/humble` 만 source | `source /overlay_ws/install/setup.bash` (exec 셸은 .bashrc 가 자동. 최초엔 `colcon build` 필요, server_setup.md 3단계) |
 | 카메라가 `lsusb` 에서 사라짐 (No such device) | 열거/start 도중인 카메라 프로세스를 kill 했거나 USB 리셋을 연타함 | 소프트웨어 복구 불가 — **물리 재연결**. 재발 방지는 2026-09-03 항목 |
 
 ---

@@ -145,6 +145,9 @@ ros2 run tf2_ros tf2_echo base_link camera_color_optical_frame               # �
    전원 보강 전까진 정상 현상 (`vcgencmd get_throttled` 의 bit0).
 5. 새 패키지/파일이 추가된 커밋을 받았을 때만 재빌드: 서버 `cd /overlay_ws && colcon build --symlink-install`,
    Pi `cd ~/realsense_ros_ws && colcon build --packages-select realsense_bringup --symlink-install`.
+   `docker-compose.yml` 이 바뀐 커밋(마운트·env 변경)은 `docker compose up -d` 로 컨테이너를 재생성해야 반영된다.
+6. `description/urdf` 가 바뀐 커밋은 Pi 에서 URDF 를 다시 복사하고 bringup 재실행
+   ([docs/pi_setup.md](./docs/pi_setup.md) 8단계). 메시 파일은 Pi 에 필요 없다.
 
 ### 참고
 

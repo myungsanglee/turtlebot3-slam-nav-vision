@@ -184,7 +184,7 @@ ros2 launch turtlebot3_bringup robot.launch.py
 
 **CAD 메시 교체 검증 (2026-09-09, 서버 컨테이너)**
 - STL 해석: 원본 bbox x −164.8~+64.8, y −87.3~+88.6, z −9.9~+133.0 mm. 바퀴 영역 z −9.6~56.4
-  (반지름 33, 축 높이 23 ✓), x 중심 0 ✓ / LDS 상단 133 / 카메라 전면 +64.8 (URDF 카메라 상자
+  (반지름 33, 축 높이 23 ✓), x 중심 0 ✓ / LDS 상단 133 / 카메라 전면 +64.8 (교체 전 URDF 카메라 상자
   전면 +62.4 와 2 mm 차 — 렌즈 커버) → **원점·축 방향이 base_link 규약과 일치**.
 - 경량화 후 bbox 동일(소수점 이하 변화), 10만 삼각형·5.0 MB.
 - 컨테이너에서 `robot_state_publisher`(xacro 처리) + RViz RobotModel + footprint 폴리곤 겹쳐 확인:
