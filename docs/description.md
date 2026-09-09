@@ -189,8 +189,11 @@ ros2 launch turtlebot3_bringup robot.launch.py
 - 경량화 후 bbox 동일(소수점 이하 변화), 10만 삼각형·5.0 MB.
 - 컨테이너에서 `robot_state_publisher`(xacro 처리) + RViz RobotModel + footprint 폴리곤 겹쳐 확인:
   메시 로드 성공, 폭(±0.090)·앞(+0.062)은 footprint 와 일치, base_scan TF 가 메시 LDS 중심에 위치.
-  **뒤쪽은 메시 −0.165 m 인데 footprint 는 −0.220 m 로 55 mm 차이** — 실측 footprint(2026-09-08)
-  또는 CAD 중 한쪽 확인 필요 (사용자 확인 대기).
+  뒤쪽은 메시 −0.165 m 인데 footprint 는 −0.220 m 로 55 mm 차이 — **카메라 USB 케이블이 뒤로
+  튀어나온 만큼**이다(사용자 확인). CAD 는 케이블을 안 그리고 footprint 는 케이블까지 포함하는 게
+  맞으므로 둘 다 그대로 둔다 (RViz 에서 로봇 뒤 초록 여백이 남는 것이 정상).
+- Pi 배포(2026-09-09, git pull 후 cp, 백업 `.bak-20260909`) — install 은 src 로의 심볼릭 링크라
+  즉시 반영. 다음 bringup 실행부터 새 URDF 가 publish 된다.
 - RViz 가 `package://my_description` 을 찾으려면 **overlay 워크스페이스가 source 돼 있어야**
   한다 (`/opt/ros/humble` 만 source 한 셸에선 "Package [my_description] does not exist").
 
@@ -200,4 +203,3 @@ ros2 launch turtlebot3_bringup robot.launch.py
 2. ~~카메라 기울기~~ 수평 확인 / ~~IMU 위치 실측~~ 완료 / ~~Nav2 footprint~~ 완료 (my_navigation.md)
    — 2026-09-08 실측 세션으로 URDF·footprint 실측 항목은 전부 반영됨.
 3. robot_localization(EKF) 설정 시 imu_link 위치·방향 그대로 사용.
-4. footprint 뒤쪽(−0.220) vs CAD 메시(−0.165) 55 mm 차이 확인 후 한쪽 수정.

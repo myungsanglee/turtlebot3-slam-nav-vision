@@ -169,7 +169,7 @@ turtlebot3-slam-nav-vision/
   IMU 위치 xyz 도 보드 중심 실측(-0.030,0,0.060, 2026-09-08) 반영·TF 검증. 카메라 프레임 체인
   (나사 구멍 실측 + 인텔 오프셋)도 추가·검증. RViz 로봇 모양은 사용자가 실물을 CAD 로 그린
   통짜 STL(바퀴·LDS·카메라 포함, 원점 base_link, 10만 삼각형 경량화)로 교체(2026-09-09).
-  ★ 미해결: footprint 뒤 -0.220 vs CAD -0.165 (55mm) 불일치 — 사용자 확인 필요. 상세는 `docs/description.md`
+  footprint 뒤 -0.220 vs CAD -0.165 의 55mm 차이는 카메라 USB 케이블 돌출분(정상). 상세는 `docs/description.md`
 - **realsense_bringup (Pi)** — **자체 pyrealsense2 노드**(`rs_camera_node.py`)로
   color JPEG + **color 에 정렬된 depth(PNG 16bit, mm)** + camera_info 를
   `/camera/color/compressed`·`/camera/depth/compressed`·`/camera/color/camera_info` 로

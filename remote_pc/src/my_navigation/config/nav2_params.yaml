@@ -202,7 +202,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      # 실측 footprint (2026-09-08): 앞 카메라 전면 +0.062, 뒤 -0.220, 좌우 ±0.090 — 시계반대방향 꼭짓점
+      # 실측 footprint (2026-09-08): 앞 카메라 전면 +0.062, 뒤 -0.220(카메라 USB 케이블 돌출 포함; 몸체는 -0.165), 좌우 ±0.090 — 시계반대방향 꼭짓점
       footprint: "[[0.062, 0.090], [-0.220, 0.090], [-0.220, -0.090], [0.062, -0.090]]"
       plugins: ["obstacle_layer", "inflation_layer"]   # 2D 라이다만 있으므로 voxel 대신 obstacle
       obstacle_layer:
