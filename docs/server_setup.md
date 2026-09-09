@@ -12,7 +12,8 @@
   Docker + NVIDIA Container Toolkit + Tailscale + UFW 규칙
   └─ docker compose
        ├─ zenoh-bridge  : Pi<->서버 통신 (tcp/7447 listen, eclipse/zenoh-bridge-ros2dds)
-       └─ remote-pc     : ROS 2 Humble 컨테이너 (SLAM/Nav2/Vision AI/RViz, /overlay_ws=./remote_pc)
+       └─ remote-pc     : ROS 2 Humble 컨테이너 (SLAM/Nav2/Vision AI/RViz, /overlay_ws=./remote_pc,
+                          ./description → /overlay_ws/src/my_description 중첩 마운트 = URDF·CAD 메시)
                           이미지 tb3-remote-pc:vision = ROS + PyTorch CUDA + RF-DETR
 ```
 
@@ -55,13 +56,19 @@ docker compose ps             # 두 서비스 Up 확인
 
 ## 3. 오버레이 워크스페이스 빌드 (컨테이너 안)
 
-`./remote_pc` 가 컨테이너의 `/overlay_ws` 로 마운트된다. 우리 패키지 빌드:
+`./remote_pc` 가 컨테이너의 `/overlay_ws` 로, 레포 최상위 `./description` 이
+`/overlay_ws/src/my_description` 으로 마운트된다 (docker-compose.yml volumes —
+`my_description` 은 RViz RobotModel 이 `package://my_description/meshes/*.stl` 로
+CAD 메시를 읽기 위한 패키지, docs/description.md 3.4). 우리 패키지 빌드:
 
 ```bash
 docker compose exec remote-pc bash
-colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_vision, my_bringup)
+colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_vision, my_bringup, my_description)
 exit && docker compose exec remote-pc bash   # 재진입하면 자동 source 됨
 ```
+
+> RViz 에서 로봇 모델이 안 보이고 로그에 `Package [my_description] does not exist` 가
+> 나오면 overlay 가 source 안 된 셸이다 (`source /overlay_ws/install/setup.bash`).
 
 ## 4. RViz 원격 확인 (VNC)
 

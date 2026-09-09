@@ -195,6 +195,10 @@ cp "$TARGET" "$TARGET.orig"      # 원본 백업
 cp ~/turtlebot3-slam-nav-vision/description/urdf/turtlebot3_burger.urdf "$TARGET"
 ```
 
+URDF 가 참조하는 CAD 메시(`package://my_description/meshes/...`)는 **Pi 에 없어도 된다** —
+robot_state_publisher 는 URDF 텍스트만 publish 하고, 메시를 여는 것은 서버의 RViz 뿐
+(server_setup.md 3단계의 my_description 패키지). URDF 를 갱신했으면 bringup 재실행.
+
 ## 9. 최종 검증
 
 ```bash

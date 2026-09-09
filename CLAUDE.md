@@ -126,10 +126,12 @@ turtlebot3-slam-nav-vision/
 ├── robot/                     # Raspberry Pi 에서 도는 것 (RealSense 관련)
 │   └── src/
 │       └── realsense_bringup/ # RealSense 실행 런치 (bringup 은 건드리지 않음)
-└── description/               # URDF/xacro (커스텀 로봇: LDS/카메라 TF 실측 반영)
+└── description/               # my_description 패키지: 보정 URDF + 실물 CAD 메시(meshes/, RViz 표시용)
 ```
 
 > 참고: 컨테이너의 colcon 워크스페이스는 `./remote_pc` → `/overlay_ws` 마운트.
+> `./description` 은 `/overlay_ws/src/my_description` 으로 중첩 마운트 (RViz 가 package:// 로 메시를 읽음).
+> Pi 에는 URDF 텍스트만 복사하면 되고 메시는 불필요 (docs/description.md 3.4).
 > Pi 쪽 `realsense_bringup` 은 Pi 의 `~/realsense_ros_ws/src` 에 심볼릭 링크로
 > 연결되어 빌드된다 (docs/pi_setup.md 5단계).
 
@@ -165,7 +167,9 @@ turtlebot3-slam-nav-vision/
   scan_joint(LDS) xyz=-0.100,0,0.125 / imu_joint yaw=-1.57(OpenCR 90° 회전).
   Pi 배포 + TF 실기 검증 완료. 제자리 회전 정밀 검증은 공간 확보 시 예정.
   IMU 위치 xyz 도 보드 중심 실측(-0.030,0,0.060, 2026-09-08) 반영·TF 검증. 카메라 프레임 체인
-  (나사 구멍 실측 + 인텔 오프셋)도 추가·검증. 상세는 `docs/description.md`
+  (나사 구멍 실측 + 인텔 오프셋)도 추가·검증. RViz 로봇 모양은 사용자가 실물을 CAD 로 그린
+  통짜 STL(바퀴·LDS·카메라 포함, 원점 base_link, 10만 삼각형 경량화)로 교체(2026-09-09).
+  ★ 미해결: footprint 뒤 -0.220 vs CAD -0.165 (55mm) 불일치 — 사용자 확인 필요. 상세는 `docs/description.md`
 - **realsense_bringup (Pi)** — **자체 pyrealsense2 노드**(`rs_camera_node.py`)로
   color JPEG + **color 에 정렬된 depth(PNG 16bit, mm)** + camera_info 를
   `/camera/color/compressed`·`/camera/depth/compressed`·`/camera/color/camera_info` 로

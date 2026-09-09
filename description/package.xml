@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_description</name>
+  <version>0.1.0</version>
+  <description>
+    커스텀 TurtleBot3 의 실측 보정 URDF 와 실물 CAD 메시.
+    URDF 는 Pi 의 turtlebot3_description 에 복사해 bringup 이 로드하고(docs/pi_setup.md 8단계),
+    메시는 서버 컨테이너에서 RViz RobotModel 이 package://my_description/meshes/... 로 읽는다.
+  </description>
+  <maintainer email="mslee@robotegra.com">Myungsang Lee</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

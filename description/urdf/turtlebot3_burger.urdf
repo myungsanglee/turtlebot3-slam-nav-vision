@@ -17,6 +17,13 @@
       base_link 에서 카메라 바닥 1/4인치 마운트 나사 구멍까지 실측 => x +47.5mm, y 0, z +48mm, 수평 장착(실측 확인).
       나사 구멍 아래 프레임 체인(camera_link, depth/color, optical)은 인텔 공식 URDF 상수 그대로.
 
+   4) 몸체 visual 을 실물 CAD 통짜 메시로 교체 (2026-09-09, RViz 표시 전용)
+      package://my_description/meshes/my_turtlebot3_burger_lowpoly.stl (m 단위, 원점 = base_link).
+      바퀴·LDS·카메라·캐스터가 한 메시에 포함돼 있어 해당 링크의 개별 visual 은 제거했다.
+      (링크·조인트·TF 는 그대로 - 주행/SLAM/Vision 은 메시를 쓰지 않는다.)
+      메시는 서버 컨테이너의 my_description 패키지(레포 description/ 마운트)에서 RViz 가 읽는다.
+      Pi 의 robot_state_publisher 는 URDF 텍스트만 publish 하므로 Pi 에 메시 파일은 불필요.
+
   바퀴 폭은 표준과 동일하므로 wheel_*/base_joint 등은 미변경.
   상세 설명은 docs/description.md 참고.
 
@@ -79,10 +86,12 @@
   </joint>
 
   <link name="${namespace}base_link">
+    <!-- 실물 CAD 통짜 메시 (바퀴·LDS·카메라 포함, 원점 = base_link, m 단위).
+         외곽 x -0.165 ~ +0.065, y ±0.088, z -0.010(바닥) ~ 0.133(LDS 상단). 원본 118만 삼각형을 10만으로 경량화. -->
     <visual>
-      <origin xyz="-0.032 0 0.0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="package://turtlebot3_description/meshes/bases/burger_base.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="package://my_description/meshes/my_turtlebot3_burger_lowpoly.stl" scale="1 1 1"/>
       </geometry>
       <material name="light_black"/>
     </visual>
@@ -109,13 +118,7 @@
   </joint>
 
   <link name="${namespace}wheel_left_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="1.57 0 0"/>
-      <geometry>
-        <mesh filename="package://turtlebot3_description/meshes/wheels/left_tire.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="dark"/>
-    </visual>
+    <!-- visual 없음 - 바퀴는 base_link 의 통짜 메시에 포함 (RViz 에서 바퀴가 회전하진 않음) -->
 
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -139,13 +142,7 @@
   </joint>
 
   <link name="${namespace}wheel_right_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="1.57 0 0"/>
-      <geometry>
-        <mesh filename="package://turtlebot3_description/meshes/wheels/right_tire.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="dark"/>
-    </visual>
+    <!-- visual 없음 - 바퀴는 base_link 의 통짜 메시에 포함 (RViz 에서 바퀴가 회전하진 않음) -->
 
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -200,13 +197,7 @@
   </joint>
 
   <link name="${namespace}base_scan">
-    <visual>
-      <origin xyz="0 0 0.0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://turtlebot3_description/meshes/sensors/lds.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="dark"/>
-    </visual>
+    <!-- visual 없음 - LDS 는 base_link 의 통짜 메시에 포함 -->
 
     <collision>
       <origin xyz="0.015 0 -0.0065" rpy="0 0 0"/>
@@ -244,14 +235,7 @@
     <origin xyz="0.0106 0.0175 0.0125" rpy="0 0 0"/>
   </joint>
   <link name="${namespace}camera_link">
-    <visual>
-      <!-- 몸체 90 x 25 x 25 mm 상자 (RViz 표시용). 몸체 중심은 camera_link 기준 x -8.2, y -17.5 mm -->
-      <origin xyz="-0.0082 -0.0175 0" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.02505 0.090 0.025"/>
-      </geometry>
-      <material name="dark"/>
-    </visual>
+    <!-- visual 없음 - 카메라 몸체는 base_link 의 통짜 메시에 포함 (이전엔 90x25x25mm 상자) -->
     <inertial>
       <mass value="0.072" />
       <origin xyz="0 0 0" />

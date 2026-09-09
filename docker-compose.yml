@@ -83,5 +83,8 @@ services:
       - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority:rw
       # 개발용: 본인 프로젝트 소스를 호스트에서 마운트 (이미지 재빌드 없이 코드 수정)
       - ./remote_pc:/overlay_ws:rw
+      # 커스텀 URDF·CAD 메시 패키지(my_description) — RViz RobotModel 이 package:// 로 메시를 읽도록
+      # 레포 최상위 description/ 을 overlay 워크스페이스 안에 중첩 마운트 (colcon build 대상에 포함)
+      - ./description:/overlay_ws/src/my_description:rw
 
     command: bash
