@@ -199,9 +199,9 @@ turtlebot3-slam-nav-vision/
 1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) + ~~Vision 3D 위치의 base_link/map 변환~~ ✅
    (`/vision/objects`, `/vision/markers`, 실기 검증)
 2. ~~Nav2 footprint 실측 교체~~ ✅ (2026-09-08)
-3. **Pi 전원 보강** — OpenCR 5V 출력이 Pi4+D435i 에 한계(undervoltage 재발,
-   troubleshooting 2026-09-01(2)). 부품 결정됨: 배터리(T-plug)→5V/5A 컨버터
-   (Pololu D24V50F5 또는 UBEC) → Pi 직결. 개발 중엔 벽 어댑터로 대체 가능
+3. ~~Pi 전원 보강~~ ✅ (2026-11-05) — 배터리 분기 → UBEC 5V/5A → Pi GPIO. 6/15fps 부하 시험 `0x0`·fps 고정
+   (troubleshooting 2026-11-05). 남은 것: 노드 종료 순간 1회 저전압(원인 미확정)·실주행 중 재관찰,
+   UBEC 가 OpenCR 스위치 우회 → 사용 후 배터리 분리 습관 (필요 시 스위치/LiPo 경보기)
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
 5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — IMU 위치·방향 실측 완료, 착수 가능
 6. ~~SLAM + Nav2 + Vision + RViz 통합 런치~~ ✅ (2026-09-08, `my_bringup/system.launch.py`,

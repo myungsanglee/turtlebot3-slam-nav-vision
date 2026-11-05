@@ -22,7 +22,10 @@
 - Ubuntu 22.04 arm64 (Raspberry Pi 4 기준)
 - Tailscale 설치·로그인 — 서버와 **같은 tailnet** 필수 (노드 공유로는 DDS 불가,
   troubleshooting 참고). 로봇 IP 예: `100.71.74.81`
-- 전원: Pi 는 **외부 정품급 5V/3A+ 어댑터**로 (OpenCR 5V 출력은 D435i 까지 감당 못 함).
+- 전원: OpenCR 5V 출력으로는 Pi4+LDS+D435i 부하에서 저전압이 난다 (실측 OpenCR 4.94V → Pi 4.78V).
+  **현재 구성: 배터리 T-plug 분기 → UBEC 5V/5A(연속, 출력 5.25V) → Pi GPIO 4번(5V)·6번(GND)**,
+  OpenCR→Pi 전원선은 제거 (troubleshooting 2026-11-05). 연결 전 UBEC 출력 ≤5.3V·플러그 방향 확인 필수.
+  분기된 UBEC 는 OpenCR 스위치를 거치지 않으므로 사용 후 배터리를 뽑을 것. 책상 개발은 5V/5A 어댑터도 가능.
   `vcgencmd get_throttled` 은 **bit0**(현재 전압 부족)만 의미 있음 — `0x50000` 은 과거
   이력 플래그. ★ 반드시 **카메라 스트리밍 중에** 재라: 유휴 땐 정상이다가 부하 시에만
   `0x50005` 로 처지며 클럭이 600MHz 로 떨어져 fps 가 반토막 난다 (troubleshooting 2026-09-03(2)).

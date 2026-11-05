@@ -161,6 +161,7 @@ ros2 launch realsense_bringup full_bringup.launch.py camera_driver:=realsense2
   확인. `0x50005`(bit0=현재 전압 부족, bit2=스로틀링 중)이면 ARM 클럭이 600MHz 로 떨어져
   노드가 2.5배 느려진다. 유휴 땐 `0x50000`(이력만)으로 보여 놓치기 쉽다 — 부하 의존 처짐
   (troubleshooting 09-03(2)). 전원 경로(어댑터·USB-C 케이블·연결)를 점검.
+  2026-11-05 UBEC 5V/5A 보강 후 6fps·15fps 모두 `0x0`·fps 고정 확인 (troubleshooting 2026-11-05).
 
 ## 8. 다음 단계
 

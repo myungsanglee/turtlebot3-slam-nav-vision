@@ -141,8 +141,9 @@ ros2 run tf2_ros tf2_echo base_link camera_color_optical_frame               # �
    (systemd 가 3초 뒤 자동 재시작, sudo 불필요). 안 하면 토픽이 2배로 중복 수신되어 검출이 멈출 수 있다
    ([docs/troubleshooting.md](./docs/troubleshooting.md) 2026-09-08).
 3. "토픽은 보이는데 데이터 0" 이면 브리지 재시작: 서버 `docker compose restart zenoh-bridge` + 위 2번.
-4. Pi 전원이 OpenCR 5V 나 5V/3A 어댑터면 카메라 부하에서 CPU 가 600MHz 로 스로틀돼 fps 가 떨어진다 —
-   전원 보강 전까진 정상 현상 (`vcgencmd get_throttled` 의 bit0).
+4. Pi 전원은 배터리 분기 → UBEC 5V/5A → GPIO 로 보강돼 있다 (OpenCR 5V 로 되돌리면 카메라 부하에서
+   CPU 가 600MHz 로 스로틀돼 fps 가 떨어짐 — `vcgencmd get_throttled` 의 bit0). UBEC 는 OpenCR 스위치를
+   거치지 않으므로 **사용 후 배터리를 뽑을 것** ([docs/troubleshooting.md](./docs/troubleshooting.md) 2026-11-05).
 5. 새 패키지/파일이 추가된 커밋을 받았을 때만 재빌드: 서버 `cd /overlay_ws && colcon build --symlink-install`,
    Pi `cd ~/realsense_ros_ws && colcon build --packages-select realsense_bringup --symlink-install`.
    `docker-compose.yml` 이 바뀐 커밋(마운트·env 변경)은 `docker compose up -d` 로 컨테이너를 재생성해야 반영된다.

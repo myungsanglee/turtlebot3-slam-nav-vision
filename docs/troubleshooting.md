@@ -19,6 +19,7 @@
 | RViz 에서 `/scan` 이 안 보임 | QoS 불일치 (`/scan` 은 BEST_EFFORT) | 구독 Reliability 를 Best Effort 로 |
 | RViz 에서 `/map` 이 늦게/안 보임 | QoS Durability 불일치 | Transient Local 로 |
 | bringup 이 `robot_description as yaml` 오류로 안 뜸 | URDF 주석에 콜론+공백/줄끝 콜론 → YAML 파싱 깨짐 | 주석에서 콜론 제거 (아래 2026-08-26 항목) |
+| SSH 로 띄운 백그라운드 launch 가 `kill -INT` 로 안 꺼짐, 노드가 고아로 남음 | 비대화형 셸의 `&` 가 SIGINT 를 무시 상태로 물려줌 | 시작 스크립트에 `set -m`, 종료는 `kill -INT -<pgid>` (2026-11-05 항목) |
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
@@ -482,3 +483,57 @@ GIL 을 쥔 채 블록되어 파이썬 인터프리터 전체가 얼어붙은 �
 ### 교훈 (반복)
 - 정지와 실행을 한 명령에 넣고 `pkill -f 패턴` 을 쓰면 실행 줄의 문자열에 매치돼 셸이 자살한다 —
   오늘도 `rviz[2]` 패턴이 `rviz2 -d …` 줄에 걸렸다. 정지는 별도 호출로.
+
+---
+
+## 2026-11-05 — Pi 전원 보강: 배터리 분기 → UBEC 5V/5A → GPIO (부하 시 저전압 해소)
+
+### 배경 (보강 전 실측)
+09-03(2) 항목의 부하 의존 저전압의 원인을 멀티미터로 분해했다 (카메라 부하 상태).
+
+| 측정 위치 | 전압 | 해석 |
+|---|---|---|
+| OpenCR 5V 출력 단자 | 4.94V | 출발점부터 Pi 권장 5.1V 보다 낮음 (레귤레이터 한계) |
+| Pi GPIO 2번–9번 핀 | 4.78V | 저전압 판정 4.63V 까지 여유 0.15V 뿐 |
+| 선·핀 손실 | 0.16V | 정상(≤0.05V)의 3배 — 가는 전원선 |
+
+평균이 4.78V 면 카메라·라이다의 순간 전류에 4.63V 아래로 빠진다 → `0x50005`, 600MHz.
+스펙상 OpenCR 5V 는 4A 지만 Pi4 + LDS(Pi USB 경유) + D435i(Pi USB 경유) 가 전부 이 하나에
+걸려 정격 근처에서 전압이 처진다. "4A 면 충분" 은 전류 기준이고, 문제는 **전압 유지력**이었다.
+
+### 조치 (배선, git 에 안 남음)
+```
+배터리 11.1V (T-plug) ─┬─ OpenCR (기존)
+                      └─ UBEC 5V/5A (출력 5.25V, 연속 5A) ─ 서보 플러그 ─ Pi GPIO 4번(5V)·6번(GND)
+```
+- OpenCR → Pi GPIO 전원선은 제거 (두 전원 동시 연결 금지). OpenCR–Pi USB(데이터)는 유지 → GND 공유.
+- 연결 전 확인: UBEC 출력 ≤5.3V (GPIO 는 Pi 입력 보호회로를 우회), 서보 플러그 방향
+  (빨강=4번, 검정=6번, 빈 칸=2번 — 뒤집으면 5V 레일 단락).
+- ⚠️ 분기 구성에서 UBEC 쪽은 **OpenCR 전원 스위치를 거치지 않는다** → OpenCR 를 꺼도 Pi 는 켜진 채
+  배터리를 소모하고 OpenCR 의 저전압 경고음도 멈춘다. 사용 후 배터리 커넥터를 뽑을 것
+  (또는 UBEC 입력에 스위치/LiPo 경보기 추가).
+
+### 결과 (보강 후, 같은 날)
+- Pi GPIO 전압 4.91V (사용자 멀티미터 실측, 보강 전 4.78V).
+- 부하 시험 (Pi 에서 `vcgencmd` 1초 간격 기록, full_bringup = 모터·라이다·카메라):
+
+| 조건 | 시간 | `get_throttled` | ARM 클럭 평균 / 최저 | 카메라 fps | 최고 온도 |
+|---|---|---|---|---|---|
+| 보강 전 (09-03(2)) | — | `0x50005` 반복 | 600MHz 고착 구간 | 5~13 출렁임 | 66.7°C |
+| 6fps (기본) | 240s | **0x0 전 구간** | 1656 / 1100 MHz | **6.0 고정** | 64.7°C |
+| 15fps | 240s | **0x0 전 구간** | 1719 / 1100 MHz | **15.0 고정** | 73.5°C |
+
+  /odom 20Hz, /scan 5Hz 정상. 클럭 1100~1800 변동은 ondemand 거버너 (전압·열 스로틀 아님).
+- 한 번 예외: 노드를 정리하던 21:49:52 에 커널 `Undervoltage detected!` → 4초 뒤 `Voltage normalised`
+  (`0x50000` 이력 플래그 남음). 측정 중엔 없었고, 같은 절차로 재시작·종료했을 땐 재현되지 않음 →
+  원인 미확정 (종료 시 순간 과도현상 또는 배터리 잔량). 주행 시험 때 재관찰할 것.
+- 15fps 에서 73.5°C — 열 스로틀(80°C) 아래지만 장시간 15fps 면 방열판/팬 권장.
+
+### 덤: 원격 백그라운드 launch 가 Ctrl+C(SIGINT)로 안 꺼짐
+- 증상: SSH 로 `nohup ros2 launch … &` 한 launch 에 `kill -INT` 해도 무반응, 새로 띄운 launch 와
+  겹쳐 turtlebot3_ros 두 개가 같은 시리얼(/dev/ttyACM0)을 잡고 한쪽이 `stack smashing` 으로 죽음.
+- 원인: **잡 컨트롤 없는(비대화형) 셸의 `&` 는 자식의 SIGINT 를 SIG_IGN 으로 물려준다.** launch 도,
+  launch 가 자식에 보내는 SIGINT 도 무시됨. launch 에 SIGTERM 을 주면 launch 만 죽고 노드는 고아로 남음.
+- 해결: 시작 스크립트에 `set -m` (백그라운드 잡이 SIGINT 를 무시하지 않음) + 프로세스 그룹 ID 저장,
+  종료는 `kill -INT -<pgid>` → 2초 만에 전 노드 정상 종료 확인. 그리고 **종료 확인 전엔 재시작하지 말 것**
+  (이번에 확인 루프가 끝나기 전에 재시작해 카메라 둘이 장치를 다투고 USB 소프트 리셋까지 갔다 — 카메라는 무사).
