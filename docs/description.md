@@ -164,8 +164,8 @@ ros2 launch turtlebot3_bringup robot.launch.py
 
 **IMU 회전(yaw=-1.57) 물리 검증 (2026-09-02 완료)**
 - 정지 상태: 가속도 z=+9.97 m/s² (중력) → 보드 수평(roll/pitch=0) 확인.
-  y 축에 +0.7 바이어스 관찰 — 약 4° 기울기 또는 센서 오프셋, EKF 단계에서
-  바이어스 보정으로 처리 (기록용).
+  y 축에 +0.7 바이어스 관찰 — 약 4° 기울기 또는 센서 오프셋, EKF 를 도입하면
+  바이어스 보정으로 처리 (기록용, EKF 는 현재 보류).
 - 축 반응 테스트 (rqt_plot 으로 /imu/linear_acceleration 관찰):
   로봇을 **앞으로 밀면 y 축**이, **좌우로 흔들면 x 축**이 반응 —
   "위에서 봤을 때 시계방향 90° 회전 장착"과 정확히 일치.
@@ -202,4 +202,4 @@ ros2 launch turtlebot3_bringup robot.launch.py
 1. **제자리 회전 정밀 검증** — 공간 확보 시 (위 검증 기록 참고).
 2. ~~카메라 기울기~~ 수평 확인 / ~~IMU 위치 실측~~ 완료 / ~~Nav2 footprint~~ 완료 (my_navigation.md)
    — 2026-09-08 실측 세션으로 URDF·footprint 실측 항목은 전부 반영됨.
-3. robot_localization(EKF) 설정 시 imu_link 위치·방향 그대로 사용.
+3. robot_localization(EKF) 은 보류 — TurtleBot3 가 이미 IMU 회전 융합 중(`use_imu: true` — 거리는 바퀴, 회전각은 IMU), 실주행 검증 후 필요 시 착수. 착수하면 imu_link 위치·방향 그대로 사용.

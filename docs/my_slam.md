@@ -246,4 +246,5 @@ ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map
   보정 URDF 를 Pi 에 배포하고 TF 실기 검증 완료 (`base_link→base_scan` =
   -0.100, 0, 0.125 — 상세는 [description.md](./description.md)).
 - 남은 것: **제자리 회전 정밀 검증** (벽 이중선 여부 — 공간 확보 시),
-  RealSense camera_link TF 추가, robot_localization(EKF), Vision AI 연동.
+  ~~RealSense camera_link TF 추가~~(완료), ~~Vision AI 연동~~(완료), robot_localization(EKF)
+  (보류 — TurtleBot3 가 이미 `use_imu: true` 로 회전각을 IMU 로 계산, 실주행에서 필요할 때만).

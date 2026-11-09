@@ -219,5 +219,5 @@ slam_toolbox 대신 map_server(저장 지도) + AMCL(파티클 필터 위치추�
    배포되어 지도·코스트맵 정확도의 기반은 확보됨 (description.md 참고).
 3. **실주행 튜닝** — 실제 목표점 주행에서 DWB critic 가중치, inflation,
    goal tolerance 를 환경에 맞게 조정.
-4. **robot_localization(EKF)** — LiDAR+IMU+엔코더 융합으로 odom 안정화 (로드맵).
+4. **robot_localization(EKF)** — 보류. TurtleBot3 가 이미 IMU 회전 융합 중(`use_imu: true` — 거리는 바퀴, 회전각은 IMU), 실주행 검증 후 필요 시 착수.
 5. **Vision AI 연동** — 카메라 인식 결과를 코스트맵/행동에 반영 (로드맵).

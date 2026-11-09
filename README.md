@@ -37,7 +37,7 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | 원격 통신 | **Zenoh Bridge** (zenoh-bridge-ros2dds) — Fast DDS 의 VPN 한계 진단 후 전환 |
 | 카메라 | RealSense D435i — **자체 pyrealsense2 노드** (공식 노드의 Pi4 USB 불안정을 캘리브레이션 캐시·프로세스 분리로 우회), 컬러 + 컬러 정렬 depth compressed 원격 전송 |
 | Vision AI | **RF-DETR** + **TensorRT**(fp16, 컨테이너 안에서 엔진 빌드·캐시) + 정렬 depth 거리 → 3D 위치 |
-| 센서 융합 | robot_localization (EKF) — 예정 |
+| 센서 융합 | TurtleBot3 기본 오도메트리(바퀴 거리 + **IMU 회전각**, `use_imu: true`). robot_localization(EKF)은 실주행 검증 후 필요 시 |
 | 시각화 | RViz2 |
 
 ## 레포 구조

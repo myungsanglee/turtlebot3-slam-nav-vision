@@ -72,7 +72,7 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 | 실행 환경 | Docker (24.04 호스트 위 22.04 컨테이너) | 베이스 `osrf/ros:humble-desktop` |
 | SLAM | **slam_toolbox** | 현 ROS2 표준. Cartographer 아님(유지보수/Nav2 통합/성능 우위) |
 | Navigation | **Nav2** | ROS2 내비게이션 표준 |
-| 센서 융합 | **robot_localization (EKF)** | LiDAR+IMU+엔코더 융합, 커스텀 로봇 odom 안정화 |
+| 센서 융합 | TurtleBot3 기본 오도메트리 (EKF 는 보류) | turtlebot3_node 가 이미 `use_imu: true` 로 **이동거리=바퀴, 회전각=IMU** 융합해 `odom→base_footprint` TF 발행. robot_localization(EKF)을 더하면 같은 TF 를 두 노드가 발행하게 돼 bringup 의 `publish_tf` 수정이 필요 → 실주행에서 odom 문제가 보일 때만 착수 |
 | Localization | AMCL 또는 slam_toolbox localization 모드 | 지도 완성 후 주행 단계 |
 | 원격 통신 | **zenoh-bridge-ros2dds** | Fast DDS Discovery Server 의 VPN 한계로 전환 (3번) |
 | 카메라 | **자체 pyrealsense2 노드** (`rs_camera_node.py`) | D435i. 공식 realsense2_camera 는 Pi4+RSUSB 에서 RGB 컨트롤 경로(XU 캘리브레이션)가 세션 단위로 간헐 불통 → 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 자체 해결 (docs/realsense_bringup.md). librealsense 는 RSUSB 소스 빌드 (troubleshooting 08-27) |
@@ -116,7 +116,7 @@ turtlebot3-slam-nav-vision/
 │   ├── Dockerfile
 │   └── entrypoint.sh
 ├── docker-compose.yml         # zenoh-bridge + remote-pc 서비스
-├── config/                    # 파라미터, .rviz, EKF 설정 등
+├── config/                    # zenoh 브리지 설정 등 공용 설정
 ├── remote_pc/                 # Remote PC 에서 도는 패키지들
 │   └── src/
 │       ├── my_slam/           # slam_toolbox 설정/런치
@@ -203,7 +203,8 @@ turtlebot3-slam-nav-vision/
    (troubleshooting 2026-11-05). 남은 것: 노드 종료 순간 1회 저전압(원인 미확정)·실주행 중 재관찰,
    UBEC 가 OpenCR 스위치 우회 → 사용 후 배터리 분리 습관 (필요 시 스위치/LiPo 경보기)
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
-5. robot_localization EKF 설정 (LiDAR+IMU+엔코더 융합) — IMU 위치·방향 실측 완료, 착수 가능
+5. robot_localization EKF — **보류 (2026-11-09)**. TurtleBot3 가 이미 IMU 회전 융합 중(`use_imu: true` — 거리는 바퀴, 회전각은 IMU), 실주행 검증 후 필요 시 착수.
+   착수 시 쟁점: EKF 와 turtlebot3_node 가 같은 `odom→base_footprint` TF 를 발행 → 한쪽(bringup `publish_tf`) 을 꺼야 함
 6. ~~SLAM + Nav2 + Vision + RViz 통합 런치~~ ✅ (2026-09-08, `my_bringup/system.launch.py`,
    docs/my_bringup.md). 남은 것: 실주행 튜닝, "검출 물체 찾아가기" 데모
 7. ~~Vision AI 노드~~ ✅ 완료 (2026-09-04~08, 좌표 변환 포함). 남은 것: 필요 시 추적/파인튜닝
