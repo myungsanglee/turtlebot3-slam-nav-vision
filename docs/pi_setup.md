@@ -228,6 +228,8 @@ systemctl --user start tb3-bringup
 - **수동으로 `ros2 launch ... full_bringup` 을 하려면 먼저 `systemctl --user stop tb3-bringup`** — 둘이 동시에 뜨면
   OpenCR 시리얼과 카메라를 다툰다 (troubleshooting 2026-11-05 에서 겪은 상황).
 - 부팅 직후 OpenCR·LDS USB 장치가 잡힐 때까지 최대 60초 기다린 뒤 시작한다.
+- 검증 (2026-11-09): 재부팅 후 로그인 없이 서비스 시작 → 약 1분 20초 뒤 카메라 6fps, 서버 수신 /odom 20Hz·/scan 5Hz·
+  카메라 color/depth 6Hz·/battery_state 20Hz, 카메라 TF 정상, `get_throttled` 0x0. `stop` 은 1초 내 전 노드 정상 종료.
 
 ## 10. 최종 검증
 

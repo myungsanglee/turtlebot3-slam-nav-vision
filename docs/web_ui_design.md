@@ -145,7 +145,7 @@ RViz/Foxglove 는 개발자 디버깅용으로 남긴다.
 ## 6. 자동 실행
 
 **Pi** — systemd **사용자 서비스** [`robot/systemd/tb3-bringup.service`](../robot/systemd/tb3-bringup.service)
-(✅ P0 구현). 시스템 서비스 대신 사용자 서비스로 한 이유: 최초 1회 `sudo loginctl enable-linger` 이후엔
+(✅ P0 구현·재부팅 실기 검증 2026-11-09). 시스템 서비스 대신 사용자 서비스로 한 이유: 최초 1회 `sudo loginctl enable-linger` 이후엔
 시작·중지·재시작이 sudo 없이 되므로, 원격(SSH·Claude)과 나중의 웹 UI 가 로봇 쪽 서비스를 다룰 수 있다.
 핵심 설정은 `KillSignal=SIGINT`(cgroup 전체에 Ctrl+C — 노드 고아 방지), `TimeoutStopSec=30`(시작 중인 카메라 보호),
 `Restart=on-failure`, OpenCR·LDS 장치 대기. 설치·운용 명령은 [pi_setup.md](./pi_setup.md) 9단계.
