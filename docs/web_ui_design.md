@@ -200,12 +200,9 @@ robot/systemd/tb3-bringup.service
 
 ## 9. 미결·구현 중 확인할 것
 
-- **[결정 필요] 카메라 depth 로 장애물 회피 보강** — 현재 Nav2 장애물 지도의 입력은 `/scan`(라이다) 하나다.
-  라이다는 바닥 위 125mm 평면만 보므로 그보다 낮은 것(문턱·신발·전선)과 위로 튀어나온 것(책상 상판·의자 좌판)을
-  못 본다. 서버에서 정렬 depth → 점 구름(PointCloud2) 변환 후 local costmap 의 observation source 로 추가하면
-  카메라 시야(정면 약 87°) 안의 이런 장애물도 피한다. 웹 UI 와 독립된 my_navigation 기능이며 웹 UI 는 변경 없이
-  장애물 지도 오버레이로 결과를 보여준다. 6fps·바닥 오검출 필터링(높이 범위)·브리지 대역폭이 검토 항목.
-
+- **카메라 기반 회피 — 넣기로 결정 (2026-11-09)**: 깊이 층(모든 장애물) + 의미 층(Vision AI, 클래스별 여유·사람 근처 감속)
+  두 층으로 설계 → [vision_avoidance_design.md](./vision_avoidance_design.md). 웹 UI 는 장애물 지도 오버레이에
+  의미 층 물체를 라벨과 함께 그린다 (P2·P4).
 - slam_toolbox 의 지도 저장 서비스 이름·형식 (`/slam_toolbox/save_map` 또는 nav2 `map_saver`) — 실기 확인.
 - rclpy executor 를 별도 스레드로 돌리고 FastAPI(asyncio)와 데이터를 주고받는 방식 — 스레드 안전 큐로 시작.
 - 모드 전환 시 Nav2 lifecycle 재시작 시간 (수 초 예상) — 화면에 "전환 중" 표시.

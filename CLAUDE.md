@@ -211,6 +211,10 @@ turtlebot3-slam-nav-vision/
    자체 API(FastAPI + rclpy `my_web_api`)만 사용, 모드 관리자가 system.launch 를 켜고 끔(IDLE/MAPPING/NAVIGATION),
    React+TS+Vite·react-konva·MUI, 카메라는 MJPEG, Pi 는 systemd 유닛(KillSignal=SIGINT). foxglove_bridge 는 개발자용.
    단계 P0 자동 실행 → P1 상태·영상 → P2 지도·주행 → P3 모드 관리 → P4 조이스틱·물체로 이동
+9. **카메라 기반 회피** — 설계 완료 `docs/vision_avoidance_design.md` (2026-11-09, 사용자 결정으로 포함).
+   현재 회피 입력은 /scan 뿐(125mm 평면). ① 깊이 층: 정렬 depth → PointCloud2 → local costmap(높이 필터)
+   ② 의미 층: /vision/objects(+반경 추정) → 자체 C++ `SemanticLayer` 플러그인(클래스별 여유·소멸) + 사람 근처
+   SpeedLimit 감속. AI 만으로는 미학습 물체를 못 피하므로 ①이 안전, ②가 행동. 단계 V1~V4 (V1 은 web P2 와 함께)
 
 ## 9. 규칙 / 선호
 
