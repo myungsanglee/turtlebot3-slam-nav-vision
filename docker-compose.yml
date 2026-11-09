@@ -91,3 +91,27 @@ services:
       - ./description:/overlay_ws/src/my_description:rw
 
     command: bash
+
+  # ── Web API (웹 UI 백엔드 + React 정적 파일, :8080) ───────────────────────
+  #   브라우저 → http://<서버 Tailscale IP>:8080  (docs/my_web_api.md)
+  #   ★ 전제: my_web_api 가 /overlay_ws 에 빌드돼 있고(colcon build), web/dist 가 빌드돼 있을 것
+  #     (npm run build — 없으면 API 만 동작). remote-pc 와 같은 이미지·워크스페이스를 공유한다.
+  web-api:
+    image: tb3-remote-pc:vision
+    network_mode: host               # 로컬 DDS(loopback) + :8080
+    ipc: host
+    restart: unless-stopped          # 서버 부팅 시 자동 기동
+    depends_on:
+      - zenoh-bridge
+    stop_signal: SIGINT              # ros2 launch 의 정상 종료 경로 (my_web_api/server.py 종료 순서)
+    stop_grace_period: 15s
+    environment:
+      - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-30}
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ROS_LOCALHOST_ONLY=1
+    volumes:
+      - ./remote_pc:/overlay_ws:rw
+      - ./description:/overlay_ws/src/my_description:rw
+      - ./web:/web:ro                  # React 빌드 결과는 /web/dist
+    command: ros2 launch my_web_api web_api.launch.py static_dir:=/web/dist

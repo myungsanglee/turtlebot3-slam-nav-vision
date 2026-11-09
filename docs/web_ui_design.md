@@ -1,7 +1,7 @@
 # web UI 설계 — 터미널 대신 웹 화면으로 로봇을 운용한다
 
-> 상태: **설계 (2026-11-09)**. 구현 전 문서이며, 구현하면서 바뀐 결정은 이 문서를 고친다.
-> 구현이 끝나면 패키지별 문서(`docs/my_web_api.md` 등)로 "정상 동작 방식"을 옮긴다.
+> 상태: **P0·P1 구현 완료 (2026-11-10)**, P2~ 설계. 구현하면서 바뀐 결정은 이 문서를 고친다.
+> 구현된 부분의 동작 원리는 [my_web_api.md](./my_web_api.md).
 
 ## 1. 왜 만드나
 
@@ -54,7 +54,7 @@ RViz/Foxglove 는 개발자 디버깅용으로 남긴다.
 | 프론트엔드 | **React + TypeScript + Vite** | Vue, Svelte | 로봇 웹 UI 레퍼런스(rmf-web, Foxglove 패널, transAct)가 React. 채용 시장에서도 가장 범용 |
 | 지도 그리기 | **react-konva** (Canvas) | ros2djs / nav2djs, three.js | ros2djs 계열은 roslibjs 전제·유지보수 불분명. 지도는 백엔드가 PNG 로 주므로 2D 캔버스 라이브러리면 충분 — 레이어(지도·경로·로봇·마커), 확대/이동, 클릭 이벤트가 필요해 Konva |
 | UI 컴포넌트 | **MUI** | Mantine, shadcn/ui | 기업용 대시보드에 가장 널리 쓰임, 컴포넌트가 많아 버튼·대화상자·표 구현 시간 최소 |
-| 서버 상태 조회 | **TanStack Query** | 직접 fetch | REST 캐싱·재시도·주기 갱신을 선언적으로 |
+| 서버 상태 조회 | **TanStack Query** (P2 부터) | 직접 fetch | REST 캐싱·재시도·주기 갱신을 선언적으로. P1 은 상태를 전부 WebSocket 으로 받아 불필요해 미도입 |
 | 실시간 데이터 | **브라우저 기본 WebSocket** (JSON) | Socket.IO | 의존성 없음. 메시지량이 작음(상태 5Hz·위치 10Hz) |
 | 카메라 영상 | **MJPEG over HTTP** (`multipart/x-mixed-replace`) | WebRTC, WebSocket 바이너리 | 이미 JPEG 로 압축돼 오므로 재인코딩 없이 그대로 흘리면 됨. `<img src>` 한 줄로 표시. 6fps·0.2MB/s 라 WebRTC 의 이점 없음 |
 | 서버 자동 실행 | **docker compose** `restart: always` | — | 기존 구성의 연장 |
@@ -176,8 +176,8 @@ robot/systemd/tb3-bringup.service
 
 | 단계 | 내용 | 완료 기준 |
 |---|---|---|
-| **P0 자동 실행** | Pi systemd 유닛, compose 에 web-api 자리 | Pi 재부팅 후 서버에서 `/scan` `/odom` `/camera/*` 수신, `systemctl stop` 시 노드 전부 정상 종료 |
-| **P1 상태·영상** | web-api 골격, `/api/status`, 카메라 MJPEG, 최소 화면 | 브라우저에서 배터리 전압·연결 상태·카메라 영상 확인 |
+| **P0 자동 실행** ✅ | Pi systemd 유닛, compose 에 web-api 자리 | Pi 재부팅 후 서버에서 `/scan` `/odom` `/camera/*` 수신, `systemctl stop` 시 노드 전부 정상 종료 |
+| **P1 상태·영상** ✅ | web-api 골격, `/api/status`, 카메라 MJPEG, 최소 화면 | 브라우저에서 배터리 전압·연결 상태·카메라 영상 확인 (2026-11-10 실기) |
 | **P2 지도·주행** | 지도 PNG, 로봇 위치, **라이다 점**, 클릭 목표·취소, 전역·단기 경로, **로컬 장애물 지도 오버레이** (모드는 수동 launch 상태에서) | 지도 클릭으로 로봇이 이동, 앞에 놓은 장애물을 라이다로 보고 경로를 바꾸는 과정이 화면에 보임 |
 | **P3 모드 관리** | IDLE/MAPPING/NAVIGATION 전환, 지도 저장·선택 | 터미널 없이 지도 만들기 → 저장 → 그 지도로 주행 |
 | **P4 조작·인식** | 조이스틱(워치독), 검출 물체 목록·지도 표시, "물체로 이동" | 검출 목록에서 물체를 눌러 그 앞으로 이동 (기존 로드맵의 데모와 합류) |

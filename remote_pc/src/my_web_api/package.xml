@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_web_api</name>
+  <version>0.1.0</version>
+  <description>
+    웹 UI 백엔드 (Remote PC). rclpy 노드로 로봇 토픽을 구독하고, FastAPI 로 HTTP/WebSocket API
+    (상태, 카메라 MJPEG)와 React 프론트엔드 정적 파일을 제공한다. 브라우저는 ROS 를 직접 다루지 않는다.
+  </description>
+  <maintainer email="mslee@robotegra.com">Myungsang Lee</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <!-- fastapi / uvicorn 은 pip (docker/Dockerfile vision 스테이지 마지막 레이어) -->
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

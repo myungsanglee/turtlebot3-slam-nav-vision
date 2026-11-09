@@ -66,9 +66,23 @@ CAD 메시를 읽기 위한 패키지, docs/description.md 3.4). 우리 패키�
 
 ```bash
 docker compose exec remote-pc bash
-colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_vision, my_bringup, my_description)
+colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_vision, my_bringup, my_web_api, my_description)
 exit && docker compose exec remote-pc bash   # 재진입하면 자동 source 됨
 ```
+
+### 3-1. 웹 콘솔 (web-api 서비스 + 프론트엔드 빌드)
+
+프론트엔드(`web/`)는 **호스트**에서 빌드한다 (Node.js 20 이상 — 현재 v22, npm 10). 빌드 결과 `web/dist` 를
+`web-api` 컨테이너가 그대로 제공한다.
+
+```bash
+cd web && npm ci && npm run build && cd ..   # web/dist 생성 (package-lock.json 고정 버전)
+docker compose up -d web-api                 # 위 3단계의 colcon build(my_web_api) 가 먼저 돼 있어야 함
+curl -s localhost:8080/api/status | head -c 200   # 상태 JSON
+```
+- 접속: `http://<서버 Tailscale IP>:8080` (UFW 는 tailscale0 전체 허용이라 추가 규칙 불필요), API 문서 `/docs`.
+- 이미지에는 `fastapi`·`uvicorn` 이 pip 로 들어 있다 (Dockerfile vision 스테이지 마지막 레이어).
+- web-api 는 `restart: unless-stopped`·`stop_signal: SIGINT` (정상 종료 순서는 docs/my_web_api.md 4.6).
 
 > RViz 에서 로봇 모델이 안 보이고 로그에 `Package [my_description] does not exist` 가
 > 나오면 overlay 가 source 안 된 셸이다 (`source /overlay_ws/install/setup.bash`).
@@ -100,6 +114,8 @@ ros2 launch my_bringup system.launch.py                    # 통합 (SLAM+Nav2+V
 ros2 run my_vision camera_viewer --color-topic /vision/annotated/compressed   # 검출 결과 영상 (DISPLAY 필요)
 ```
 
+브라우저에서 `http://<서버>:8080` — 로봇 연결·배터리·센서 수신 상태가 "정상", 카메라 영상이 보이면 끝.
+
 ## 운영 명령 모음
 
 ```bash
@@ -107,6 +123,9 @@ docker compose ps                       # 서비스 상태
 docker compose logs zenoh-bridge -f     # 브리지 로그 (라우트/원격 브리지 감지)
 docker compose restart zenoh-bridge     # "토픽 보이는데 데이터 0" 복구
 docker compose exec remote-pc bash      # 작업 셸 진입
+docker compose logs web-api -f          # 웹 콘솔 백엔드 로그
+docker compose restart web-api          # 백엔드 코드·web_api.yaml 변경 후
+cd web && npm run build                 # 프론트엔드 변경 후 (브라우저 새로고침)
 ros2 daemon stop && ros2 daemon start   # topic list 에 유령 토픽 보일 때 (캐시 새로고침)
 ```
 

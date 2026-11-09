@@ -38,7 +38,7 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | 카메라 | RealSense D435i — **자체 pyrealsense2 노드** (공식 노드의 Pi4 USB 불안정을 캘리브레이션 캐시·프로세스 분리로 우회), 컬러 + 컬러 정렬 depth compressed 원격 전송 |
 | Vision AI | **RF-DETR** + **TensorRT**(fp16, 컨테이너 안에서 엔진 빌드·캐시) + 정렬 depth 거리 → 3D 위치 |
 | 센서 융합 | TurtleBot3 기본 오도메트리(바퀴 거리 + **IMU 회전각**, `use_imu: true`). robot_localization(EKF)은 실주행 검증 후 필요 시 |
-| 시각화 | RViz2 |
+| 시각화 | RViz2 (개발자용) · **웹 콘솔** (운용자용 — FastAPI + rclpy 백엔드 API, React + TypeScript + MUI, 카메라 MJPEG) |
 
 ## 레포 구조
 
@@ -46,10 +46,12 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 turtlebot3-slam-nav-vision/
 ├── docs/                      # 컴포넌트별 상세 문서 + 트러블슈팅 로그
 ├── docker/                    # Remote PC 컨테이너 (Dockerfile, entrypoint)
-├── docker-compose.yml         # zenoh-bridge + remote-pc 서비스
+├── docker-compose.yml         # zenoh-bridge + remote-pc + web-api 서비스
 ├── config/                    # zenoh 브리지 설정 등 공용 설정
-├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_vision, my_bringup 통합런치)
+├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_vision, my_bringup 통합런치, my_web_api 웹 백엔드)
+├── web/                       # 웹 콘솔 프론트엔드 (React + TypeScript + Vite)
 ├── robot/src/                 # Raspberry Pi 패키지 (realsense_bringup)
+├── robot/systemd/             # Pi 부팅 시 bringup 자동 실행 (사용자 서비스)
 └── description/               # my_description 패키지: 보정 URDF + 실물 CAD 메시 (RViz 표시용)
 ```
 
@@ -67,13 +69,13 @@ turtlebot3-slam-nav-vision/
 | **my_bringup** | 통합 런치 — SLAM/AMCL + Nav2 + Vision(map 좌표 마커) + RViz 한 창 (`system.launch.py`, `system.rviz`) | ✅ 실기 검증 | [docs/my_bringup.md](./docs/my_bringup.md) |
 | **my_vision** | RF-DETR 물체 검출(torch/**TensorRT** 백엔드) + 정렬 depth 로 거리·3D 위치 → **TF2 로 base_link/map 좌표 변환**(`/vision/objects`), RViz 마커, 주석 영상, 카메라 뷰어 | ✅ 실물 검증 (TensorRT 6ms) | [docs/my_vision.md](./docs/my_vision.md) |
 | **카메라 기반 회피** | 라이다(125mm 평면)가 못 보는 장애물 보완 — ① depth 점 구름 → Nav2 장애물 지도, ② **Vision AI 의미 층**: 검출 물체 종류별 회피 여유·사람 근처 감속 (자체 Nav2 costmap 플러그인) | 📐 설계 | [docs/vision_avoidance_design.md](./docs/vision_avoidance_design.md) |
-| **web UI** | 터미널·RViz 대신 브라우저로 운용 — FastAPI + rclpy 백엔드 API(모드 관리: 지도 만들기/주행 전환, Nav2 목표, 카메라 MJPEG) + React 프론트엔드, Pi·서버 자동 실행 | 📐 설계 | [docs/web_ui_design.md](./docs/web_ui_design.md) |
+| **web UI** | 터미널·RViz 대신 브라우저로 운용 — FastAPI + rclpy 백엔드 API(모드 관리: 지도 만들기/주행 전환, Nav2 목표, 카메라 MJPEG) + React 프론트엔드, Pi·서버 자동 실행 | 🚧 P0 자동 실행·P1 상태/배터리/카메라 화면 ✅ (다음 P2 지도·주행) | [docs/my_web_api.md](./docs/my_web_api.md) · [설계](./docs/web_ui_design.md) |
 
 ## 시작하기
 
 > 최초 환경 구축(새 머신)은 [docs/pi_setup.md](./docs/pi_setup.md)(로봇) ·
 > [docs/server_setup.md](./docs/server_setup.md)(서버) 참고.
-> 아래는 구축이 끝난 상태에서의 **일상 실행 절차** — 터미널은 Pi 1개 + 서버 1개면 된다.
+> 아래는 구축이 끝난 상태에서의 **일상 실행 절차** — Pi 와 웹 콘솔은 자동으로 뜨고, SLAM/Nav2 는 아직 서버 터미널 1개에서 실행한다.
 
 ### 1. 로봇(Pi) — 전원만 켜면 된다
 
@@ -101,7 +103,21 @@ ros2 launch realsense_bringup rs_camera.launch.py      #          카메라 (자
 > ⚠️ 시작 중인(아직 fps 로그가 안 찍힌) 카메라 프로세스를 `kill -9` 하지 말 것 — 카메라가 USB 버스에서
 > 떨어져 물리 재연결이 필요해진다 ([docs/realsense_bringup.md](./docs/realsense_bringup.md) 7장).
 
-### 2. 서버 — 터미널 1개 ★ 통합 실행 (SLAM + Nav2 + Vision + RViz 한 창)
+### 2. 웹 콘솔 — 브라우저만 열면 된다
+
+서버가 켜져 있으면 `web-api` 컨테이너가 자동으로 떠 있다. 맥·폰(Tailscale 접속 상태)에서:
+
+```
+http://100.95.193.1:8080        로봇 연결·배터리·센서 수신 상태·카메라 영상 (P1)
+http://100.95.193.1:8080/docs   API 문서
+```
+
+![웹 콘솔 P1 — 로봇 카메라 영상, 배터리 전압, 센서별 수신 주기](./docs/images/web_ui_p1.png)
+
+지도 보기·클릭 주행·모드 전환은 다음 단계(P2·P3)에서 웹으로 옮겨 온다. 그 전까지 SLAM/Nav2 는 아래 3번처럼 실행한다.
+화면 코드를 고쳤으면 서버에서 `cd web && npm run build` ([docs/my_web_api.md](./docs/my_web_api.md) 5장).
+
+### 3. 서버 — 터미널 1개 ★ 통합 실행 (SLAM + Nav2 + Vision + RViz 한 창)
 
 ```bash
 docker compose up -d                 # 컨테이너가 내려가 있을 때만 (zenoh-bridge + remote-pc)
@@ -126,7 +142,7 @@ ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map # 지도 저�
 Vision 설정(모델·가중치 경로·임계값·백엔드·TensorRT 옵션)은 `remote_pc/src/my_vision/config/vision_params.yaml`
 한 곳에서 바꾼다. 전이학습 모델은 YAML 의 `weights` 에 .pth 경로 (클래스 수 자동 추론, 엔진 캐시 자동 분리).
 
-### 3. 확인·디버깅 (서버, 다른 터미널에서 `docker compose exec remote-pc bash`)
+### 4. 확인·디버깅 (서버, 다른 터미널에서 `docker compose exec remote-pc bash`)
 
 ```bash
 ros2 topic hz /scan                          # 로봇 연결 (~5Hz)
@@ -141,7 +157,7 @@ ros2 run tf2_ros tf2_echo base_link camera_color_optical_frame               # �
 개별 컴포넌트만 띄우려면 `ros2 launch my_slam slam.launch.py` / `my_navigation navigation.launch.py` /
 `my_vision vision.launch.py` (각 docs 참고).
 
-### 4. 순서·주의
+### 5. 순서·주의
 
 1. **Pi 먼저(bringup+카메라) → 서버(system.launch)** 가 자연스럽지만, 반대여도 붙는다.
 2. **서버 브리지를 재시작·재생성했다면 Pi 브리지도 같이** — Pi 에서 `kill $(pgrep -f "zenoh-bridge-ros2dd[s]")`

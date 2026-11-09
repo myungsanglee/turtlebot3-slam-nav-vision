@@ -1,0 +1,24 @@
+# =============================================================================
+# web_api.yaml — 웹 UI 백엔드 설정 (단일 소스). 바꾼 뒤 web-api 컨테이너 재시작:
+#   docker compose restart web-api
+# 노드 이름(web_api)은 launch 의 name 과 일치해야 한다.
+# =============================================================================
+web_api:
+  ros__parameters:
+    host: 0.0.0.0            # 모든 인터페이스 (Tailscale 로 맥·폰에서 접속). 접근 제어는 Tailscale 망 자체
+    port: 8080
+    static_dir: ''           # React 빌드 결과(web/dist) 경로. '' 면 API 만 제공 (launch 인자로 지정)
+    status_period_sec: 0.5   # WebSocket 상태 push 주기
+
+    # 배터리 (TurtleBot3 기본 LiPo 3S 1800mAh) — 판정은 % 대신 셀당 전압으로 (docs/my_web_api.md)
+    battery_cells: 3
+    battery_warn_cell_v: 3.5       # 이 아래면 '충전 권장' (3S 10.5V)
+    battery_critical_cell_v: 3.3   # 이 아래면 '즉시 중단' (3S 9.9V)
+
+    # 감시할 토픽 이름 (기대 주기·한글 이름은 코드의 TOPICS 표)
+    topic_odom: /odom
+    topic_scan: /scan
+    topic_battery: /battery_state
+    topic_color: /camera/color/compressed
+    topic_depth: /camera/depth/compressed
+    topic_vision: /vision/annotated/compressed

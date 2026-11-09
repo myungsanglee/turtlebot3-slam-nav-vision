@@ -20,6 +20,7 @@
 | RViz 에서 `/map` 이 늦게/안 보임 | QoS Durability 불일치 | Transient Local 로 |
 | bringup 이 `robot_description as yaml` 오류로 안 뜸 | URDF 주석에 콜론+공백/줄끝 콜론 → YAML 파싱 깨짐 | 주석에서 콜론 제거 (아래 2026-08-26 항목) |
 | SSH 로 띄운 백그라운드 launch 가 `kill -INT` 로 안 꺼짐, 노드가 고아로 남음 | 비대화형 셸의 `&` 가 SIGINT 를 무시 상태로 물려줌 | 시작 스크립트에 `set -m`, 종료는 `kill -INT -<pgid>` (2026-11-05 항목) |
+| 웹 백엔드 종료 시 `CancelledError` traceback / abort(-6) | uvicorn 의 종료 후 신호 재발생 + `ros2 launch` 의 중복 SIGINT | 신호를 main() 한 곳에서 처리, 1초 내 중복 무시, 스트림이 종료 이벤트로 스스로 끝남 (2026-11-10 항목) |
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
@@ -537,3 +538,44 @@ GIL 을 쥔 채 블록되어 파이썬 인터프리터 전체가 얼어붙은 �
 - 해결: 시작 스크립트에 `set -m` (백그라운드 잡이 SIGINT 를 무시하지 않음) + 프로세스 그룹 ID 저장,
   종료는 `kill -INT -<pgid>` → 2초 만에 전 노드 정상 종료 확인. 그리고 **종료 확인 전엔 재시작하지 말 것**
   (이번에 확인 루프가 끝나기 전에 재시작해 카메라 둘이 장치를 다투고 USB 소프트 리셋까지 갔다 — 카메라는 무사).
+
+---
+
+## 2026-11-10 — 웹 백엔드(FastAPI+rclpy) 종료 시 traceback·abort: uvicorn 의 신호 재발생과 중복 SIGINT
+
+### 증상
+`my_web_api` 를 Ctrl+C(SIGINT)로 끄면 0.4초 만에 내려가긴 하지만 매번 긴 traceback 이 찍혔다.
+MJPEG 영상 연결이 열린 상태에선 `asyncio.exceptions.CancelledError` 가 줄줄이 나오고, 한 번은
+`terminate called without an active exception` 과 함께 **exit code -6(abort)** 으로 죽었다.
+
+### 진단
+1. 처음 traceback 의 뿌리는 `uvicorn/server.py capture_signals → signal.raise_signal(...)` → `KeyboardInterrupt`.
+   uvicorn(0.34)은 **정상 종료를 마친 뒤 받았던 신호를 다시 발생**시킨다(상위 프로그램에 신호를 돌려주려는 의도).
+   이 KeyboardInterrupt 가 이벤트 루프를 뚫고 나오면서 끝나지 않는 MJPEG 응답 태스크가 강제 취소됐다.
+2. `main()` 에서 KeyboardInterrupt 를 잡아 넘기자, 이번엔 ROS 정리(`executor.shutdown` → `rclpy.shutdown`)가
+   이상한 상태에서 돌며 C++ 쪽이 abort 했다.
+3. 신호를 직접 받도록 바꾼 뒤에도 lifespan 태스크 취소 traceback 이 남아 로그를 보니
+   **`종료 요청` 로그가 두 번** 찍혀 있었다: 프로세스 그룹 전체에 간 SIGINT 1번 + `ros2 launch` 가 자식에게
+   **한 번 더 전달**한 SIGINT. uvicorn 은 두 번째 신호를 "강제 종료"로 처리해 정리 단계를 건너뛴다.
+   (터미널 Ctrl+C 도 포그라운드 그룹 전체에 가므로 똑같이 두 번이 된다.)
+
+### 근본 원인
+끝나지 않는 응답(MJPEG·WebSocket)이 있는 서버에서, 종료 신호의 **주인이 여럿**(uvicorn·rclpy·launch 전달)이고
+uvicorn 이 신호를 재발생시키는 동작이 겹친 것.
+
+### 해결 (`remote_pc/src/my_web_api/my_web_api/server.py`)
+- rclpy 의 SIGINT 처리기 끔(`SignalHandlerOptions.NO`), uvicorn 의 `capture_signals` 를 아무것도 안 하게 재정의 →
+  **신호는 main() 한 곳에서만** 받는다.
+- 신호 처리기: `stop` 이벤트 set(열린 MJPEG·WebSocket 루프가 스스로 끝남) → `server.handle_exit()`(정상 종료 요청).
+  **1초 안에 다시 온 신호는 중복으로 무시**(그 뒤의 신호는 사람이 한 번 더 누른 강제 종료로 전달).
+- `server.run()` 이 정상 반환한 뒤에 executor·노드·rclpy 순서로 정리.
+- 결과: MJPEG 연결이 열린 상태에서 SIGINT → `Application shutdown complete` → `process has finished cleanly`,
+  traceback 0 (2회 반복). compose 는 `stop_signal: SIGINT` 로 같은 경로를 탄다.
+
+### 덤: 컨테이너에서 pytest 가 시작도 못 함
+`ModuleNotFoundError: No module named '_pytest.scope'` — apt 의 pytest 6.x 와 pip 로 들어온 anyio 4.x 의
+pytest 플러그인이 호환되지 않음. 이 패키지는 비동기 테스트가 없으므로 `setup.cfg [tool:pytest] addopts = -p no:anyio`.
+
+### 재발 방지
+- 끝나지 않는 응답을 가진 서버는 **종료 이벤트를 응답 루프가 직접 확인**하게 만든다 (강제 취소에 기대지 않기).
+- `ros2 launch` 아래에서 도는 프로세스는 SIGINT 를 **두 번 받을 수 있다**고 가정한다.

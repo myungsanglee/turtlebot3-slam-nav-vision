@@ -77,7 +77,7 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 | 원격 통신 | **zenoh-bridge-ros2dds** | Fast DDS Discovery Server 의 VPN 한계로 전환 (3번) |
 | 카메라 | **자체 pyrealsense2 노드** (`rs_camera_node.py`) | D435i. 공식 realsense2_camera 는 Pi4+RSUSB 에서 RGB 컨트롤 경로(XU 캘리브레이션)가 세션 단위로 간헐 불통 → 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 자체 해결 (docs/realsense_bringup.md). librealsense 는 RSUSB 소스 빌드 (troubleshooting 08-27) |
 | Vision AI | **RF-DETR** (Apache-2.0) + **TensorRT fp16** | `my_vision/detector_node`: `/camera/*` 구독→검출→정렬 depth 로 거리·3D 위치→`Detection2DArray`. backend torch(12ms)/tensorrt(7ms). 엔진은 이식 불가라 **컨테이너 안에서 빌드·캐시**(models/trt/, 환경명 포함). RTMDet 은 mmcv 설치 부담으로 제외. 컨테이너 `vision` 스테이지에 torch cu128 + rfdetr + tensorrt-cu12 |
-| 시각화 | RViz2 (+ 추후 Foxglove) | SLAM+Nav+영상 통합 .rviz 한 창 |
+| 시각화 | RViz2 (개발자) + **웹 콘솔** (운용자) | RViz: SLAM+Nav+영상 통합 .rviz. 웹: FastAPI+rclpy 백엔드(`my_web_api`, :8080) + React 19·TS·Vite 8·MUI 9(`web/`), 카메라 MJPEG. 브라우저는 ROS 를 모름 |
 
 ## 5. 커스텀 로봇 — 반드시 반영할 것 (표준 데모 그대로 못 씀)
 
@@ -115,17 +115,20 @@ turtlebot3-slam-nav-vision/
 ├── docker/                    # Remote PC 컨테이너 (ROS2 Humble)
 │   ├── Dockerfile
 │   └── entrypoint.sh
-├── docker-compose.yml         # zenoh-bridge + remote-pc 서비스
+├── docker-compose.yml         # zenoh-bridge + remote-pc + web-api 서비스
 ├── config/                    # zenoh 브리지 설정 등 공용 설정
 ├── remote_pc/                 # Remote PC 에서 도는 패키지들
 │   └── src/
 │       ├── my_slam/           # slam_toolbox 설정/런치
 │       ├── my_navigation/     # Nav2 설정/런치
 │       ├── my_vision/         # Vision AI 노드 (TensorRT 추론)
-│       └── my_bringup/        # 통합 런치 (SLAM/AMCL+Nav2+Vision+RViz) — system.launch.py, system.rviz
+│       ├── my_bringup/        # 통합 런치 (SLAM/AMCL+Nav2+Vision+RViz) — system.launch.py, system.rviz
+│       └── my_web_api/        # 웹 콘솔 백엔드 (FastAPI + rclpy) — compose web-api 서비스
+├── web/                       # 웹 콘솔 프론트엔드 (React+TS+Vite, 호스트에서 npm run build → dist/)
 ├── robot/                     # Raspberry Pi 에서 도는 것 (RealSense 관련)
-│   └── src/
-│       └── realsense_bringup/ # RealSense 실행 런치 (bringup 은 건드리지 않음)
+│   ├── src/
+│   │   └── realsense_bringup/ # RealSense 실행 런치 (bringup 은 건드리지 않음)
+│   └── systemd/tb3-bringup.service  # Pi 부팅 시 bringup+카메라 (사용자 서비스)
 └── description/               # my_description 패키지: 보정 URDF + 실물 CAD 메시(meshes/, RViz 표시용)
 ```
 
@@ -197,6 +200,9 @@ turtlebot3-slam-nav-vision/
 - **my_bringup (서버)** — 통합 런치 `system.launch.py`: navigation.launch(use_slam/map) + vision.launch
   (target_frame=map) + RViz `system.rviz`(지도·코스트맵·경로·실측 footprint·RobotModel·검출 마커·
   검출 영상). 실기 검증(전 노드 active, 마커 map 프레임). 상세는 `docs/my_bringup.md`
+- **웹 콘솔 P0·P1 (2026-11-09~10)** — Pi bringup 자동 실행(systemd 사용자 서비스, 재부팅 검증) + 서버
+  `web-api`(FastAPI+rclpy, :8080): 로봇 연결·배터리(셀 전압 판정)·센서별 수신 주기·카메라 MJPEG 를 React 화면으로.
+  상세는 `docs/my_web_api.md`, 설계·이후 단계는 `docs/web_ui_design.md`
 
 **다음 (우선순위 순)**
 1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) + ~~Vision 3D 위치의 base_link/map 변환~~ ✅
@@ -216,7 +222,10 @@ turtlebot3-slam-nav-vision/
    React+TS+Vite·react-konva·MUI, 카메라는 MJPEG, Pi 는 systemd 유닛(KillSignal=SIGINT). foxglove_bridge 는 개발자용.
    단계 P0 자동 실행 → P1 상태·영상 → P2 지도·주행 → P3 모드 관리 → P4 조이스틱·물체로 이동
    진행: **P0 자동 실행 ✅** (2026-11-09, 재부팅 실기 검증) — Pi 사용자 서비스 `robot/systemd/tb3-bringup.service`
-   (linger 설정됨), 서버 remote-pc `restart: unless-stopped`. 다음은 P1
+   (linger 설정됨), 서버 remote-pc `restart: unless-stopped`.
+   **P1 상태·영상 ✅** (2026-11-10) — `my_web_api`(monitor/ros_node/app/server) + `web/`(StatusBar·CameraPanel·
+   BatteryCard·TopicTable), compose `web-api`(:8080). 배터리 % 는 OpenCR 펌웨어 값(10.5V=0%·12.3V=100% 직선)이라
+   판정은 셀 전압. 종료는 server.py 가 신호 직접 처리(uvicorn 신호 재발생·중복 SIGINT 대응). 다음은 P2 (docs/my_web_api.md)
 9. **카메라 기반 회피** — 설계 완료 `docs/vision_avoidance_design.md` (2026-11-09, 사용자 결정으로 포함).
    현재 회피 입력은 /scan 뿐(125mm 평면). ① 깊이 층: 정렬 depth → PointCloud2 → local costmap(높이 필터)
    ② 의미 층: /vision/objects(+반경 추정) → 자체 C++ `SemanticLayer` 플러그인(클래스별 여유·소멸) + 사람 근처

@@ -157,5 +157,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-${ROS_DISTRO}-image-transport-plugins \
     && rm -rf /var/lib/apt/lists/*
 
+# --- 웹 UI 백엔드 my_web_api (FastAPI + uvicorn, rclpy 와 같은 프로세스) — docs/web_ui_design.md ---
+#   pydantic 2 는 rfdetr 쪽에서 이미 들어와 있어 그대로 사용. numpy<2 고정 유지.
+RUN pip install --no-cache-dir "fastapi==0.115.12" "uvicorn[standard]==0.34.2" "numpy<2"
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
