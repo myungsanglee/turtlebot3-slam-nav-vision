@@ -117,6 +117,7 @@ RViz/Foxglove 는 개발자 디버깅용으로 남긴다.
 | `POST /api/nav/goal {x, y, yaw}` | 지도 좌표로 이동 | Nav2 `NavigateToPose` 액션 |
 | `POST /api/nav/cancel` | 이동 취소 | 액션 cancel |
 | `POST /api/nav/initial_pose {x, y, yaw}` | AMCL 초기 위치 | `/initialpose` 발행 |
+| `GET /api/costmap` | 로컬 장애물 지도 PNG(반투명 오버레이용) + 메타. Nav2 가 "어디를 피하는지" 보여줌 | `/local_costmap/costmap` → PNG (odom 기준이므로 TF 로 지도 위치 계산) |
 | `GET /api/camera.mjpg` · `GET /api/vision.mjpg` | 카메라 / 검출 결과 영상 | `/camera/color/compressed`, `/vision/annotated/compressed` 의 JPEG 를 그대로 전달 |
 
 ### 5.2 WebSocket `/ws`
@@ -128,7 +129,10 @@ RViz/Foxglove 는 개발자 디버깅용으로 남긴다.
 | `status` | 2Hz | `/api/status` 와 같은 내용 | — |
 | `pose` | 10Hz | 지도 좌표의 로봇 위치·방향 | TF `map → base_footprint` |
 | `nav` | 이벤트+1Hz | 진행 상태, 남은 거리, 결과 | 액션 feedback/result |
+| `scan` | 5Hz | 라이다 점들의 **지도 좌표** (각도 간격 솎아 ~180점) | `/scan` + TF `map → base_scan` (서버에서 변환) |
 | `path` | 갱신 시 | 전역 경로 점 목록 (간략화) | `/plan` |
+| `local_path` | 갱신 시 | DWB 가 고른 단기 궤적 (회피 동작이 보이는 선) | `/local_plan` |
+| `costmap_updated` | 1Hz | 로컬 장애물 지도 버전 → 브라우저가 `GET /api/costmap` 재요청 | `/local_costmap/costmap` |
 | `objects` | 갱신 시 | 검출 물체 이름·점수·지도 좌표 | `/vision/objects` |
 | `map_updated` | 갱신 시 | 지도 버전 → 브라우저가 `GET /api/map` 재요청 | `/map` |
 
@@ -187,7 +191,7 @@ robot/systemd/tb3-bringup.service
 |---|---|---|
 | **P0 자동 실행** | Pi systemd 유닛, compose 에 web-api 자리 | Pi 재부팅 후 서버에서 `/scan` `/odom` `/camera/*` 수신, `systemctl stop` 시 노드 전부 정상 종료 |
 | **P1 상태·영상** | web-api 골격, `/api/status`, 카메라 MJPEG, 최소 화면 | 브라우저에서 배터리 전압·연결 상태·카메라 영상 확인 |
-| **P2 지도·주행** | 지도 PNG, 로봇 위치, 클릭 목표·취소, 경로 표시 (모드는 수동 launch 상태에서) | 지도 클릭으로 로봇이 이동, 진행 상태 표시 |
+| **P2 지도·주행** | 지도 PNG, 로봇 위치, **라이다 점**, 클릭 목표·취소, 전역·단기 경로, **로컬 장애물 지도 오버레이** (모드는 수동 launch 상태에서) | 지도 클릭으로 로봇이 이동, 앞에 놓은 장애물을 라이다로 보고 경로를 바꾸는 과정이 화면에 보임 |
 | **P3 모드 관리** | IDLE/MAPPING/NAVIGATION 전환, 지도 저장·선택 | 터미널 없이 지도 만들기 → 저장 → 그 지도로 주행 |
 | **P4 조작·인식** | 조이스틱(워치독), 검출 물체 목록·지도 표시, "물체로 이동" | 검출 목록에서 물체를 눌러 그 앞으로 이동 (기존 로드맵의 데모와 합류) |
 | P5 (선택) | Tauri/Electron 포장, 간단한 인증 | 설치형 앱에서 같은 화면 |
@@ -195,6 +199,12 @@ robot/systemd/tb3-bringup.service
 각 단계는 실기(로봇)로 검증하고 `docs/troubleshooting.md`·패키지 문서를 같이 갱신한다.
 
 ## 9. 미결·구현 중 확인할 것
+
+- **[결정 필요] 카메라 depth 로 장애물 회피 보강** — 현재 Nav2 장애물 지도의 입력은 `/scan`(라이다) 하나다.
+  라이다는 바닥 위 125mm 평면만 보므로 그보다 낮은 것(문턱·신발·전선)과 위로 튀어나온 것(책상 상판·의자 좌판)을
+  못 본다. 서버에서 정렬 depth → 점 구름(PointCloud2) 변환 후 local costmap 의 observation source 로 추가하면
+  카메라 시야(정면 약 87°) 안의 이런 장애물도 피한다. 웹 UI 와 독립된 my_navigation 기능이며 웹 UI 는 변경 없이
+  장애물 지도 오버레이로 결과를 보여준다. 6fps·바닥 오검출 필터링(높이 범위)·브리지 대역폭이 검토 항목.
 
 - slam_toolbox 의 지도 저장 서비스 이름·형식 (`/slam_toolbox/save_map` 또는 nav2 `map_saver`) — 실기 확인.
 - rclpy executor 를 별도 스레드로 돌리고 FastAPI(asyncio)와 데이터를 주고받는 방식 — 스레드 안전 큐로 시작.
