@@ -1,0 +1,48 @@
+# =============================================================================
+# tb3-bringup.service — 로봇(Pi) 부팅 시 bringup + RealSense 카메라 자동 실행 (systemd **사용자** 서비스)
+#
+# 왜 사용자 서비스인가: 시스템 서비스는 시작/중지마다 sudo 가 필요하다. 사용자 서비스는 최초 1회
+#   `sudo loginctl enable-linger michael` (로그인 없이도 부팅 시 사용자 서비스 실행) 만 하면
+#   이후 `systemctl --user start|stop|restart tb3-bringup` 을 sudo 없이 쓸 수 있다 (원격 운용·웹 UI 에 유리).
+#
+# 설치 (docs/pi_setup.md 9단계):
+#   sudo loginctl enable-linger michael                       # 최초 1회
+#   systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/tb3-bringup.service
+#   systemctl --user start tb3-bringup
+# 레포 파일에 대한 링크로 등록되므로 git pull 로 바뀌면 `systemctl --user daemon-reload` 후 재시작.
+#
+# launch 인자 바꾸기 (예: 카메라 15fps): ~/.config/tb3-bringup.env 에 한 줄
+#   TB3_LAUNCH_ARGS=fps:=15
+# =============================================================================
+[Unit]
+Description=TurtleBot3 bringup + RealSense D435i (full_bringup.launch.py)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/tmp
+Environment=ROS_DOMAIN_ID=30
+Environment=ROS_LOCALHOST_ONLY=1
+Environment=TURTLEBOT3_MODEL=burger
+Environment=LDS_MODEL=LDS-01
+Environment=TB3_LAUNCH_ARGS=
+EnvironmentFile=-%h/.config/tb3-bringup.env
+
+# OpenCR(/dev/ttyACM0)·LDS(/dev/ttyUSB0) USB 장치가 부팅 직후 늦게 잡힐 수 있어 최대 60초 대기
+ExecStartPre=/bin/bash -c 'for i in $(seq 60); do [ -e /dev/ttyACM0 ] && [ -e /dev/ttyUSB0 ] && exit 0; sleep 1; done; echo "OpenCR/LDS 장치 없음" >&2; exit 1'
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source %h/turtlebot3_ws/install/setup.bash && source %h/realsense_ros_ws/install/setup.bash && exec ros2 launch realsense_bringup full_bringup.launch.py $TB3_LAUNCH_ARGS'
+
+# 종료: ros2 launch 의 정상 종료 경로인 SIGINT 를 cgroup 전체(launch + 모든 노드)에 보낸다 — 2026-11-05 에
+# 실측한 "프로세스 그룹 SIGINT → 2초 내 전 노드 정상 종료" 와 같은 방식. 기본 SIGTERM 은 launch 만 죽이고
+# 노드를 고아로 남길 수 있다 (troubleshooting 2026-11-05).
+KillSignal=SIGINT
+# 카메라가 열거/시작 중이면 그 단계가 끝날 때까지 기다리도록 넉넉히 (중간 강제 종료 시 카메라가 USB 에서
+# 떨어질 수 있음 — troubleshooting 2026-09-03). 시간이 지나면 SIGKILL.
+TimeoutStopSec=30
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

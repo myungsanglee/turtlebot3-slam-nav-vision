@@ -75,22 +75,27 @@ turtlebot3-slam-nav-vision/
 > [docs/server_setup.md](./docs/server_setup.md)(서버) 참고.
 > 아래는 구축이 끝난 상태에서의 **일상 실행 절차** — 터미널은 Pi 1개 + 서버 1개면 된다.
 
-### 1. 로봇(Pi) — 터미널 1개
+### 1. 로봇(Pi) — 전원만 켜면 된다
+
+로봇 기본(모터·오도메트리·라이다·TF) + RealSense 카메라 + zenoh-bridge 가 **부팅 시 자동 실행**된다
+(systemd 사용자 서비스 `tb3-bringup` — 설치는 [docs/pi_setup.md](./docs/pi_setup.md) 9단계). 확인·조작은 sudo 없이:
 
 ```bash
-ssh michael@100.71.74.81                      # 맥에서 (SSH 키 등록돼 있으면 비밀번호 없음)
-ros2 launch realsense_bringup full_bringup.launch.py   # 로봇 기본(모터·오도메트리·라이다·TF) + RealSense 카메라
-#   카메라 제외: camera:=false / 공식 드라이버로 비교: camera_driver:=realsense2
+ssh michael@100.71.74.81                         # 맥에서 (SSH 키 등록돼 있으면 비밀번호 없음)
+systemctl --user status tb3-bringup              # 상태
+journalctl --user -u tb3-bringup -f              # 로그 (Ctrl+C 는 로그 보기만 끝냄)
+systemctl --user restart tb3-bringup             # 재시작 (stop / start 도 같은 형식)
 ```
-- zenoh-bridge 는 systemd 로 부팅 시 자동 실행 → 따로 할 것 없음 (`systemctl status zenoh-bridge`)
 - 정상 로그: `[자식] pipeline.start() 성공` → `스트리밍 시작` → 10초마다 `6.0 fps | color … | depth …`
   (콜드 스타트는 장치 열거에 ~11초 걸리는 게 정상)
-- 끝낼 땐 Ctrl+C — 스트리밍 중에 끄는 것이라 안전
+- launch 인자 변경(예: 15fps): `~/.config/tb3-bringup.env` 에 `TB3_LAUNCH_ARGS=fps:=15` → restart
 
-개별 실행이 필요할 때:
+직접 실행이 필요할 때(디버깅) — **먼저 서비스를 멈출 것** (같이 뜨면 OpenCR·카메라를 다툰다):
 ```bash
-ros2 launch turtlebot3_bringup robot.launch.py      # 셸 1 — 로봇 기본
-ros2 launch realsense_bringup rs_camera.launch.py   # 셸 2 — 카메라 (자체 노드, 기본 640x480@6fps, 고속 fps:=15)
+systemctl --user stop tb3-bringup
+ros2 launch realsense_bringup full_bringup.launch.py   # 카메라 제외 camera:=false / 공식 드라이버 camera_driver:=realsense2
+ros2 launch turtlebot3_bringup robot.launch.py         # 또는 개별: 로봇 기본
+ros2 launch realsense_bringup rs_camera.launch.py      #          카메라 (자체 노드, 기본 640x480@6fps)
 ```
 
 > ⚠️ 시작 중인(아직 fps 로그가 안 찍힌) 카메라 프로세스를 `kill -9` 하지 말 것 — 카메라가 USB 버스에서

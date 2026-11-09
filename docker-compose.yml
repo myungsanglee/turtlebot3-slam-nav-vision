@@ -48,6 +48,9 @@ services:
 
     stdin_open: true
     tty: true
+    # 서버 재부팅 후 자동 기동 (수동 `docker compose stop` 한 경우는 유지). 웹 UI 도입 시 web-api 서비스가
+    # 같은 정책으로 붙는다 (docs/web_ui_design.md 6장)
+    restart: unless-stopped
 
     network_mode: host      # loopback 공유 (같은 호스트의 zenoh-bridge 와 DDS)
     ipc: host               # 노드 간 공유메모리 전송 성능

@@ -145,6 +145,9 @@ turtlebot3-slam-nav-vision/
   ⚠️ **카메라 프로세스는 장치 열거/start 도중 kill 금지** — 카메라가 USB 버스에서 떨어져
   물리 재연결이 필요해진다 (콜드 스타트 열거 ~11s 는 정상, troubleshooting 2026-09-03).
   USB 소프트 리셋도 연타 금지. 긴 SSH 명령은 heredoc 대신 스크립트 파일로 올려 실행.
+  Pi 의 bringup+카메라는 **systemd 사용자 서비스 `tb3-bringup`** 으로 부팅 시 자동 실행 —
+  `systemctl --user status|stop|start|restart tb3-bringup`, 로그 `journalctl --user -u tb3-bringup` (sudo 불필요).
+  수동 launch 전엔 반드시 서비스 stop (중복 실행 시 OpenCR 시리얼·카메라 충돌, troubleshooting 2026-11-05).
 - **RViz 확인**: 서버 물리 세션을 x11vnc 로 미러링, 맥에서 RealVNC/화면공유로 접속
   (컨테이너 RViz 는 `DISPLAY` 를 서버 물리 세션 `:0`/`:1` 에 맞춰 실행)
 - **환경 자동 source**: 컨테이너는 entrypoint(run 용) + .bashrc(exec 용) 양쪽에서
@@ -212,6 +215,8 @@ turtlebot3-slam-nav-vision/
    자체 API(FastAPI + rclpy `my_web_api`)만 사용, 모드 관리자가 system.launch 를 켜고 끔(IDLE/MAPPING/NAVIGATION),
    React+TS+Vite·react-konva·MUI, 카메라는 MJPEG, Pi 는 systemd 유닛(KillSignal=SIGINT). foxglove_bridge 는 개발자용.
    단계 P0 자동 실행 → P1 상태·영상 → P2 지도·주행 → P3 모드 관리 → P4 조이스틱·물체로 이동
+   진행: P0 자동 실행 구현 (2026-11-09) — Pi 사용자 서비스 `robot/systemd/tb3-bringup.service`, 서버 remote-pc
+   `restart: unless-stopped`. 다음은 P1
 9. **카메라 기반 회피** — 설계 완료 `docs/vision_avoidance_design.md` (2026-11-09, 사용자 결정으로 포함).
    현재 회피 입력은 /scan 뿐(125mm 평면). ① 깊이 층: 정렬 depth → PointCloud2 → local costmap(높이 필터)
    ② 의미 층: /vision/objects(+반경 추정) → 자체 C++ `SemanticLayer` 플러그인(클래스별 여유·소멸) + 사람 근처

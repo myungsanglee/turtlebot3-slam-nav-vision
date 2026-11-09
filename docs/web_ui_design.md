@@ -144,27 +144,14 @@ RViz/Foxglove 는 개발자 디버깅용으로 남긴다.
 
 ## 6. 자동 실행
 
-**Pi** — `/etc/systemd/system/tb3-bringup.service` (설치 명령은 사용자가 sudo 로 — 레포에 유닛 파일만 둔다)
+**Pi** — systemd **사용자 서비스** [`robot/systemd/tb3-bringup.service`](../robot/systemd/tb3-bringup.service)
+(✅ P0 구현). 시스템 서비스 대신 사용자 서비스로 한 이유: 최초 1회 `sudo loginctl enable-linger` 이후엔
+시작·중지·재시작이 sudo 없이 되므로, 원격(SSH·Claude)과 나중의 웹 UI 가 로봇 쪽 서비스를 다룰 수 있다.
+핵심 설정은 `KillSignal=SIGINT`(cgroup 전체에 Ctrl+C — 노드 고아 방지), `TimeoutStopSec=30`(시작 중인 카메라 보호),
+`Restart=on-failure`, OpenCR·LDS 장치 대기. 설치·운용 명령은 [pi_setup.md](./pi_setup.md) 9단계.
 
-```ini
-[Unit]
-Description=TurtleBot3 bringup + RealSense
-After=network-online.target zenoh-bridge.service
-
-[Service]
-User=michael
-ExecStart=/bin/bash -lc 'source ~/turtlebot3_ws/install/setup.bash && source ~/realsense_ros_ws/install/setup.bash && ros2 launch realsense_bringup full_bringup.launch.py'
-Environment=ROS_DOMAIN_ID=30 ROS_LOCALHOST_ONLY=1 TURTLEBOT3_MODEL=burger LDS_MODEL=LDS-01
-KillSignal=SIGINT          # ros2 launch 의 정상 종료 경로 (기본 SIGTERM 은 노드를 고아로 남길 수 있음)
-TimeoutStopSec=30          # 카메라가 시작 중이면 정상 시작을 기다린 뒤 종료되도록 넉넉히
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**서버** — compose 에 `web-api` 서비스 추가 (`remote-pc` 이미지 재사용, `restart: always`, 포트 8080).
+**서버** — remote-pc 에 `restart: unless-stopped` 추가 (✅ P0, 서버 재부팅 후 자동 기동). P1 에서 compose 에
+`web-api` 서비스 추가 (`remote-pc` 이미지 재사용, 같은 재시작 정책, 포트 8080).
 프론트엔드는 빌드 결과(정적 파일)를 web-api 가 함께 제공 → 컨테이너 하나로 끝.
 
 ## 7. 레포 구조 (추가분)

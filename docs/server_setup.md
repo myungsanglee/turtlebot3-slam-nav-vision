@@ -50,6 +50,9 @@ docker compose up -d          # zenoh-bridge + remote-pc 기동
 docker compose ps             # 두 서비스 Up 확인
 ```
 
+- 재시작 정책: zenoh-bridge `always`, remote-pc `unless-stopped` → **서버 재부팅 후 자동 기동**
+  (호스트 `systemctl is-enabled docker` 가 enabled 여야 함). 직접 `docker compose stop` 한 컨테이너는 유지.
+
 - 서버 Tailscale IP 가 다르면 갱신할 곳: `robot/config/zenoh-bridge-pi.json5` 의
   connect 주소 (Pi 쪽에 배포되는 파일).
 - zenoh-bridge 이미지 태그(현재 1.10.0)는 **Pi 바이너리 버전과 동일**해야 한다.

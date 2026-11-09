@@ -15,6 +15,7 @@
 ~/realsense_ros_ws         ← realsense-ros (소스 빌드) + realsense_bringup(심링크)
 ~/zenoh-bridge             ← zenoh-bridge-ros2dds 바이너리 (+ systemd 서비스)
 ~/turtlebot3-slam-nav-vision  ← 이 레포 (git)
+~/.config/systemd/user/tb3-bringup.service → 레포 robot/systemd/ 링크 (부팅 시 bringup+카메라 자동 실행)
 ```
 
 ## 0. 전제
@@ -202,11 +203,38 @@ URDF 가 참조하는 CAD 메시(`package://my_description/meshes/...`)는 **Pi 
 robot_state_publisher 는 URDF 텍스트만 publish 하고, 메시를 여는 것은 서버의 RViz 뿐
 (server_setup.md 3단계의 my_description 패키지). URDF 를 갱신했으면 bringup 재실행.
 
-## 9. 최종 검증
+## 9. 부팅 시 자동 실행 (systemd 사용자 서비스)
+
+로봇 전원을 켜면 bringup + 카메라가 자동으로 뜨게 한다. **사용자 서비스**로 만들어 최초 1회 설정 외에는
+sudo 없이 켜고 끈다 (시스템 서비스는 매번 sudo 필요 → 원격 운용·웹 UI 에 불리).
 
 ```bash
-# Pi — 로봇 + 카메라(자체 노드) 통합
-ros2 launch realsense_bringup full_bringup.launch.py
+sudo loginctl enable-linger michael        # 최초 1회 — 로그인 안 해도 부팅 시 사용자 서비스가 돈다
+systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/tb3-bringup.service   # 레포 파일로 링크 등록
+systemctl --user start tb3-bringup
+```
+
+| 하고 싶은 것 | 명령 |
+|---|---|
+| 상태 | `systemctl --user status tb3-bringup` |
+| 로그 (실시간) | `journalctl --user -u tb3-bringup -f` |
+| 끄기 / 켜기 / 재시작 | `systemctl --user stop|start|restart tb3-bringup` |
+| 부팅 자동 실행 끄기 | `systemctl --user disable tb3-bringup` |
+| launch 인자 (예: 15fps) | `~/.config/tb3-bringup.env` 에 `TB3_LAUNCH_ARGS=fps:=15` → restart |
+| 레포 갱신 후 | `git pull` → `systemctl --user daemon-reload` → restart |
+
+- 종료는 `KillSignal=SIGINT` 로 launch·노드 전체에 Ctrl+C 와 같은 신호를 보낸다 (기본 SIGTERM 은 노드를 고아로
+  남길 수 있음 — troubleshooting 2026-11-05). 카메라가 시작 중이면 끝날 때까지 최대 30초 기다린다.
+- **수동으로 `ros2 launch ... full_bringup` 을 하려면 먼저 `systemctl --user stop tb3-bringup`** — 둘이 동시에 뜨면
+  OpenCR 시리얼과 카메라를 다툰다 (troubleshooting 2026-11-05 에서 겪은 상황).
+- 부팅 직후 OpenCR·LDS USB 장치가 잡힐 때까지 최대 60초 기다린 뒤 시작한다.
+
+## 10. 최종 검증
+
+```bash
+# Pi — 서비스 상태 (9단계)
+systemctl --user status tb3-bringup
+journalctl --user -u tb3-bringup -n 30
 #   로그에 "[자식] pipeline.start() 성공", "스트리밍 시작", 10초마다 "6.0 fps | color ... | depth ..."
 
 # 서버 컨테이너에서
