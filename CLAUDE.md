@@ -207,6 +207,10 @@ turtlebot3-slam-nav-vision/
 6. ~~SLAM + Nav2 + Vision + RViz 통합 런치~~ ✅ (2026-09-08, `my_bringup/system.launch.py`,
    docs/my_bringup.md). 남은 것: 실주행 튜닝, "검출 물체 찾아가기" 데모
 7. ~~Vision AI 노드~~ ✅ 완료 (2026-09-04~08, 좌표 변환 포함). 남은 것: 필요 시 추적/파인튜닝
+8. **web UI (제품형 운용)** — 설계 완료 `docs/web_ui_design.md` (2026-11-09). 브라우저는 ROS 를 모르고
+   자체 API(FastAPI + rclpy `my_web_api`)만 사용, 모드 관리자가 system.launch 를 켜고 끔(IDLE/MAPPING/NAVIGATION),
+   React+TS+Vite·react-konva·MUI, 카메라는 MJPEG, Pi 는 systemd 유닛(KillSignal=SIGINT). foxglove_bridge 는 개발자용.
+   단계 P0 자동 실행 → P1 상태·영상 → P2 지도·주행 → P3 모드 관리 → P4 조이스틱·물체로 이동
 
 ## 9. 규칙 / 선호
 
