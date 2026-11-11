@@ -25,6 +25,7 @@ web_api:
 
     # ---- 지도 화면 (P2) — 모든 좌표를 fixed_frame 기준으로 바꿔 브라우저에 보낸다 ----
     fixed_frame: map
+    odom_frame: odom               # map 이 없을 때(SLAM·AMCL 꺼짐) 화면 좌표계 — 라이다·로봇을 계속 실시간 표시
     base_frame: base_footprint     # 로봇 위치로 쓰는 프레임 (slam_toolbox·Nav2 와 같은 기준)
     scan_max_points: 180           # 라이다 360 빔을 이만큼으로 솎아 보냄
     path_max_points: 300           # 경로 점 상한

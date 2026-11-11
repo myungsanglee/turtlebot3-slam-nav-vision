@@ -1,7 +1,7 @@
 import { Box, Typography } from '@mui/material'
 import type Konva from 'konva'
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react'
-import { Arrow, Circle, Group, Image as KImage, Layer, Line, Stage } from 'react-konva'
+import { Arrow, Group, Image as KImage, Layer, Line, Shape, Stage } from 'react-konva'
 import type { GridMeta, Point, Pose } from '../api/types'
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -21,6 +21,8 @@ export interface Layers {
 }
 
 interface Props {
+  frame: string | null // 표시 좌표계 (로봇 위치의 frame). 'map' 이 아니면 지도 이미지를 숨긴다
+  mapFrame: string // 지도 좌표계 이름 (보통 'map')
   map: GridMeta | null
   costmap: GridMeta | null
   pose: Pose | null
@@ -76,7 +78,7 @@ export default function MapView({ ref, ...p }: Props) {
   const worldRef = useRef<Konva.Group>(null)
   const [size, setSize] = useState({ w: 600, h: 450 })
   const [view, setView] = useState({ x: 300, y: 225, s: 60 }) // Stage 위치·배율 (px/m)
-  const [fitted, setFitted] = useState(false)
+  const [fitted, setFitted] = useState<'map' | 'robot' | null>(null)
   const [drag, setDrag] = useState<{ from: Point; to: Point } | null>(null)
 
   const mapImg = useImage(p.map ? `/api/map.png?v=${p.map.version}` : null)
@@ -104,10 +106,21 @@ export default function MapView({ ref, ...p }: Props) {
   }
   useImperativeHandle(ref, () => ({ fit: () => p.map && setView(fitView()) }))
 
-  // 지도가 처음 들어오면 한 번 전체 맞춤 (렌더 중 상태 조정 — 다음 렌더 전에 반영된다)
-  if (p.map && !fitted) {
-    setFitted(true)
+  // 무엇을 그리나 — 지도는 '지도 좌표계로 그릴 때'만 (SLAM·AMCL 동작 중).
+  //   지도 없이 odom 으로 그릴 땐 지난 지도를 숨기고 로봇·라이다만 출발점 기준으로 실시간 표시.
+  //   단 「초기 위치」 도구에선 (AMCL 이 아직 위치를 모르는 상태) 지도를 보여주고 odom 기준 레이어를 숨긴다.
+  const initialTool = p.tool === 'initial'
+  const showMap = !!p.map && (p.frame === p.mapFrame || initialTool)
+  const showLive = !initialTool || p.frame === p.mapFrame
+  const showCostmap = p.layers.costmap && !!p.costmap && p.costmap.frame === p.frame && showLive
+
+  // 처음 화면 맞춤 (렌더 중 상태 조정 — 다음 렌더 전에 반영된다): 지도가 보이면 지도 전체, 아니면 로봇 중심
+  if (showMap && fitted !== 'map') {
+    setFitted('map')
     setView(fitView())
+  } else if (!showMap && p.pose && fitted === null) {
+    setFitted('robot')
+    setView(centered(p.pose.x, p.pose.y, 80))
   }
 
   // 로봇 따라가기: 저장하지 않고 그릴 때마다 로봇 위치로 계산
@@ -189,20 +202,35 @@ export default function MapView({ ref, ...p }: Props) {
       >
         <Layer imageSmoothingEnabled={false}>
           <Group ref={worldRef} scaleY={-1}>
-            {p.map && <Grid meta={p.map} img={mapImg} />}
-            {p.layers.costmap && p.costmap && <Grid meta={p.costmap} img={costImg} />}
-            {p.layers.scan &&
-              p.scan.map(([x, y], i) => <Circle key={i} x={x} y={y} radius={2.2 * px} fill="#ff5252" listening={false} />)}
+            {showMap && <Grid meta={p.map!} img={mapImg} />}
+            {showCostmap && <Grid meta={p.costmap!} img={costImg} />}
+            {p.layers.scan && showLive && p.scan.length > 0 && (
+              // 점 180개를 컴포넌트 하나로 그린다 (점마다 컴포넌트를 만들면 5Hz 갱신마다 180개를 다시 맞춘다)
+              <Shape
+                listening={false}
+                perfectDrawEnabled={false}
+                fill="#ff5252"
+                sceneFunc={(ctx, shape) => {
+                  const r = 2.2 * px
+                  ctx.beginPath()
+                  for (const [x, y] of p.scan) {
+                    ctx.moveTo(x + r, y)
+                    ctx.arc(x, y, r, 0, Math.PI * 2)
+                  }
+                  ctx.fillShape(shape)
+                }}
+              />
+            )}
             {p.layers.paths && p.globalPath.length > 1 && (
               <Line points={flat(p.globalPath)} stroke="#4caf50" strokeWidth={3} strokeScaleEnabled={false} listening={false} />
             )}
             {p.layers.paths && p.localPath.length > 1 && (
               <Line points={flat(p.localPath)} stroke="#ffeb3b" strokeWidth={2.5} strokeScaleEnabled={false} listening={false} />
             )}
-            {p.footprint.length > 2 && (
+            {showLive && p.footprint.length > 2 && (
               <Line points={flat(p.footprint)} closed stroke="#40c4ff" fill="rgba(64,196,255,0.18)" strokeWidth={2} strokeScaleEnabled={false} listening={false} />
             )}
-            {p.pose && arrow(p.pose, 0.25, '#40c4ff', 'robot')}
+            {showLive && p.pose && arrow(p.pose, 0.25, '#40c4ff', 'robot')}
             {p.goal && arrow(p.goal, 0.3, '#4caf50', 'goal')}
             {p.pending && arrow(p.pending, 0.3, p.tool === 'initial' ? '#ce93d8' : '#ffa726', 'pending')}
             {drag && (
@@ -220,9 +248,11 @@ export default function MapView({ ref, ...p }: Props) {
           </Group>
         </Layer>
       </Stage>
-      {!p.map && (
-        <Typography color="text.secondary" sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', px: 3, textAlign: 'center', pointerEvents: 'none' }}>
-          지도 없음 — 지도 만들기(SLAM) 또는 저장 지도 주행을 실행하면 나타난다
+      {!showMap && (
+        <Typography variant="caption" color="text.secondary" sx={{ position: 'absolute', left: 10, bottom: 6, pointerEvents: 'none' }}>
+          {p.pose
+            ? '지도 없음 — 로봇·라이다를 출발점(odom) 기준으로 실시간 표시. 지도 만들기(SLAM)를 실행하면 지도가 나타난다'
+            : '로봇 위치 없음 — 로봇 bringup 확인'}
         </Typography>
       )}
       {/* 축척 막대: 화면에서 1m 길이 */}

@@ -12,6 +12,7 @@ const initial: RobotStream = {
   map: null,
   costmap: null,
   scan: [],
+  scanFrame: null,
   paths: { global: [], local: [] },
   footprint: [],
   nav: null,
@@ -33,7 +34,7 @@ function reducer(s: RobotStream, a: Action): RobotStream {
     case 'costmap':
       return { ...s, costmap: m }
     case 'scan':
-      return { ...s, scan: m.points }
+      return { ...s, scan: m.points, scanFrame: m.frame }
     case 'path':
       return { ...s, paths: { ...s.paths, [m.name]: m.points } }
     case 'footprint':

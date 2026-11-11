@@ -162,9 +162,9 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
                     meta = store.meta()
                     if meta is not None and changed(key, meta['version']):
                         await websocket.send_json({'type': key, **meta})
-                version, pts = node.scan_pts.get()
-                if pts is not None and changed('scan', version):
-                    await websocket.send_json({'type': 'scan', 'points': pts})
+                version, scan = node.scan_pts.get()
+                if scan is not None and changed('scan', version):
+                    await websocket.send_json({'type': 'scan', **scan})
                 for name, store in node.paths.items():
                     version, pts = store.get()
                     if pts is not None and changed(f'path_{name}', version):

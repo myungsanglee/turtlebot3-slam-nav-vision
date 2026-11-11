@@ -4,7 +4,10 @@
 - 카메라(P1): JPEG 바이트 그대로 보관 → MJPEG
 - 지도 화면(P2): 지도·로컬 장애물 지도(PNG), 라이다 점·경로·로봇 외곽(지도 좌표 점 목록), 로봇 위치(TF)
 
-모든 좌표는 fixed_frame(기본 map) 기준 미터로 바꿔서 내보낸다. 브라우저는 좌표 변환을 하지 않는다.
+모든 좌표는 '표시 좌표계' 기준 미터로 바꿔서 내보낸다. 브라우저는 좌표 변환을 하지 않는다.
+표시 좌표계 = fixed_frame(map) — SLAM·AMCL 이 돌아 map→로봇 TF 가 있을 때.
+              없으면 odom_frame(odom, 로봇이 켜진 위치 기준)으로 자동 전환해 라이다·로봇을 계속 실시간으로 보여준다
+              (지도 없이 로봇만 켜 둔 대기 상태에서도 라이다가 멈추지 않게 — 2026-11-12 수정).
 이 노드는 별도 스레드의 executor 에서 돈다 (server.py). 콜백은 짧게 — 변환·솎기만 하고 PNG 인코딩은
 요청이 올 때 버전별로 한 번만 한다.
 """
@@ -106,6 +109,7 @@ class WebApiNode(Node):
         self._warn_v = float(p('battery_warn_cell_v', 3.5).value)
         self._crit_v = float(p('battery_critical_cell_v', 3.3).value)
         self.fixed_frame = p('fixed_frame', 'map').value
+        self.odom_frame = p('odom_frame', 'odom').value
         self._base_frame = p('base_frame', 'base_footprint').value
         self._scan_points = int(p('scan_max_points', 180).value)
         self._path_points = int(p('path_max_points', 300).value)
@@ -128,7 +132,7 @@ class WebApiNode(Node):
         self._tf_listener = TransformListener(self._tf, self)   # /tf, /tf_static 구독 (같은 executor 에서)
         self.map = GridStore(map_to_rgba)
         self.costmap = GridStore(costmap_to_rgba)
-        self.scan_pts = Versioned()       # [[x, y], ...]  fixed_frame
+        self.scan_pts = Versioned()       # {'frame': 표시 좌표계, 'points': [[x, y], ...]}
         self.paths = {'global': Versioned(), 'local': Versioned()}
         self.footprint = Versioned()
         self.create_subscription(OccupancyGrid, p('topic_map', '/map').value, self._on_map, LATCHED_QOS)
@@ -149,21 +153,29 @@ class WebApiNode(Node):
                                f'  fixed_frame={self.fixed_frame}')
 
     # ---------- 공통: TF ----------
-    def lookup(self, source_frame: str):
-        """fixed_frame ← source_frame 변환 (x, y, yaw). 최신 값을 쓴다 — 브리지 지연으로 메시지 시각에 정확히
-        맞추면 'extrapolation' 오류가 잦고, 화면 표시용으로는 수십 ms 차이가 보이지 않는다. 없으면 None."""
+    def lookup(self, target_frame: str, source_frame: str):
+        """target ← source 변환 (x, y, yaw). 최신 값을 쓴다 — 브리지 지연으로 메시지 시각에 정확히 맞추면
+        'extrapolation' 오류가 잦고, 화면 표시용으로는 수십 ms 차이가 보이지 않는다. 없으면 None."""
         try:
-            t = self._tf.lookup_transform(self.fixed_frame, source_frame, rclpy.time.Time())
+            t = self._tf.lookup_transform(target_frame, source_frame, rclpy.time.Time())
         except TransformException:
             return None
         tr, q = t.transform.translation, t.transform.rotation
         return tr.x, tr.y, yaw_from_quaternion(q.x, q.y, q.z, q.w)
 
+    def display_frame(self) -> str | None:
+        """지금 화면을 그릴 좌표계. map→로봇 이 이어지면 map, 아니면 odom, 둘 다 없으면 None."""
+        for frame in (self.fixed_frame, self.odom_frame):
+            if self.lookup(frame, self._base_frame) is not None:
+                return frame
+        return None
+
     def robot_pose(self):
-        pose = self.lookup(self._base_frame)
+        frame = self.display_frame()
+        pose = None if frame is None else self.lookup(frame, self._base_frame)
         if pose is None:
             return None
-        return {'x': round(pose[0], 3), 'y': round(pose[1], 3), 'yaw': round(pose[2], 4)}
+        return {'frame': frame, 'x': round(pose[0], 3), 'y': round(pose[1], 3), 'yaw': round(pose[2], 4)}
 
     # ---------- 콜백 ----------
     def _make_cb(self, key):
@@ -184,12 +196,15 @@ class WebApiNode(Node):
         return cb
 
     def _on_scan(self, msg: LaserScan):
-        t = self.lookup(msg.header.frame_id)
+        frame = self.display_frame()
+        t = None if frame is None else self.lookup(frame, msg.header.frame_id)
         if t is None:
+            # 좌표계가 없으면 '빈 목록'을 보내 화면이 멈춘 옛 점을 지우게 한다 (이전 값을 남겨 두지 않는다)
+            self.scan_pts.set({'frame': None, 'points': []})
             return
         local = scan_to_points(msg.ranges, msg.angle_min, msg.angle_increment,
                                msg.range_min, msg.range_max, self._scan_points)
-        self.scan_pts.set(transform_points(t, local))
+        self.scan_pts.set({'frame': frame, 'points': transform_points(t, local)})
 
     @staticmethod
     def _grid(msg: OccupancyGrid) -> np.ndarray:
@@ -212,25 +227,28 @@ class WebApiNode(Node):
         self.map.set(self._grid(msg), self._grid_meta(msg, self._origin(msg)))
 
     def _on_costmap(self, msg: OccupancyGrid):
-        # 로컬 costmap 은 odom 기준 → fixed_frame(map) 기준 원점으로 옮긴다 (회전 포함)
-        t = self.lookup(msg.header.frame_id)
+        # 로컬 costmap 은 odom 기준 → 표시 좌표계(보통 map) 기준 원점으로 옮긴다 (회전 포함)
+        frame = self.display_frame()
+        t = None if frame is None else self.lookup(frame, msg.header.frame_id)
         if t is None:
             return
         origin = compose(t, self._origin(msg))
-        self.costmap.set(self._grid(msg), {**self._grid_meta(msg, origin), 'frame': msg.header.frame_id})
+        self.costmap.set(self._grid(msg), {**self._grid_meta(msg, origin), 'frame': frame})
 
     def _on_path(self, name: str, msg: Path):
         if not msg.poses:
             self.paths[name].set([])     # 빈 경로 = 지우기 (목표 도착·취소)
             return
-        t = self.lookup(msg.header.frame_id)
+        frame = self.display_frame()
+        t = None if frame is None else self.lookup(frame, msg.header.frame_id)
         if t is None:
             return
         pts = [(ps.pose.position.x, ps.pose.position.y) for ps in msg.poses]
         self.paths[name].set(transform_points(t, downsample(pts, self._path_points)))
 
     def _on_footprint(self, msg: PolygonStamped):
-        t = self.lookup(msg.header.frame_id)
+        frame = self.display_frame()
+        t = None if frame is None else self.lookup(frame, msg.header.frame_id)
         if t is None:
             return
         self.footprint.set(transform_points(t, [(pt.x, pt.y) for pt in msg.polygon.points]))
@@ -264,6 +282,7 @@ class WebApiNode(Node):
             velocity_out = {'linear': round(velocity[0], 3), 'angular': round(velocity[1], 3)}
 
         map_age = None if self.map.stamp is None else round(time.monotonic() - self.map.stamp, 1)
+        display = self.display_frame()
         return {
             'time': time.time(),
             'mode': 'IDLE',                                   # P3 모드 관리자가 채운다
@@ -272,7 +291,8 @@ class WebApiNode(Node):
             'velocity': velocity_out,
             'navigation': {
                 'fixed_frame': self.fixed_frame,
-                'localized': self.lookup(self._base_frame) is not None,   # map→base 가 이어져야 지도 위 위치가 있다
+                'display_frame': display,          # 화면 좌표계 (map / odom / None)
+                'localized': display == self.fixed_frame,   # map→로봇 이 이어져야 지도 위 위치가 있다
                 'map_age': map_age,
                 'nav2_ready': self._nav2_ready,
             },

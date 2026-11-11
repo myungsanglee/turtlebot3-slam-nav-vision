@@ -25,6 +25,7 @@ export interface Battery {
 
 export interface NavigationStatus {
   fixed_frame: string
+  display_frame: string | null // 화면 좌표계: map(SLAM·AMCL 동작 중) / odom(지도 없음 — 출발점 기준) / null
   localized: boolean // map → 로봇 TF 가 이어져 있음 (SLAM 또는 AMCL 실행 중)
   map_age: number | null
   nav2_ready: boolean
@@ -44,6 +45,7 @@ export interface Pose {
   x: number
   y: number
   yaw: number
+  frame?: string // 서버가 보낸 로봇 위치에만 있음 (표시 좌표계)
 }
 
 export type Point = [number, number]
@@ -83,6 +85,7 @@ export interface RobotStream {
   map: GridMeta | null
   costmap: GridMeta | null
   scan: Point[]
+  scanFrame: string | null
   paths: { global: Point[]; local: Point[] }
   footprint: Point[]
   nav: NavState | null

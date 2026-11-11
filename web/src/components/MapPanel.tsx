@@ -42,13 +42,14 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
           <Typography variant="subtitle1" sx={{ fontWeight: 600, mr: 'auto' }}>
             지도
           </Typography>
-          {nav && !nav.localized && <Chip size="small" color="warning" label="지도 위 위치 없음" />}
+          {nav?.display_frame === 'odom' && <Chip size="small" variant="outlined" label="출발점(odom) 기준" />}
+          {nav && nav.display_frame === null && <Chip size="small" color="warning" label="로봇 위치 없음" />}
           <ToggleButtonGroup size="small" exclusive value={tool} onChange={(_, v) => v && (setTool(v), setPending(null))}>
             <ToggleButton value="view">보기</ToggleButton>
             <ToggleButton value="goal" disabled={!nav?.nav2_ready}>
               목표 지정
             </ToggleButton>
-            <ToggleButton value="initial" disabled={!robot.map}>
+            <ToggleButton value="initial" disabled={!robot.map || !nav?.nav2_ready}>
               초기 위치
             </ToggleButton>
           </ToggleButtonGroup>
@@ -77,6 +78,8 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
 
         <Box sx={{ position: 'relative' }}>
           <MapView
+            frame={robot.pose?.frame ?? null}
+            mapFrame={nav?.fixed_frame ?? 'map'}
             map={robot.map}
             costmap={robot.costmap}
             pose={robot.pose}
