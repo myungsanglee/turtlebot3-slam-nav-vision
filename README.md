@@ -38,7 +38,7 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | 카메라 | RealSense D435i — **자체 pyrealsense2 노드** (공식 노드의 Pi4 USB 불안정을 캘리브레이션 캐시·프로세스 분리로 우회), 컬러 + 컬러 정렬 depth compressed 원격 전송 |
 | Vision AI | **RF-DETR** + **TensorRT**(fp16, 컨테이너 안에서 엔진 빌드·캐시) + 정렬 depth 거리 → 3D 위치 |
 | 센서 융합 | TurtleBot3 기본 오도메트리(바퀴 거리 + **IMU 회전각**, `use_imu: true`). robot_localization(EKF)은 실주행 검증 후 필요 시 |
-| 시각화 | RViz2 (개발자용) · **웹 콘솔** (운용자용 — FastAPI + rclpy 백엔드 API, React + TypeScript + MUI, 카메라 MJPEG) |
+| 시각화 | RViz2 (개발자용) · **웹 콘솔** (운용자용 — FastAPI + rclpy 백엔드 API, React + TypeScript + MUI + react-konva 지도, 카메라 MJPEG) |
 
 ## 레포 구조
 
@@ -69,7 +69,7 @@ turtlebot3-slam-nav-vision/
 | **my_bringup** | 통합 런치 — SLAM/AMCL + Nav2 + Vision(map 좌표 마커) + RViz 한 창 (`system.launch.py`, `system.rviz`) | ✅ 실기 검증 | [docs/my_bringup.md](./docs/my_bringup.md) |
 | **my_vision** | RF-DETR 물체 검출(torch/**TensorRT** 백엔드) + 정렬 depth 로 거리·3D 위치 → **TF2 로 base_link/map 좌표 변환**(`/vision/objects`), RViz 마커, 주석 영상, 카메라 뷰어 | ✅ 실물 검증 (TensorRT 6ms) | [docs/my_vision.md](./docs/my_vision.md) |
 | **카메라 기반 회피** | 라이다(125mm 평면)가 못 보는 장애물 보완 — ① depth 점 구름 → Nav2 장애물 지도, ② **Vision AI 의미 층**: 검출 물체 종류별 회피 여유·사람 근처 감속 (자체 Nav2 costmap 플러그인) | 📐 설계 | [docs/vision_avoidance_design.md](./docs/vision_avoidance_design.md) |
-| **web UI** | 터미널·RViz 대신 브라우저로 운용 — FastAPI + rclpy 백엔드 API(모드 관리: 지도 만들기/주행 전환, Nav2 목표, 카메라 MJPEG) + React 프론트엔드, Pi·서버 자동 실행 | 🚧 P0 자동 실행·P1 상태/배터리/카메라 화면 ✅ (다음 P2 지도·주행) | [docs/my_web_api.md](./docs/my_web_api.md) · [설계](./docs/web_ui_design.md) |
+| **web UI** | 터미널·RViz 대신 브라우저로 운용 — FastAPI + rclpy 백엔드 API(모드 관리: 지도 만들기/주행 전환, Nav2 목표, 카메라 MJPEG) + React 프론트엔드, Pi·서버 자동 실행 | 🚧 P0 자동 실행·P1 상태/카메라·P2 지도/클릭 주행 구현 ✅ (P2 실주행 검증 대기, 다음 P3 모드 관리) | [docs/my_web_api.md](./docs/my_web_api.md) · [설계](./docs/web_ui_design.md) |
 
 ## 시작하기
 
@@ -108,13 +108,16 @@ ros2 launch realsense_bringup rs_camera.launch.py      #          카메라 (자
 서버가 켜져 있으면 `web-api` 컨테이너가 자동으로 떠 있다. 맥·폰(Tailscale 접속 상태)에서:
 
 ```
-http://100.95.193.1:8080        로봇 연결·배터리·센서 수신 상태·카메라 영상 (P1)
+http://100.95.193.1:8080        지도(로봇·라이다·장애물 지도·경로)·클릭 주행·카메라·배터리·센서 상태
 http://100.95.193.1:8080/docs   API 문서
 ```
 
-![웹 콘솔 P1 — 로봇 카메라 영상, 배터리 전압, 센서별 수신 주기](./docs/images/web_ui_p1.png)
+![웹 콘솔 — 지도에 목표를 찍으면 확인 후 이동, 오른쪽은 로봇 카메라](./docs/images/web_ui_p2.png)
 
-지도 보기·클릭 주행·모드 전환은 다음 단계(P2·P3)에서 웹으로 옮겨 온다. 그 전까지 SLAM/Nav2 는 아래 3번처럼 실행한다.
+- 지도에서 **「목표 지정」→ 목표 위치를 누르고 바라볼 방향으로 끌었다 놓기 → 「이동」** (확인을 한 번 더 받는다).
+  저장 지도 주행 땐 「초기 위치」로 로봇 위치를 알려준다. 주행 중엔 「주행 취소」.
+- 지도는 SLAM 또는 저장 지도 주행이 실행 중이어야 나온다. 이 실행을 웹 버튼으로 켜고 끄는 건 다음 단계(P3) —
+  그 전까지는 아래 3번처럼 서버에서 실행한다 (`rviz:=false` 로 RViz 없이 웹만 써도 된다).
 화면 코드를 고쳤으면 서버에서 `cd web && npm run build` ([docs/my_web_api.md](./docs/my_web_api.md) 5장).
 
 ### 3. 서버 — 터미널 1개 ★ 통합 실행 (SLAM + Nav2 + Vision + RViz 한 창)

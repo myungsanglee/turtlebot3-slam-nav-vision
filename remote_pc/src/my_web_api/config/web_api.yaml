@@ -22,3 +22,16 @@ web_api:
     topic_color: /camera/color/compressed
     topic_depth: /camera/depth/compressed
     topic_vision: /vision/annotated/compressed
+
+    # ---- 지도 화면 (P2) — 모든 좌표를 fixed_frame 기준으로 바꿔 브라우저에 보낸다 ----
+    fixed_frame: map
+    base_frame: base_footprint     # 로봇 위치로 쓰는 프레임 (slam_toolbox·Nav2 와 같은 기준)
+    scan_max_points: 180           # 라이다 360 빔을 이만큼으로 솎아 보냄
+    path_max_points: 300           # 경로 점 상한
+    topic_map: /map
+    topic_costmap: /local_costmap/costmap               # odom 기준 → 서버가 map 기준으로 변환
+    topic_plan: /plan                                   # 전역 경로 (planner)
+    topic_local_plan: /local_plan                       # 단기 궤적 (DWB controller)
+    topic_footprint: /local_costmap/published_footprint # 실측 footprint (nav2_params.yaml 이 단일 소스)
+    nav_action: navigate_to_pose
+    topic_initialpose: /initialpose

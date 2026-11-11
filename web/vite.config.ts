@@ -5,6 +5,8 @@ import { defineConfig } from 'vite'
 // 배포는 npm run build → dist/ 를 web-api 가 직접 제공 (docs/my_web_api.md).
 export default defineConfig({
   plugins: [react()],
+  // 지도 렌더러(Konva)·MUI 포함 ~810KB(gzip 250KB). Tailscale 내부 콘솔이라 첫 로딩 1회 비용으로 감수 → 경고 기준만 올림
+  build: { chunkSizeWarningLimit: 1000 },
   server: {
     host: true,   // Tailscale 로 맥·폰에서 접속
     proxy: {
