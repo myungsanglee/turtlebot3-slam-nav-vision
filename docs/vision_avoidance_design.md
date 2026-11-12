@@ -1,6 +1,6 @@
 # 카메라 기반 장애물 회피 설계 — 깊이 층 + 의미(Vision AI) 층
 
-> 상태: **설계 (2026-11-09)**. 구현하면서 바뀐 결정은 이 문서를 고친다.
+> 상태: 설계 (2026-11-09) → **V1 깊이 층 구현 (2026-11-12, 책상 검증 · 바닥 실측 조정 남음)**. 구현하면서 바뀐 결정은 이 문서를 고친다.
 > 관련: [my_navigation.md](./my_navigation.md) (현재 costmap 구성), [my_vision.md](./my_vision.md) (검출·3D 위치),
 > [web_ui_design.md](./web_ui_design.md) (결과를 화면에 보여주는 쪽).
 
@@ -58,6 +58,19 @@
 - 검토: 6fps 갱신이 회피에 충분한가 (로봇 최대 0.22 m/s → 프레임당 3.7cm 이동, 충분할 것으로 예상),
   바닥 오검출(카메라 높이 60mm·수평 장착이라 바닥이 시야 아래쪽에 크게 잡힘), 반사·검은 물체의 depth 결측.
 
+### 3.1 구현 결과 (V1, 2026-11-12)
+
+설계에서 바뀐/정해진 것:
+- 점 구름은 **my_vision 의 별도 노드 `depth_cloud_node`** (검출 노드에 붙이지 않음 — Vision 을 꺼도 회피는 동작해야 함).
+  depth_image_proc 대신 직접 디코딩+역투영. stride 4, 0.2~3.0m. 6Hz, 약 1.1만 점, CPU 9%. (my_vision.md 4.7)
+- costmap 에는 라이다 obstacle_layer 에 소스를 더하지 않고 **별도 `camera_layer`(ObstacleLayer)** 로 넣었다 — 카메라의
+  지우기 광선이 라이다 장애물을 지우지 않게. 같은 토픽을 `camera_mark`(4~25cm, 찍기만) / `camera_clear`(바닥 포함, 지우기만)
+  두 소스로 나눴다. **local·global 둘 다** 넣음 (경로 계획도 낮은 장애물을 알아야 같은 곳으로 계속 경로를 내지 않음).
+- 높이: max 25cm(로봇 CAD 키 14.3cm + 여유), min **4cm(임시)** — 책상 위 측정에서 가까운 면이 −2~−3.5cm.
+  ★ 바닥 시험에서 실측: 바닥 점 높이 분포(거리별)를 보고 min 을 낮출 수 있는지 판단.
+- 끄기: `navigation.launch.py camera_obstacles:=false`, 실행 중엔 `ros2 param set /local_costmap/local_costmap camera_layer.enabled false`.
+- 검증: 층을 하나씩 꺼 local costmap 비교 (my_navigation.md 2.1 그림). 남은 것: 바닥에서 라이다 아래 높이 물체(신발·상자)를 찍고 피해 가는지.
+
 ## 4. ② 의미 층 (Vision AI)
 
 ### 4.1 입력 보강 — 물체 크기 추정 (my_vision)
@@ -110,7 +123,7 @@ Nav2 controller_server 는 속도 제한 토픽(`nav2_msgs/SpeedLimit`)을 받�
 
 | 단계 | 내용 | 완료 기준 |
 |---|---|---|
-| **V1 깊이 층** | 점 구름 발행 + local costmap 소스 추가 + 높이 필터 실측 조정 | 라이다 아래 높이의 물체(신발·상자)를 RViz/웹 장애물 지도에 찍고 피해 감. 바닥 오검출 없음 |
+| **V1 깊이 층** ✅ 구현 (바닥 조정 남음) | 점 구름 발행 + local costmap 소스 추가 + 높이 필터 실측 조정 | 라이다 아래 높이의 물체(신발·상자)를 RViz/웹 장애물 지도에 찍고 피해 감. 바닥 오검출 없음 |
 | **V2 크기 추정** | `/vision/objects` 에 반경 추가 | 의자·사람 반경이 실측과 대략 일치 (±30%) |
 | **V3 SemanticLayer** | C++ costmap 플러그인, 클래스별 여유·소멸 | 사람 앞에서 의자보다 넓게 돌아감 |
 | **V4 감속** | SpeedLimit 발행 | 사람 1.5m 안에서 속도 저하 확인 |

@@ -16,6 +16,7 @@
   <!-- 런치/설정만 담는 패키지 — 실행 의존성만 선언 -->
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>my_slam</exec_depend>
+  <exec_depend>my_vision</exec_depend>   <!-- depth_cloud_node (카메라 깊이 층) -->
   <exec_depend>rviz2</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

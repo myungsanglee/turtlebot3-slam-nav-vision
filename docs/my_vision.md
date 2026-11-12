@@ -23,6 +23,7 @@ remote_pc/src/my_vision/
 ├── my_vision/
 │   ├── camera_io.py       # 공용: 디코드, stamp 짝맞춤(FramePairer), 박스 depth 중앙값, deproject
 │   ├── detector_node.py   # ★ RF-DETR 검출 + 거리·3D 위치 → Detection2DArray / 주석 영상
+│   ├── depth_cloud.py     # 정렬 depth → 3D 점 구름 /camera/points (카메라 회피 V1 깊이 층, 4.7)
 │   └── camera_viewer.py   # 카메라(또는 검출 결과) 영상 뷰어 — color | 정렬 depth | 오버레이
 ├── launch/vision.launch.py
 ├── package.xml / setup.py (ament_python)
@@ -46,6 +47,7 @@ PyTorch(CUDA 12.8 휠) + `rfdetr` + `vision_msgs` + TensorRT(`tensorrt-cu12`) + 
 | `/vision/objects` | `vision_msgs/Detection2DArray` | 위와 같은 검출을 **`target_frame`(기본 `base_link`, SLAM 중이면 `map`)으로 TF2 변환**한 것. `pose.position` = 로봇/지도 좌표 3D 위치. 3D 를 못 구한 검출은 제외 |
 | `/vision/markers` | `visualization_msgs/MarkerArray` | RViz 용 구(위치) + 텍스트(이름·점수·거리), `target_frame` 기준 |
 | `/vision/annotated/compressed` | `sensor_msgs/CompressedImage` | 박스·클래스·점수·거리를 그린 JPEG (뷰어/RViz 용) |
+| `/camera/points` | `sensor_msgs/PointCloud2` | `depth_cloud_node` 출력: 정렬 depth 의 3D 점(x,y,z float32, 광학 좌표계). Nav2 장애물 지도의 카메라 층 입력 (4.7) |
 
 `/vision/detections` 의 `header.frame_id` 는 입력 영상의 `camera_color_optical_frame` (카메라 계약 그대로).
 `/vision/objects` 는 URDF 의 카메라 TF 체인(description.md 3.3)을 통해 `base_link` — 또는 `map` — 좌표로
@@ -126,6 +128,24 @@ INT8 절차: `ros2 run my_vision camera_viewer --save-dir /overlay_ws/models/cal
 
 검산 (2026-09-08 실기): base_link 결과 냉장고 (1.54, −0.57, −0.07) 를 역산하면 카메라 좌표 (오른쪽 0.60,
 아래 0.13, 앞 1.48) — 영상 오른쪽에 있던 그 물체와 일치. `/vision/objects` 6.7Hz.
+
+### 4.7 깊이 점 구름 — 카메라로 장애물 보기 (`depth_cloud_node`, 회피 V1)
+
+라이다는 바닥 위 13.5cm 높이의 **평면 한 장**만 본다. 그보다 낮은 신발·상자나, 위로 튀어나온 의자 좌판은 못 본다.
+카메라 depth 는 화면 전체가 거리이므로 이를 3D 점으로 바꿔 Nav2 에 주면 그 빈틈이 메워진다
+(설계: [vision_avoidance_design.md](./vision_avoidance_design.md), Nav2 쪽 설정: [my_navigation.md](./my_navigation.md) 2.1).
+
+- **계산**: 4.3 과 같은 핀홀 역투영을 픽셀 전체에 한다. `x = (u−cx)·z/fx`, `y = (v−cy)·z/fy`. 매 프레임 같은 픽셀
+  격자를 쓰므로 `(u−cx)/fx`, `(v−cy)/fy` 를 미리 계산해 두고 프레임마다 거리 z 만 곱한다 (`PixelRays`).
+- **솎기** `stride: 4` → 640×480 중 160×120 격자 (최대 1.9만 점). costmap 칸이 5cm 라 이보다 촘촘해도 결과가 같다.
+- **범위** 0.2~3.0m 만. 0(측정 없음)·너무 가까운 값(D435i 최소 거리 근처)·먼 값(오차↑)은 버린다.
+- **좌표계는 바꾸지 않는다**: 출력 frame 은 depth 그대로 `camera_color_optical_frame`, stamp 도 그대로. 로봇·지도
+  좌표로의 변환과 높이 거르기는 costmap 이 TF 로 한다 (그 시각의 로봇 위치를 정확히 쓰려면 stamp 를 보존해야 함).
+- **왜 검출 노드에 넣지 않고 따로**: 검출 노드는 GPU·`vision:=false` 로 끌 수 있다. 회피(안전)가 AI 켜짐 여부에
+  묶이면 안 되므로 CPU 만 쓰는 작은 노드로 분리하고, Nav2 런치(navigation.launch.py)가 함께 띄운다.
+- **왜 depth_image_proc 이 아닌가**: 그 표준 노드는 raw Image 를 받는다. 우리 depth 는 브리지 대역폭 때문에 PNG
+  압축으로 오므로 풀어 주는 노드가 하나 더 필요하다 — 디코딩+역투영은 numpy 몇 줄이라 직접 하는 쪽이 단순하다.
+- 실측 (2026-11-12, 서버): 6.0Hz(카메라와 동일), 프레임당 약 1.1만 점, CPU 9%.
 
 ### 4.6 짝 맞춤과 QoS
 color/depth 는 best effort 로 오므로 한쪽이 유실될 수 있다. 세 토픽의 `stamp` 가 같다는

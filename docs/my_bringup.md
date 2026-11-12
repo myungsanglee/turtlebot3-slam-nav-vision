@@ -36,6 +36,7 @@ remote_pc/src/my_bringup/
 | Path-Global / Path-Local | /plan, /local_plan | 계획 경로 / DWB 로컬 경로 |
 | Footprint | /local_costmap/published_footprint | **실측 직사각형**(앞 0.062 / 뒤 0.220 / 좌우 ±0.090). 뒤는 카메라 USB 케이블 돌출 포함이라 로봇 모델 뒤에 여백이 남는 게 정상 |
 | LaserScan | /scan (Best Effort) | 라이다 |
+| CameraPoints | /camera/points (Best Effort) | 카메라 depth 점 구름 (높이별 색) — 장애물 지도 카메라 층의 입력 |
 | RobotModel | /robot_description (Transient Local, 브리지 경유) | 실물 CAD 통짜 메시(바퀴·LDS·카메라 포함, description.md 3.4). 메시는 컨테이너의 `my_description` 패키지에서 로드 — overlay 미 source 시 안 보임 |
 | **VisionMarkers** | /vision/markers | 검출 물체 구 + "이름 점수 \| 거리" 라벨, map 좌표 |
 | **VisionImage** | /vision/annotated/compressed | 검출 박스가 그려진 카메라 영상 (compressed 플러그인 필요 — 컨테이너에 포함) |

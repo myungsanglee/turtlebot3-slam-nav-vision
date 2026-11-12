@@ -204,7 +204,7 @@ local_costmap:
       resolution: 0.05
       # 실측 footprint (2026-09-08): 앞 카메라 전면 +0.062, 뒤 -0.220(카메라 USB 케이블 돌출 포함; 몸체는 -0.165), 좌우 ±0.090 — 시계반대방향 꼭짓점
       footprint: "[[0.062, 0.090], [-0.220, 0.090], [-0.220, -0.090], [0.062, -0.090]]"
-      plugins: ["obstacle_layer", "inflation_layer"]   # 2D 라이다만 있으므로 voxel 대신 obstacle
+      plugins: ["obstacle_layer", "camera_layer", "inflation_layer"]   # 라이다 층 + 카메라 깊이 층 (각각 2D 장애물 층)
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -219,6 +219,38 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+      # ── 카메라 깊이 층 (회피 V1, docs/vision_avoidance_design.md 3장) ──────────────────────
+      # 라이다(바닥 위 13.5cm 평면)가 못 보는 낮은 물체·튀어나온 물체를 depth 점 구름(/camera/points, my_vision
+      # depth_cloud_node)으로 찍는다. 라이다와 **별도 층**인 이유: 장애물 층은 자기 칸만 지운다 → 카메라의 지우기
+      # 광선이 라이다가 찍은 장애물을 지우지 않는다 (두 층은 최댓값으로 합쳐짐).
+      # 같은 토픽을 두 소스로 나눈다:
+      #   camera_mark  : 높이 4~25cm 의 점만 장애물로 찍기 (바닥·로봇보다 높은 것 제외)
+      #   camera_clear : 바닥 점까지 포함한 모든 점으로 '여기까지 비어 있다' 지우기 — 바닥 점은 장애물이 아니지만
+      #                  그 점까지 시야가 트였다는 증거라, 사람이 지나간 자리 등을 지울 수 있다
+      # 높이 기준: 로봇 키 14.3cm(CAD) + 여유 → 25cm. 아래 4cm 는 바닥 노이즈 여유 — 책상 위 측정에서 가까운 면이
+      #   −2~−3.5cm 로 나왔고(2026-11-12), 바닥 실측으로 다시 조정할 값 (그보다 낮은 문턱·전선은 아직 못 봄).
+      camera_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: camera_mark camera_clear
+        camera_mark:
+          topic: /camera/points
+          data_type: "PointCloud2"
+          marking: True
+          clearing: False
+          min_obstacle_height: 0.04
+          max_obstacle_height: 0.25
+          obstacle_max_range: 2.0     # 멀수록 depth 오차↑ (D435i 2m 에서 수 cm)
+          obstacle_min_range: 0.0
+        camera_clear:
+          topic: /camera/points
+          data_type: "PointCloud2"
+          marking: False
+          clearing: True
+          min_obstacle_height: -1.0   # 지우기용은 바닥(및 책상 끝 아래) 점까지 사용
+          max_obstacle_height: 2.0
+          raytrace_max_range: 2.5
+          raytrace_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -237,7 +269,7 @@ global_costmap:
       footprint: "[[0.062, 0.090], [-0.220, 0.090], [-0.220, -0.090], [0.062, -0.090]]"   # 실측 (local 과 동일)
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "camera_layer", "inflation_layer"]   # 경로 계획도 낮은 장애물을 알게
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True   # slam_toolbox /map QoS 와 일치
@@ -255,6 +287,28 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+      camera_layer:               # local 과 같은 설정 (설명은 위 local_costmap)
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: camera_mark camera_clear
+        camera_mark:
+          topic: /camera/points
+          data_type: "PointCloud2"
+          marking: True
+          clearing: False
+          min_obstacle_height: 0.04
+          max_obstacle_height: 0.25
+          obstacle_max_range: 2.0     # 멀수록 depth 오차↑ (D435i 2m 에서 수 cm)
+          obstacle_min_range: 0.0
+        camera_clear:
+          topic: /camera/points
+          data_type: "PointCloud2"
+          marking: False
+          clearing: True
+          min_obstacle_height: -1.0   # 지우기용은 바닥(및 책상 끝 아래) 점까지 사용
+          max_obstacle_height: 2.0
+          raytrace_max_range: 2.5
+          raytrace_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0

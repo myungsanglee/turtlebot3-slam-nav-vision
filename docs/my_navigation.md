@@ -35,8 +35,24 @@ SLAM 이 만드는 지도는 "벽이 있다/없다"만 담는다. 주행하려�
 ```
 static_layer    : SLAM/저장 지도의 벽          → 비용 254 (절대 불가)
 obstacle_layer  : 라이다에 지금 보이는 장애물   → 비용 254 (지도에 없던 의자, 사람 등)
+camera_layer    : 카메라 depth 점 중 높이 4~25cm → 비용 254 (라이다 평면보다 낮거나 튀어나온 것)
 inflation_layer : 위 장애물 주변을 부풀림       → 벽에서 멀수록 비용 감소
 ```
+
+**camera_layer (카메라 회피 V1, 2026-11-12)** — 라이다는 13.5cm 높이 평면만 보므로, depth 점 구름
+(`/camera/points`, my_vision `depth_cloud_node` — my_vision.md 4.7)을 별도 장애물 층으로 넣었다.
+- **왜 라이다 층과 따로인가**: 장애물 층은 "센서 → 점" 광선이 지나간 칸을 비우는데(clearing), 그 층이 찍은 칸만 지운다.
+  한 층에 섞으면 카메라 광선이 라이다가 찍은 장애물을 지울 수 있다. 층을 나누면 서로 못 지우고, 최종 지도는 최댓값으로 합쳐진다.
+- **같은 토픽을 두 소스로**: `camera_mark`(높이 4~25cm 점만 장애물로 찍기 — 바닥과 로봇 키 14.3cm 보다 높은 것 제외) +
+  `camera_clear`(바닥 점까지 포함해 비우기만 — "그 바닥까지 시야가 트였다"는 증거라 사람이 지나간 자리를 지운다).
+  높이 거르기만 쓰면 바닥 점이 버려져 비우기 광선도 사라지기 때문이다.
+- **높이 4cm 는 임시값**: 책상 위 측정에서 가까운 면이 −2~−3.5cm 로 나왔다. 바닥에서 실측해 조정하고, 그 아래(문턱·전선)는 아직 못 본다.
+- 카메라는 앞 약 69° 만 본다. 시야를 벗어난 장애물은 지워지지 않고 남는다(창 3m 밖으로 나가면 사라짐) — 회전해도 잊지 않는 효과.
+- 낭떠러지(책상 끝·계단)는 "바닥보다 낮은 점"이라 장애물로 찍지 않는다 — 범위 밖 (필요하면 별도 기능).
+- 검증 (책상 위, 로봇 정지): 층을 하나씩 꺼 local costmap 비교 — 카메라 층이 앞 0.8m 의자 등받이를 라이다와 같은 자리에
+  찍고, 앞 책상 면(0.2~0.4m)은 찍지 않음.
+
+![local costmap: 라이다만 / 카메라만 / 합침](images/avoid_v1_costmap.png)
 
 **inflation(부풀림)이 필요한 이유**: 로봇은 점이 아니라 크기가 있는 물체다.
 벽에 딱 붙은 경로를 만들면 몸통이 긁는다. 그래서 장애물 주변 `inflation_radius`
@@ -122,7 +138,7 @@ remote_pc/src/my_navigation/
 ├── config/
 │   └── nav2_params.yaml                # ★ Nav2 전체 노드의 파라미터 (핵심 파일)
 ├── launch/
-│   └── navigation.launch.py            # SLAM 동시 실행(기본) / 저장 지도 모드
+│   └── navigation.launch.py            # SLAM 동시 실행(기본) / 저장 지도 모드 + 카메라 점 구름 노드(camera_obstacles)
 └── rviz/
     └── nav.rviz                        # 코스트맵/경로/footprint 시각화 설정
 ```
@@ -159,7 +175,7 @@ my_slam 과 마찬가지로 소스 코드가 없다 — 검증된 표준 스택(
 | `robot_base_frame` | `base_footprint` | slam_toolbox 와 프레임 규약 통일 (프로젝트 공통) |
 | `controller_frequency` | 10.0 | ROBOTIS TB3 검증값. cmd_vel 이 VPN 을 건너는 원격 구조라 과한 주기보다 안정성 |
 | `max_vel_x`, `max_velocity` | 0.22 | burger 하드웨어 한계와 일치 (velocity_smoother 까지 동일하게) |
-| local costmap `plugins` | obstacle+inflation | 2D 라이다만 있으므로 3D용 voxel_layer 제외 |
+| costmap `plugins` | obstacle + **camera_layer** + inflation | 라이다 층 + 카메라 깊이 층(2D ObstacleLayer 두 개, 2.1). 3D voxel_layer 대신 2D 층 + 높이 필터 — 로봇이 낮아(14cm) 높이 구분이 거의 필요 없음 |
 | `allow_unknown` | true | 미탐사 영역 주행 허용 (SLAM 동시 주행에 필수) |
 | `footprint` | 앞 0.062 / 뒤 −0.220 / 좌우 ±0.090 | **실측 다각형** (2026-09-08). 표준 robot_radius 0.105 원 대체. 뒤는 카메라 USB 케이블 돌출 포함(몸체 CAD 는 −0.165) |
 
@@ -220,4 +236,5 @@ slam_toolbox 대신 map_server(저장 지도) + AMCL(파티클 필터 위치추�
 3. **실주행 튜닝** — 실제 목표점 주행에서 DWB critic 가중치, inflation,
    goal tolerance 를 환경에 맞게 조정.
 4. **robot_localization(EKF)** — 보류. TurtleBot3 가 이미 IMU 회전 융합 중(`use_imu: true` — 거리는 바퀴, 회전각은 IMU), 실주행 검증 후 필요 시 착수.
-5. **Vision AI 연동** — 카메라 인식 결과를 코스트맵/행동에 반영 (로드맵).
+5. **Vision AI 연동** — ① 깊이 층(camera_layer) ✅ 구현 (2026-11-12, 바닥 실측 조정 남음).
+   ② 의미 층(검출 물체 종류별 여유·사람 근처 감속) — vision_avoidance_design.md V2~V4.
