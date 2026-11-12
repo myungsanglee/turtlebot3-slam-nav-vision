@@ -3,6 +3,7 @@
 - 상태(P1): 토픽별 수신 주기·배터리·속도
 - 카메라(P1): JPEG 바이트 그대로 보관 → MJPEG
 - 지도 화면(P2): 지도·로컬 장애물 지도(PNG), 라이다 점·경로·로봇 외곽(지도 좌표 점 목록), 로봇 위치(TF)
+- 카메라 depth 점: 정렬 depth → 지도 좌표 3D 점 (depth_points.py, Nav2 없이도 표시)
 
 모든 좌표는 '표시 좌표계' 기준 미터로 바꿔서 내보낸다. 브라우저는 좌표 변환을 하지 않는다.
 표시 좌표계 = fixed_frame(map) — SLAM·AMCL 이 돌아 map→로봇 TF 가 있을 때.
@@ -16,16 +17,18 @@ from __future__ import annotations
 import threading
 import time
 
+import cv2
 import numpy as np
 import rclpy.time
 from geometry_msgs.msg import PolygonStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
-from sensor_msgs.msg import BatteryState, CompressedImage, LaserScan
+from sensor_msgs.msg import BatteryState, CameraInfo, CompressedImage, LaserScan
 from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from .depth_points import PixelRays, depth_to_display, quat_matrix
 from .geometry import compose, downsample, scan_to_points, transform_points, yaw_from_quaternion
 from .map_codec import costmap_to_rgba, encode_png, map_to_rgba
 from .monitor import FrameStore, TopicMonitor, TopicSpec, battery_level
@@ -142,6 +145,20 @@ class WebApiNode(Node):
         self.scan_pts = Versioned()       # {'frame': 표시 좌표계, 'points': [[x, y], ...]}
         self.paths = {'global': Versioned(), 'local': Versioned()}
         self.footprint = Versioned()
+        # 카메라 depth 점 (표시용): {'frame', 'points': [[x, y, z], ...], 'band': [장애물 높이 하한, 상한]}
+        self.depth_pts = Versioned()
+        self._depth_period = float(p('depth_points_period_sec', 0.25).value)
+        self._depth_stride = int(p('depth_points_stride', 8).value)
+        self._depth_range = (float(p('depth_points_min_range', 0.2).value), float(p('depth_points_max_range', 3.0).value))
+        self._depth_voxel = float(p('depth_points_voxel', 0.05).value)
+        self._depth_zmax = float(p('depth_points_z_max', 1.0).value)
+        self._depth_band = [float(p('depth_obstacle_min_height', 0.04).value),
+                            float(p('depth_obstacle_max_height', 0.25).value)]
+        self._depth_last = 0.0
+        self._depth_rays = None
+        self._cam_info = None
+        self.create_subscription(CameraInfo, p('topic_camera_info', '/camera/color/camera_info').value,
+                                 lambda m: setattr(self, '_cam_info', m), qos_profile_sensor_data)
         self.create_subscription(OccupancyGrid, p('topic_map', '/map').value, self._on_map, LATCHED_QOS)
         self.create_subscription(OccupancyGrid, p('topic_costmap', '/local_costmap/costmap').value,
                                  self._on_costmap, LATCHED_QOS)
@@ -215,6 +232,8 @@ class WebApiNode(Node):
                     self._velocity = (msg.twist.twist.linear.x, msg.twist.twist.angular.z)
             elif key == 'scan':
                 self._on_scan(msg)
+            elif key == 'depth':
+                self._on_depth(msg)
             elif key in self.frames:
                 self.frames[key].put(bytes(msg.data))
         return cb
@@ -229,6 +248,37 @@ class WebApiNode(Node):
         local = scan_to_points(msg.ranges, msg.angle_min, msg.angle_increment,
                                msg.range_min, msg.range_max, self._scan_points)
         self.scan_pts.set({'frame': frame, 'points': transform_points(t, local)})
+
+    def lookup3d(self, target_frame: str, source_frame: str):
+        """3D 변환 (회전 행렬, 이동). 카메라처럼 기울어진 좌표계용. 없으면 None."""
+        try:
+            t = self._tf.lookup_transform(target_frame, source_frame, rclpy.time.Time())
+        except TransformException:
+            return None
+        tr, q = t.transform.translation, t.transform.rotation
+        return quat_matrix(q.x, q.y, q.z, q.w), np.array([tr.x, tr.y, tr.z], dtype=np.float32)
+
+    def _on_depth(self, msg: CompressedImage):
+        """depth 6Hz 중 depth_points_period 마다 한 장만 계산 (전송량·CPU 절약)."""
+        now = time.monotonic()
+        if now - self._depth_last < self._depth_period or self._cam_info is None:
+            return
+        self._depth_last = now
+        frame = self.display_frame()
+        rt = None if frame is None else self.lookup3d(frame, msg.header.frame_id)
+        if rt is None:
+            self.depth_pts.set({'frame': None, 'points': [], 'band': self._depth_band})
+            return
+        depth = cv2.imdecode(np.frombuffer(msg.data, np.uint8), cv2.IMREAD_UNCHANGED)
+        if depth is None:
+            return
+        h, w = depth.shape[:2]
+        key = (tuple(self._cam_info.k), w, h, self._depth_stride)
+        if self._depth_rays is None or self._depth_rays.key != key:
+            self._depth_rays = PixelRays(list(self._cam_info.k), w, h, self._depth_stride)
+        pts = depth_to_display(depth, self._depth_rays, rt[0], rt[1], *self._depth_range,
+                               self._depth_voxel, self._depth_zmax)
+        self.depth_pts.set({'frame': frame, 'points': pts, 'band': self._depth_band})
 
     @staticmethod
     def _grid(msg: OccupancyGrid) -> np.ndarray:

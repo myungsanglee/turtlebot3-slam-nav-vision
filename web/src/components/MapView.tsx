@@ -1,8 +1,9 @@
 import { Box, Typography } from '@mui/material'
 import type Konva from 'konva'
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react'
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react'
 import { Arrow, Group, Image as KImage, Layer, Line, Shape, Stage } from 'react-konva'
-import type { GridMeta, Point, Pose, RobotModelInfo } from '../api/types'
+import { DEPTH_COLORS, splitDepth } from '../api/depth'
+import type { DepthPoints, GridMeta, Point, Point3, Pose, RobotModelInfo } from '../api/types'
 
 // ───────────────────────────────────────────────────────────────────────────
 // 좌표 처리 원리
@@ -17,7 +18,29 @@ export type Tool = 'view' | 'goal' | 'initial'
 export interface Layers {
   costmap: boolean
   scan: boolean
+  depth: boolean
   paths: boolean
+}
+
+// 점 여러 개를 Shape 하나로 (점마다 컴포넌트를 만들면 갱신마다 수백 개를 다시 맞춘다)
+function Dots({ points, color, r, opacity = 1 }: { points: readonly (Point | Point3)[]; color: string; r: number; opacity?: number }) {
+  if (points.length === 0) return null
+  return (
+    <Shape
+      listening={false}
+      perfectDrawEnabled={false}
+      fill={color}
+      opacity={opacity}
+      sceneFunc={(ctx, shape) => {
+        ctx.beginPath()
+        for (const q of points) {
+          ctx.moveTo(q[0] + r, q[1])
+          ctx.arc(q[0], q[1], r, 0, Math.PI * 2)
+        }
+        ctx.fillShape(shape)
+      }}
+    />
+  )
 }
 
 interface Props {
@@ -27,6 +50,7 @@ interface Props {
   costmap: GridMeta | null
   pose: Pose | null
   scan: Point[]
+  depth: DepthPoints
   globalPath: Point[]
   localPath: Point[]
   footprint: Point[]
@@ -114,6 +138,7 @@ export default function MapView({ ref, ...p }: Props) {
   const initialTool = p.tool === 'initial'
   const showMap = !!p.map && (p.frame === p.mapFrame || initialTool)
   const showLive = !initialTool || p.frame === p.mapFrame
+  const depth = useMemo(() => splitDepth(p.depth), [p.depth])
   const showCostmap = p.layers.costmap && !!p.costmap && p.costmap.frame === p.frame && showLive
 
   // 처음 화면 맞춤 (렌더 중 상태 조정 — 다음 렌더 전에 반영된다): 지도가 보이면 지도 전체, 아니면 로봇 중심
@@ -206,23 +231,15 @@ export default function MapView({ ref, ...p }: Props) {
           <Group ref={worldRef} scaleY={-1}>
             {showMap && <Grid meta={p.map!} img={mapImg} />}
             {showCostmap && <Grid meta={p.costmap!} img={costImg} />}
-            {p.layers.scan && showLive && p.scan.length > 0 && (
-              // 점 180개를 컴포넌트 하나로 그린다 (점마다 컴포넌트를 만들면 5Hz 갱신마다 180개를 다시 맞춘다)
-              <Shape
-                listening={false}
-                perfectDrawEnabled={false}
-                fill="#ff5252"
-                sceneFunc={(ctx, shape) => {
-                  const r = 2.2 * px
-                  ctx.beginPath()
-                  for (const [x, y] of p.scan) {
-                    ctx.moveTo(x + r, y)
-                    ctx.arc(x, y, r, 0, Math.PI * 2)
-                  }
-                  ctx.fillShape(shape)
-                }}
-              />
+            {p.layers.depth && showLive && (
+              // 카메라 depth 점 (5cm 칸마다 하나): 바닥은 옅게, 장애물 높이는 주황, 로봇보다 높은 것은 보라 — 라이다 아래에 깐다
+              <>
+                <Dots points={depth.floor} color={DEPTH_COLORS.floor} r={Math.max(1.5 * px, 0.015)} opacity={0.55} />
+                <Dots points={depth.above} color={DEPTH_COLORS.above} r={Math.max(1.8 * px, 0.015)} opacity={0.6} />
+                <Dots points={depth.obstacle} color={DEPTH_COLORS.obstacle} r={Math.max(2.2 * px, 0.02)} />
+              </>
             )}
+            {p.layers.scan && showLive && <Dots points={p.scan} color="#ff5252" r={2.2 * px} />}
             {p.layers.paths && p.globalPath.length > 1 && (
               <Line points={flat(p.globalPath)} stroke="#4caf50" strokeWidth={3} strokeScaleEnabled={false} listening={false} />
             )}

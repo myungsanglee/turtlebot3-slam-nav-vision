@@ -36,6 +36,7 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 ├── my_web_api/
 │   ├── monitor.py                   ROS 없는 순수 로직: 토픽 주기 계산, 최신 프레임 보관, 배터리 판정
 │   ├── geometry.py                  ROS 없는 2D 변환: 쿼터니언↔yaw, 점 변환, 라이다 극좌표→점, 솎기
+│   ├── depth_points.py              카메라 depth → 지도 좌표 3D 점 (my_vision depth_cloud 의 역투영 재사용, 3D 회전, 5cm 솎기)
 │   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL(gzip)
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
 │   ├── nav.py                       Nav2 목표·취소·진행 상태, AMCL 초기 위치 (ROS 스레드 큐)
@@ -299,6 +300,28 @@ WebSocket 이 끊기면 → 즉시 정지
 - 조이스틱을 움직이기 시작하면 진행 중인 Nav2 목표를 취소한다 (두 명령이 섞이지 않게).
 - `/cmd_vel` 은 `geometry_msgs/Twist` — Pi 의 turtlebot3_node 구독 형식을 `ros2 topic info -v` 로 확인했다
   (bringup 설정의 `enable_stamped_cmd_vel: true` 는 이 노드에 적용되지 않음, Nav2 와도 같은 형식).
+
+### 4.17 카메라 depth 점 — 라이다처럼 실시간으로 (2D·3D)
+
+라이다 빨간 점 옆에 **카메라가 지금 보는 것**을 높이별 색으로 그린다. 주황 = Nav2 카메라 장애물 층이 찍는 높이(4~25cm),
+옅은 파랑 = 바닥(그 앞이 비어 있음), 보라 = 로봇보다 높은 것. 「카메라」 레이어 버튼으로 켜고 끈다.
+
+```
+/camera/depth/compressed + camera_info ─▶ (4Hz 로 솎아) 역투영 ─▶ TF 3D 회전 → 표시 좌표계 ─▶ 5cm 칸마다 1점 ─▶ WS {"type":"depth_points"}
+```
+
+- **Nav2 없이도 보인다**: 웹 백엔드가 depth 를 직접 받아 계산한다. Nav2 용 `/camera/points`(my_vision `depth_cloud_node`,
+  Nav2 와 함께 뜸)를 구독하지 않는 이유 — 그 노드를 항상 켜 두면 서버 터미널에서 Nav2 를 띄울 때 발행자가 둘이 된다.
+  계산 함수(`PixelRays`·`depth_to_points`)는 my_vision 것을 그대로 import 하므로 Nav2 가 보는 점과 같은 계산이다.
+- 라이다(2D 평면, `lookup` 의 x·y·yaw)와 달리 카메라 광학 좌표계는 축이 돌아가 있어(z 앞·y 아래) **3D 회전 행렬**로 변환한다
+  (`lookup3d`). z 는 바닥 기준 높이 — 3D 화면은 그대로 쓰고, 2D 는 색 구분에만 쓴다.
+- 전송량: stride 8(80×60) → 범위·높이(1m 이하) 거르기 → 5cm 칸 솎기 = 약 800점, 약 3Hz, **≈42KB/s** (실측).
+  float32 를 그대로 반올림하면 JSON 에 `0.550000011920929` 처럼 길게 나가 float64 로 바꾼 뒤 반올림한다.
+- 색 구분 높이는 `web_api.yaml` 의 `depth_obstacle_min/max_height` — Nav2 `camera_mark` 값과 맞춰 둘 것.
+
+| 2D | 3D |
+|---|---|
+| ![2D 카메라 점](images/web_depth_2d.png) | ![3D 카메라 점](images/web_depth_3d.png) |
 
 ## 5. 실행
 

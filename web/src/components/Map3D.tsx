@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three/examples/jsm/controls/OrbitControls.js'
-import type { GridMeta, Point, Pose, RobotModelInfo } from '../api/types'
+import { DEPTH_COLORS } from '../api/depth'
+import type { DepthPoints, GridMeta, Point, Pose, RobotModelInfo } from '../api/types'
 
 // ───────────────────────────────────────────────────────────────────────────
 // 3D 화면 (보기 전용, RViz 의 Orbit 시점과 같은 역할) — 「3D」 탭을 누를 때만 내려받는다 (MapPanel 의 lazy import).
 // 좌표: ROS 와 같은 z-up, 지도 좌표(미터) 그대로. 서버가 보낸 데이터를 변환 없이 쓴다.
 //   바닥(z=0) = 지도·장애물 지도 이미지 / z=0.135 = 라이다 평면 (base_footprint 위 LDS 높이) / 로봇 = URDF CAD 메시
+//   카메라 depth 점 = 서버가 보낸 실제 높이(z) 그대로 — 높이별 색 (바닥·장애물 높이·로봇보다 높음)
 // ───────────────────────────────────────────────────────────────────────────
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1) // 카메라·컨트롤이 z 를 '위'로 쓰게
 
@@ -24,12 +26,13 @@ interface Props {
   costmap: GridMeta | null
   pose: Pose | null
   scan: Point[]
+  depth: DepthPoints
   globalPath: Point[]
   localPath: Point[]
   footprint: Point[]
   robotModel: RobotModelInfo | null
   goal: Pose | null
-  layers: { costmap: boolean; scan: boolean; paths: boolean }
+  layers: { costmap: boolean; scan: boolean; depth: boolean; paths: boolean }
   follow: boolean
 }
 
@@ -96,6 +99,31 @@ function ScanPoints({ points }: { points: Point[] }) {
   return (
     <points geometry={geo}>
       <pointsMaterial color="#ff5252" size={5} sizeAttenuation={false} />
+    </points>
+  )
+}
+
+// 카메라 depth 점: 실제 3D 위치, 높이 구간별 색 (2D 와 같은 색)
+function DepthCloud({ depth }: { depth: DepthPoints }) {
+  const geo = useMemo(() => {
+    const g = new THREE.BufferGeometry()
+    const pos = new Float32Array(depth.points.length * 3)
+    const col = new Float32Array(depth.points.length * 3)
+    const [lo, hi] = depth.band
+    const c = { floor: new THREE.Color(DEPTH_COLORS.floor), obstacle: new THREE.Color(DEPTH_COLORS.obstacle), above: new THREE.Color(DEPTH_COLORS.above) }
+    depth.points.forEach(([x, y, z], i) => {
+      pos.set([x, y, z], i * 3)
+      const k = z < lo ? c.floor : z <= hi ? c.obstacle : c.above
+      col.set([k.r, k.g, k.b], i * 3)
+    })
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    return g
+  }, [depth])
+  useEffect(() => () => geo.dispose(), [geo])
+  return (
+    <points geometry={geo}>
+      <pointsMaterial vertexColors size={4} sizeAttenuation={false} />
     </points>
   )
 }
@@ -172,6 +200,7 @@ export default function Map3D(p: Props) {
       {showMap && <GridPlane meta={p.map!} url={`/api/map.png?v=${p.map!.version}`} z={0} opacity={1} nearest />}
       {showCostmap && <GridPlane meta={p.costmap!} url={`/api/costmap.png?v=${p.costmap!.version}`} z={0.004} opacity={0.85} nearest />}
       {p.layers.scan && p.scan.length > 0 && <ScanPoints points={p.scan} />}
+      {p.layers.depth && p.depth.points.length > 0 && <DepthCloud depth={p.depth} />}
       {p.layers.paths && p.globalPath.length > 1 && <Line points={xyz(p.globalPath)} color="#4caf50" lineWidth={3} />}
       {p.layers.paths && p.localPath.length > 1 && <Line points={xyz(p.localPath, LINE_Z + 0.002)} color="#ffeb3b" lineWidth={2.5} />}
       {p.footprint.length > 2 && (

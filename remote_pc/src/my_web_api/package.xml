@@ -19,6 +19,7 @@
   <exec_depend>tf2_ros_py</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>my_vision</exec_depend>   <!-- depth_cloud 의 역투영 함수 재사용 -->
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <!-- fastapi / uvicorn 은 pip (docker/Dockerfile vision 스테이지 마지막 레이어) -->

@@ -146,6 +146,7 @@ INT8 절차: `ros2 run my_vision camera_viewer --save-dir /overlay_ws/models/cal
 - **왜 depth_image_proc 이 아닌가**: 그 표준 노드는 raw Image 를 받는다. 우리 depth 는 브리지 대역폭 때문에 PNG
   압축으로 오므로 풀어 주는 노드가 하나 더 필요하다 — 디코딩+역투영은 numpy 몇 줄이라 직접 하는 쪽이 단순하다.
 - 실측 (2026-11-12, 서버): 6.0Hz(카메라와 동일), 프레임당 약 1.1만 점, CPU 9%.
+- 웹 콘솔의 카메라 점 표시도 이 모듈의 `PixelRays`·`depth_to_points` 를 import 해 쓴다 (my_web_api.md 4.17).
 
 ### 4.6 짝 맞춤과 QoS
 color/depth 는 best effort 로 오므로 한쪽이 유실될 수 있다. 세 토픽의 `stamp` 가 같다는

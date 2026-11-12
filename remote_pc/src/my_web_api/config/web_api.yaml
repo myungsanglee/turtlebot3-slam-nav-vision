@@ -29,6 +29,17 @@ web_api:
     base_frame: base_footprint     # 로봇 위치로 쓰는 프레임 (slam_toolbox·Nav2 와 같은 기준)
     scan_max_points: 180           # 라이다 360 빔을 이만큼으로 솎아 보냄
     path_max_points: 300           # 경로 점 상한
+    # 카메라 depth 점 (라이다처럼 실시간 표시, Nav2 없이도) — depth_points.py
+    topic_camera_info: /camera/color/camera_info
+    depth_points_period_sec: 0.25  # 4Hz 로 계산·전송 (카메라 6Hz 중)
+    depth_points_stride: 8         # 640x480 → 80x60 격자
+    depth_points_min_range: 0.2
+    depth_points_max_range: 3.0
+    depth_points_voxel: 0.05       # 5cm 칸마다 점 하나 (Nav2 장애물 지도 칸과 같음)
+    depth_points_z_max: 1.0        # 이보다 높은 점(벽 위·천장)은 보내지 않음
+    # 화면에서 '장애물로 찍히는 높이' 색 구분용 — my_navigation nav2_params.yaml camera_mark 의 min/max_obstacle_height 와 맞출 것
+    depth_obstacle_min_height: 0.04
+    depth_obstacle_max_height: 0.25
     topic_map: /map
     topic_costmap: /local_costmap/costmap               # odom 기준 → 서버가 map 기준으로 변환
     topic_plan: /plan                                   # 전역 경로 (planner)

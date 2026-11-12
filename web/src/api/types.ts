@@ -52,6 +52,13 @@ export interface Pose {
 }
 
 export type Point = [number, number]
+export type Point3 = [number, number, number] // x, y (지도 좌표, m) + z (바닥 기준 높이, m)
+
+// 카메라 depth 점 (서버 depth_points.py). band = Nav2 가 장애물로 찍는 높이 범위 [하한, 상한] (색 구분용)
+export interface DepthPoints {
+  points: Point3[]
+  band: [number, number]
+}
 
 // OccupancyGrid 메타. 이미지는 /api/map.png?v=version · /api/costmap.png?v=version
 export interface GridMeta {
@@ -123,6 +130,7 @@ export interface RobotStream {
   costmap: GridMeta | null
   scan: Point[]
   scanFrame: string | null
+  depth: DepthPoints
   paths: { global: Point[]; local: Point[] }
   footprint: Point[]
   nav: NavState | null

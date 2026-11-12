@@ -16,7 +16,7 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
   GET  /api/mode/log          모드 launch 로그 꼬리 (문제 확인용)
   GET  /api/maps · POST /api/maps {name} · DELETE /api/maps/{name} · GET /api/maps/{name}.png
                               저장 지도 목록 / 지금 지도 저장 / 삭제 / 미리보기
-  WS   /ws                    status(2Hz)·pose(10Hz)·scan·path·footprint·map·costmap·nav·mode 를 바뀔 때 push,
+  WS   /ws                    status(2Hz)·pose(10Hz)·scan·depth_points·path·footprint·map·costmap·nav·mode 를 바뀔 때 push,
                               브라우저 → 서버: {"type": "teleop", "x", "y", "scale"} (조이스틱, 0.1초마다) / {"type": "teleop_release"}
   GET  /docs                  자동 생성 API 문서
 """
@@ -269,6 +269,9 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
                 version, scan = node.scan_pts.get()
                 if scan is not None and changed('scan', version):
                     await websocket.send_json({'type': 'scan', **scan})
+                version, dp = node.depth_pts.get()
+                if dp is not None and changed('depth_points', version):
+                    await websocket.send_json({'type': 'depth_points', **dp})
                 for name, store in node.paths.items():
                     version, pts = store.get()
                     if pts is not None and changed(f'path_{name}', version):

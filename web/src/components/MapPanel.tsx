@@ -21,7 +21,7 @@ const deg = (r: number) => Math.round((r * 180) / Math.PI)
 export default function MapPanel({ robot }: { robot: RobotStream }) {
   const [view, setView] = useState<'2d' | '3d'>('2d')
   const [tool, setTool] = useState<Tool>('view')
-  const [layers, setLayers] = useState<Layers>({ costmap: true, scan: true, paths: true })
+  const [layers, setLayers] = useState<Layers>({ costmap: true, scan: true, depth: true, paths: true })
   const [follow, setFollow] = useState(false)
   const mapRef = useRef<MapHandle>(null)
   const [pending, setPending] = useState<Pose | null>(null)
@@ -70,10 +70,13 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
           <ToggleButtonGroup
             size="small"
             value={layerValue}
-            onChange={(_, v: string[]) => setLayers({ costmap: v.includes('costmap'), scan: v.includes('scan'), paths: v.includes('paths') })}
+            onChange={(_, v: string[]) => setLayers({ costmap: v.includes('costmap'), scan: v.includes('scan'), depth: v.includes('depth'), paths: v.includes('paths') })}
           >
             <ToggleButton value="costmap">장애물</ToggleButton>
             <ToggleButton value="scan">라이다</ToggleButton>
+            <Tooltip title="카메라 depth 점 — 주황: 장애물로 피하는 높이 / 파랑: 바닥 / 보라: 로봇보다 높음">
+              <ToggleButton value="depth">카메라</ToggleButton>
+            </Tooltip>
             <ToggleButton value="paths">경로</ToggleButton>
           </ToggleButtonGroup>
           <Tooltip title="로봇 따라가기">
@@ -101,11 +104,12 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
                   costmap={costmap}
                   pose={robot.pose}
                   scan={robot.scan}
+                  depth={robot.depth}
                   globalPath={active ? robot.paths.global : []}
                   localPath={active ? robot.paths.local : []}
                   footprint={footprint}
                   robotModel={robotModel.data ?? null}
-                        goal={active ? (robot.nav?.goal ?? null) : null}
+                  goal={active ? (robot.nav?.goal ?? null) : null}
                   layers={layers}
                   follow={follow}
                 />
@@ -119,6 +123,7 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
             costmap={costmap}
             pose={robot.pose}
             scan={robot.scan}
+            depth={robot.depth}
             globalPath={active ? robot.paths.global : []}
             localPath={active ? robot.paths.local : []}
             footprint={footprint}
