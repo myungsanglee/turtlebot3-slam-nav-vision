@@ -104,12 +104,22 @@ services:
     depends_on:
       - zenoh-bridge
     stop_signal: SIGINT              # ros2 launch 의 정상 종료 경로 (my_web_api/server.py 종료 순서)
-    stop_grace_period: 15s
+    stop_grace_period: 45s           # 웹에서 띄운 SLAM·Nav2·Vision 까지 정상 종료할 시간
+    # 웹 모드 관리자가 Vision(TensorRT) 도 띄우므로 GPU 필요
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       - TURTLEBOT3_MODEL=${TURTLEBOT3_MODEL:-burger}
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-30}
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_LOCALHOST_ONLY=1
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       - ./remote_pc:/overlay_ws:rw
       - ./description:/overlay_ws/src/my_description:rw

@@ -71,6 +71,7 @@ def main():
     try:
         server.run()
     finally:
+        node.mode.shutdown()     # 웹에서 띄운 SLAM·Nav2 를 정상 종료 (수십 초 걸릴 수 있음 — compose stop_grace_period)
         executor.shutdown()
         spin_thread.join(timeout=2.0)
         node.destroy_node()

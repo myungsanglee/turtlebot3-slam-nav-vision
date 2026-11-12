@@ -92,6 +92,28 @@ export interface NavState {
   version: number
 }
 
+// 운용 모드 (mode_manager.py)
+export type ModeName = 'IDLE' | 'MAPPING' | 'NAVIGATION'
+export interface ModeState {
+  mode: ModeName
+  phase: 'idle' | 'starting' | 'running' | 'stopping' | 'error'
+  map: string | null
+  vision: boolean
+  since: number
+  message: string
+  external: boolean // 웹이 아닌 곳(서버 터미널)에서 SLAM/Nav2 가 떠 있음
+  version: number
+}
+
+export interface SavedMap {
+  name: string
+  width: number
+  height: number
+  resolution: number
+  size_m: [number, number]
+  saved: number // epoch 초
+}
+
 export interface RobotStream {
   connected: boolean
   connectionId: number
@@ -104,4 +126,6 @@ export interface RobotStream {
   paths: { global: Point[]; local: Point[] }
   footprint: Point[]
   nav: NavState | null
+  mode: ModeState | null
+  send: (msg: object) => void // 브라우저 → 서버 (조이스틱)
 }

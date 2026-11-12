@@ -2,12 +2,14 @@ import { Alert, Box, Container, Stack } from '@mui/material'
 import { useRobot } from './api/useRobot'
 import BatteryCard from './components/BatteryCard'
 import CameraPanel from './components/CameraPanel'
+import Joystick from './components/Joystick'
 import MapPanel from './components/MapPanel'
+import ModePanel from './components/ModePanel'
 import NavPanel from './components/NavPanel'
 import StatusBar from './components/StatusBar'
 import TopicTable from './components/TopicTable'
 
-// P2 화면: 지도(로봇·라이다·장애물 지도·경로) + 클릭 주행 · 카메라 · 주행 상태 · 배터리 · 센서 상태
+// 화면: 지도(2D/3D) + 클릭 주행 · 운용 모드(지도 만들기·저장·주행) · 카메라 · 조이스틱 · 주행 상태 · 배터리 · 센서 상태
 export default function App() {
   const robot = useRobot()
   const { status, connected, connectionId } = robot
@@ -28,7 +30,9 @@ export default function App() {
             <TopicTable topics={topics} />
           </Stack>
           <Stack spacing={2}>
+            <ModePanel mode={robot.mode} />
             <CameraPanel topics={topics} connectionId={connectionId} />
+            <Joystick send={robot.send} connected={connected && !!status?.robot_connected} />
             <NavPanel nav={robot.nav} navigation={status?.navigation} />
             <BatteryCard battery={status?.battery ?? null} />
           </Stack>

@@ -2,7 +2,11 @@
 
 > 설계와 단계 계획은 [web_ui_design.md](./web_ui_design.md). 이 문서는 **구현된 것의 동작 원리**를 설명한다.
 > 현재 범위: **P1 — 연결 상태 · 배터리 · 센서 수신 상태 · 카메라 영상** (2026-11-10),
-> **P2 — 지도 위 로봇·라이다·로컬 장애물 지도·경로, 클릭으로 Nav2 목표·취소·AMCL 초기 위치** (2026-11-12).
+> **P2 — 지도 위 로봇·라이다·로컬 장애물 지도·경로, 클릭으로 Nav2 목표·취소·AMCL 초기 위치** (2026-11-12),
+> **P3 — 웹 버튼으로 지도 만들기·저장·저장 지도로 주행 전환, 조이스틱 수동 조작** (2026-11-12).
+
+![웹 콘솔 P3 — 운용 모드(지도 만들기 중, 지도 저장·목록), 카메라](./images/web_ui_p3.png)
+
 
 ![웹 콘솔 P2 — 지도에 목표를 찍으면 확인 후 이동](./images/web_ui_p2.png)
 
@@ -35,10 +39,13 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 │   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL(gzip)
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
 │   ├── nav.py                       Nav2 목표·취소·진행 상태, AMCL 초기 위치 (ROS 스레드 큐)
+│   ├── mode_manager.py              운용 모드: system.launch 를 프로세스 그룹으로 켜고 끔, 외부 실행 감지
+│   ├── maps.py                      저장 지도 목록·미리보기·저장(map_saver_cli)·삭제
+│   ├── teleop.py                    조이스틱 → /cmd_vel (0.3초 워치독, 속도 상한, 시작 시 Nav2 목표 취소)
 │   ├── ros_node.py                  rclpy 노드: 구독·TF → 지도 좌표로 정리, snapshot() 으로 상태 조립
 │   ├── app.py                       FastAPI 라우트: 상태·영상·지도·주행 API, WebSocket, 정적 파일
 │   └── server.py                    진입점: ROS 스레드 + uvicorn, 종료 순서
-├── test/                            monitor·geometry·map_codec·robot_model 단위 테스트 20개 (ROS 불필요)
+├── test/                            monitor·geometry·map_codec·robot_model·maps·teleop 단위 테스트 25개
 └── tools/                           fake_nav.py(로봇 안 움직이는 가짜 Nav2) · nav_api_check.py(주행 API 점검)
 
 web/                                 React 프론트엔드 (npm 프로젝트, ROS 패키지 아님)
@@ -47,6 +54,9 @@ web/                                 React 프론트엔드 (npm 프로젝트, RO
     ├── api/types.ts                 서버 데이터 형식 (ros_node·app·nav 와 1:1)
     ├── api/useRobot.ts              WebSocket 하나로 모든 실시간 데이터 (reducer), 자동 재연결
     ├── api/nav.ts                   주행 요청 (TanStack Query mutation)
+    ├── api/mode.ts                  모드 전환·지도 목록/저장/삭제·실행 로그
+    ├── components/ModePanel.tsx     운용 모드 버튼, 지도 저장·선택·삭제(확인 대화상자), 실행 로그
+    ├── components/Joystick.tsx      가상 조이스틱 (누르는 동안만 0.1초마다 전송, 속도 조절)
     ├── api/robot.ts                 로봇 모양 정보 (TanStack Query)
     ├── components/MapView.tsx       react-konva 2D 지도: 레이어·확대/이동·따라가기·목표 찍기·로봇 CAD 윗모습
     ├── components/Map3D.tsx         react-three-fiber 3D 화면 (보기 전용, 「3D」 누를 때만 내려받음)
@@ -244,6 +254,52 @@ feedback·결과 콜백 ─▶ 상태(state·남은 거리·경과·복구 횟�
 - **가볍게**: three.js(~950KB)는 「3D」 를 누를 때만 내려받고(React.lazy → 별도 파일), 데이터가 바뀌거나 조작할 때만
   다시 그린다(`frameloop="demand"`) — 폰 배터리·발열.
 
+### 4.14 운용 모드 — 웹이 launch 를 켜고 끈다
+
+| 모드 | 웹 버튼 | 실행되는 것 |
+|---|---|---|
+| 대기 | 「정지」 | 없음 (web-api 만). 라이다·카메라·조이스틱은 그대로 쓸 수 있다 |
+| 지도 만들기 | 「지도 만들기 시작」 | `system.launch.py use_slam:=true rviz:=false` → slam_toolbox + Nav2 (+ Vision) |
+| 주행 | 저장 지도 고르고 「이 지도로 주행」 | `system.launch.py use_slam:=false map:=<지도>.yaml` → map_server + AMCL + Nav2 (+ Vision) |
+
+- **프로세스 그룹으로 띄우고 그룹째 끈다** (`mode_manager.py`): `start_new_session=True` 로 새 그룹을 만들고, 끌 땐 그룹
+  전체에 SIGINT → 20초 안에 안 끝나면 SIGTERM → SIGKILL. 백그라운드 launch 가 SIGINT 를 못 받던 함정
+  (troubleshooting 2026-11-05)을 피하는 같은 원리. web-api 가 종료될 때도 띄운 launch 를 이렇게 정리한다.
+- **준비 판정**: Nav2 액션 서버가 뜨고, 시작 뒤에 지도가 들어오면 "실행 중". 그 전엔 "시작 중"(진행 막대).
+  지도 만들기는 약 7초, TensorRT 엔진이 캐시에 있으면 Vision 도 수 초 안에 뜬다.
+- **전환 중엔 다른 요청 거절**(409), 모드를 바꾸기 전에 진행 중인 Nav2 목표를 먼저 취소한다.
+- **외부 실행 감지**: 서버 터미널에서 이미 SLAM·Nav2 를 띄워 두었으면(ROS 그래프에 slam_toolbox·bt_navigator 등이
+  보이는데 웹이 띄운 게 아님) 시작을 거절하고 화면에 경고 — 두 벌이 뜨면 TF·지도가 꼬인다. 웹이 직접 끈 노드도
+  그래프 목록에서 사라지기까지 몇 초 걸려서, 끈 직후 15초는 남은 이름을 외부 실행으로 보지 않는다 (처음 구현에서
+  "정지 → 바로 시작" 이 외부 실행으로 오판됐다).
+- **Vision 도 같이** 띄우므로 web-api 컨테이너에 GPU 를 준다 (compose `deploy`). 종료 유예 45초.
+- **실행 로그**: launch 출력을 파일로 받아 꼬리 60줄을 `GET /api/mode/log` 로 — 화면 「실행 로그 보기」, 오류 시 자동 표시.
+- 주행 모드는 시작 후 「초기 위치」 로 AMCL 에 로봇 위치를 알려 줘야 지도 기준 위치가 생긴다 (그 전엔 odom 기준 표시).
+
+### 4.15 지도 저장·관리
+
+- 저장은 nav2 `map_saver_cli` 를 그대로 부른다 (README·my_slam.md 의 수동 절차와 같은 도구·같은 결과 파일 yaml+pgm).
+  폴더는 `/overlay_ws/maps` (호스트 `remote_pc/maps`, git 제외 — 사용자 데이터).
+- 이름은 영문·숫자·_·- 1~40자만 (경로 조작 `../` 방지). 기본값은 `map_YYYYMMDD_HHMM`.
+- 목록은 미리보기(pgm → 웹 지도와 같은 색 PNG)와 크기(m)를 보여주고, 삭제는 확인 대화상자를 거친다.
+  지금 주행에 쓰는 지도는 지울 수 없다(409).
+
+### 4.16 조이스틱 — 안전 장치가 서버에 있다
+
+```
+브라우저: 누르고 있는 동안 0.1초마다 {"type":"teleop", x, y, scale}  ─WS─▶  서버 teleop.py
+          손 뗌 / 탭 전환 / 창 포커스 잃음 → {"type":"teleop_release"}           │
+서버 ROS 타이머(10Hz): 마지막 명령이 0.3초 이내면 → /cmd_vel (Twist)  ◀──────────┘
+                       아니면 → 정지(0,0) 3번 보내고 조용히 (계속 0 을 보내면 Nav2 명령과 싸움)
+WebSocket 이 끊기면 → 즉시 정지
+```
+
+- 브라우저를 믿지 않는다: 속도 상한(전진 0.15 m/s · 회전 1.0 rad/s, `web_api.yaml`)·작은 떨림 무시(데드존)는 서버가 한다.
+  화면의 속도 조절(20~100%)은 그 상한에 곱해진다.
+- 조이스틱을 움직이기 시작하면 진행 중인 Nav2 목표를 취소한다 (두 명령이 섞이지 않게).
+- `/cmd_vel` 은 `geometry_msgs/Twist` — Pi 의 turtlebot3_node 구독 형식을 `ros2 topic info -v` 로 확인했다
+  (bringup 설정의 `enable_stamped_cmd_vel: true` 는 이 노드에 적용되지 않음, Nav2 와도 같은 형식).
+
 ## 5. 실행
 
 ### 평소 (서버 부팅 시 자동)
@@ -272,7 +328,7 @@ docker compose restart web-api       # 설정(web_api.yaml)·백엔드 코드 �
 ### 테스트
 
 ```bash
-docker compose exec remote-pc bash -c 'cd /overlay_ws/src/my_web_api && python3 -m pytest -q test'   # 20 passed
+docker compose exec remote-pc bash -c 'cd /overlay_ws/src/my_web_api && python3 -m pytest -q test'   # 25 passed
 cd web && npm run build && npm run lint                                                              # 타입·린트
 ```
 
@@ -310,9 +366,18 @@ python3 /overlay_ws/src/my_web_api/tools/nav_api_check.py       # 목표→도�
   3D(헤드리스 크롬 소프트웨어 WebGL): SLAM 지도·장애물 지도·라이다·CAD 로봇·점선 footprint·앞 화살표 표시 확인,
   메시 gzip 전송 1,876,461B (원본 5,000,084B).
 - ⏳ **실제 주행(목표 클릭 → 로봇 이동 → 장애물 회피가 화면에 보임)은 로봇을 바닥에 두고 사용자 입회 하 검증 예정.**
+
+**P3 (2026-11-12, 로봇 정지 상태)**
+- API: 대기 → 지도 만들기(약 7초에 실행 중, Vision TensorRT 6ms) → 지도 저장(117×104칸) → 잘못된 이름 400 →
+  저장 지도로 주행 → 사용 중 지도 삭제 409 → 「초기 위치」 로 AMCL 위치 잡힘 → 대기 (SLAM·Nav2·Vision 프로세스 0).
+- 외부 실행: 개발 컨테이너에서 `system.launch.py` 를 띄운 상태로 웹 시작 → 409 거절, 화면 경고 표시.
+- 조이스틱: 로봇에 안 가는 `/cmd_vel_test` 로 출력하는 시험용 web-api(:8081)로 기록 — 반쯤 위·왼쪽 → 0.075 m/s·0.5 rad/s,
+  손 뗌 → 0.3초 뒤 정지 3번 후 조용, 속도 50% 끝까지 위 → 0.075 m/s, 연결 끊김 → 즉시 정지 3번.
+- 화면(헤드리스 크롬 원격 조작): 「지도 만들기 시작」→「지도 저장」→ 목록·미리보기 →「이 지도로 주행」→「정지」.
+- ⏳ 조이스틱으로 실제 로봇을 움직이는 시험은 바닥에서 사용자 입회 하에.
   (이번엔 로봇 위치를 몰라 움직이는 시험을 하지 않았다.)
 
 ## 7. 다음
 
 - P2 실주행 검증 (위 ⏳), 그때 카메라 회피 V1(깊이 층)도 함께 ([vision_avoidance_design.md](./vision_avoidance_design.md)).
-- P3 모드 관리: 웹 버튼으로 지도 만들기 / 저장 / 저장 지도로 주행 전환 ([web_ui_design.md](./web_ui_design.md) 4장).
+- P4: 검출 물체 목록·"물체로 이동", 자이로 재보정 버튼 등 ([web_ui_design.md](./web_ui_design.md) 8장).

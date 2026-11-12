@@ -38,3 +38,6 @@ remote_pc/models/
 
 # 로봇 CAD 원본 STL (59MB, 118만 삼각형) — 레포엔 경량화본(*_lowpoly.stl, 10만 삼각형)만 커밋
 description/meshes/my_turtleBot3_burger.stl
+
+# 저장 지도 (웹 콘솔·map_saver 가 만드는 사용자 데이터)
+remote_pc/maps/

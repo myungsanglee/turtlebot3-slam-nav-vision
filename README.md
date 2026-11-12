@@ -69,7 +69,7 @@ turtlebot3-slam-nav-vision/
 | **my_bringup** | 통합 런치 — SLAM/AMCL + Nav2 + Vision(map 좌표 마커) + RViz 한 창 (`system.launch.py`, `system.rviz`) | ✅ 실기 검증 | [docs/my_bringup.md](./docs/my_bringup.md) |
 | **my_vision** | RF-DETR 물체 검출(torch/**TensorRT** 백엔드) + 정렬 depth 로 거리·3D 위치 → **TF2 로 base_link/map 좌표 변환**(`/vision/objects`), RViz 마커, 주석 영상, 카메라 뷰어 | ✅ 실물 검증 (TensorRT 6ms) | [docs/my_vision.md](./docs/my_vision.md) |
 | **카메라 기반 회피** | 라이다(125mm 평면)가 못 보는 장애물 보완 — ① depth 점 구름 → Nav2 장애물 지도, ② **Vision AI 의미 층**: 검출 물체 종류별 회피 여유·사람 근처 감속 (자체 Nav2 costmap 플러그인) | 📐 설계 | [docs/vision_avoidance_design.md](./docs/vision_avoidance_design.md) |
-| **web UI** | 터미널·RViz 대신 브라우저로 운용 — FastAPI + rclpy 백엔드 API(모드 관리: 지도 만들기/주행 전환, Nav2 목표, 카메라 MJPEG) + React 프론트엔드, Pi·서버 자동 실행 | 🚧 P0 자동 실행·P1 상태/카메라·P2 지도/클릭 주행 구현 ✅ (P2 실주행 검증 대기, 다음 P3 모드 관리) | [docs/my_web_api.md](./docs/my_web_api.md) · [설계](./docs/web_ui_design.md) |
+| **web UI** | 터미널·RViz 대신 브라우저로 운용 — FastAPI + rclpy 백엔드 API(모드 관리: 지도 만들기/주행 전환, Nav2 목표, 카메라 MJPEG) + React 프론트엔드, Pi·서버 자동 실행 | 🚧 P0 자동 실행·P1 상태/카메라·P2 지도/클릭 주행·P3 모드 관리/지도 저장/조이스틱 구현 ✅ (실주행 검증 대기, 다음 P4) | [docs/my_web_api.md](./docs/my_web_api.md) · [설계](./docs/web_ui_design.md) |
 
 ## 시작하기
 
@@ -108,20 +108,24 @@ ros2 launch realsense_bringup rs_camera.launch.py      #          카메라 (자
 서버가 켜져 있으면 `web-api` 컨테이너가 자동으로 떠 있다. 맥·폰(Tailscale 접속 상태)에서:
 
 ```
-http://100.95.193.1:8080        지도(로봇·라이다·장애물 지도·경로)·클릭 주행·카메라·배터리·센서 상태
+http://100.95.193.1:8080        운용 모드·지도(2D/3D)·클릭 주행·조이스틱·카메라·배터리·센서 상태
 http://100.95.193.1:8080/docs   API 문서
 ```
 
-![웹 콘솔 — 지도에 목표를 찍으면 확인 후 이동, 오른쪽은 로봇 카메라](./docs/images/web_ui_p2.png)
+![웹 콘솔 — 지도 만들기 중 (운용 모드·지도 저장·카메라)](./docs/images/web_ui_p3.png)
+
+**터미널 없이 지도 만들기부터 주행까지:**
+1. 「운용 모드」 →「지도 만들기 시작」 (SLAM + Nav2 + Vision 이 뜬다, 약 10초)
+2. **조이스틱**(누르고 있는 동안만 움직임, 손 떼면 정지) 또는 지도의 「목표 지정」으로 돌아다니며 지도를 그린다
+3. 이름을 정해 「지도 저장」 → 목록에 미리보기와 함께 나타남
+4. 저장 지도를 고르고 「이 지도로 주행」 → 지도의 「초기 위치」로 로봇 위치를 알려 준다
+5. 「목표 지정」→ 목표 위치를 누르고 바라볼 방향으로 끌었다 놓기 →「이동」(확인을 한 번 더 받는다). 「정지」로 대기 모드
 
 - 로봇은 URDF 의 실물 CAD 로 그린다. 「2D / 3D」 로 전환하면 RViz 처럼 돌려 볼 수 있다 (3D 는 보기 전용).
-- 지도에서 **「목표 지정」→ 목표 위치를 누르고 바라볼 방향으로 끌었다 놓기 → 「이동」** (확인을 한 번 더 받는다).
-  저장 지도 주행 땐 「초기 위치」로 로봇 위치를 알려준다. 주행 중엔 「주행 취소」.
-- 지도는 SLAM 또는 저장 지도 주행이 실행 중이어야 나온다. 이 실행을 웹 버튼으로 켜고 끄는 건 다음 단계(P3) —
-  그 전까지는 아래 3번처럼 서버에서 실행한다 (`rviz:=false` 로 RViz 없이 웹만 써도 된다).
+- 서버 터미널에서 SLAM/Nav2 를 직접 띄워 둔 상태면 웹은 시작을 거절한다 (두 벌 실행 방지) — 아래 3번은 개발·디버깅용.
 화면 코드를 고쳤으면 서버에서 `cd web && npm run build` ([docs/my_web_api.md](./docs/my_web_api.md) 5장).
 
-### 3. 서버 — 터미널 1개 ★ 통합 실행 (SLAM + Nav2 + Vision + RViz 한 창)
+### 3. 서버 터미널에서 직접 실행 (개발·디버깅 — SLAM + Nav2 + Vision + RViz 한 창)
 
 ```bash
 docker compose up -d                 # 컨테이너가 내려가 있을 때만 (zenoh-bridge + remote-pc)

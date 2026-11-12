@@ -29,8 +29,11 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from .geometry import compose, downsample, scan_to_points, transform_points, yaw_from_quaternion
 from .map_codec import costmap_to_rgba, encode_png, map_to_rgba
 from .monitor import FrameStore, TopicMonitor, TopicSpec, battery_level
+from .maps import MapStore
+from .mode_manager import ModeManager
 from .nav import NavController
 from .robot_model import RobotModel
+from .teleop import TeleopController
 
 # key: (파라미터 이름, 메시지 타입, 한글 이름, 기대 Hz, optional)
 #   optional=True: 안 들어와도 오류가 아님 (Vision 은 SLAM/주행 모드에서만 켜짐)
@@ -155,6 +158,18 @@ class WebApiNode(Node):
 
         # 로봇 모양: Pi 가 보내는 URDF(transient local) → base_link 메시 → 위에서 본 이미지·3D 메시
         self.robot_model = RobotModel(self.get_logger())
+
+        # ---------- P3: 모드 관리·지도 저장·조이스틱 ----------
+        self.maps = MapStore(p('maps_dir', '/overlay_ws/maps').value)
+        self._graph = set()
+        self.create_timer(1.0, self._poll_graph)
+        self.mode = ModeManager(self.get_logger(), self.maps, self._mode_ready, lambda: self._graph,
+                                on_stop=lambda: self.nav.submit('cancel'),
+                                ready_timeout=float(p('mode_ready_timeout_sec', 120.0).value))
+        self.teleop = TeleopController(self, p('topic_cmd_vel', '/cmd_vel').value,
+                                       float(p('teleop_max_linear', 0.15).value),
+                                       float(p('teleop_max_angular', 1.0).value),
+                                       on_start=lambda: self.nav.submit('cancel'))
         self.create_subscription(String, p('topic_robot_description', '/robot_description').value,
                                  lambda m: self.robot_model.update(m.data), LATCHED_QOS)
 
@@ -265,6 +280,16 @@ class WebApiNode(Node):
     def _poll_nav2(self):
         self._nav2_ready = self.nav.server_ready()
 
+    def _poll_graph(self):
+        self._graph = {name for name, _ns in self.get_node_names_and_namespaces()}
+
+    def _mode_ready(self, mode: str, started_wall: float) -> bool:
+        """모드 시작이 끝났나: Nav2 액션 서버가 뜨고, 시작 뒤에 지도가 들어왔으면 준비 완료."""
+        if not self._nav2_ready or self.map.stamp is None:
+            return False
+        map_wall = time.time() - (time.monotonic() - self.map.stamp)   # 지도 수신 시각(실제 시각)
+        return map_wall >= started_wall
+
     # ---------- 상태 ----------
     def snapshot(self) -> dict:
         """GET /api/status 와 WebSocket 'status' 메시지의 내용."""
@@ -296,7 +321,7 @@ class WebApiNode(Node):
         display = self.display_frame()
         return {
             'time': time.time(),
-            'mode': 'IDLE',                                   # P3 모드 관리자가 채운다
+            'mode': self.mode.snapshot()['mode'],
             'robot_connected': by_key['odom']['state'] == 'ok',
             'battery': battery_out,
             'velocity': velocity_out,

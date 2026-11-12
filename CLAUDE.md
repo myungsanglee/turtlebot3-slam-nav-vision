@@ -200,9 +200,10 @@ turtlebot3-slam-nav-vision/
 - **my_bringup (서버)** — 통합 런치 `system.launch.py`: navigation.launch(use_slam/map) + vision.launch
   (target_frame=map) + RViz `system.rviz`(지도·코스트맵·경로·실측 footprint·RobotModel·검출 마커·
   검출 영상). 실기 검증(전 노드 active, 마커 map 프레임). 상세는 `docs/my_bringup.md`
-- **웹 콘솔 P0·P1·P2 (2026-11-09~12)** — Pi bringup 자동 실행(systemd 사용자 서비스, 재부팅 검증) + 서버
+- **웹 콘솔 P0~P3 (2026-11-09~12)** — Pi bringup 자동 실행(systemd 사용자 서비스, 재부팅 검증) + 서버
   `web-api`(FastAPI+rclpy, :8080): 로봇 연결·배터리(셀 전압 판정)·센서별 수신 주기·카메라 MJPEG,
-  지도 위 로봇·라이다·장애물 지도·경로와 클릭 주행(Nav2 액션, 확인 후 전송)을 React 화면으로 (P2 실주행 검증 대기).
+  지도(2D/3D, CAD 로봇) 위 라이다·장애물 지도·경로와 클릭 주행(Nav2 액션, 확인 후 전송), 운용 모드 버튼
+  (지도 만들기·저장·저장 지도로 주행), 조이스틱 — 터미널 없이 운용 (실주행 검증 대기).
   상세는 `docs/my_web_api.md`, 설계·이후 단계는 `docs/web_ui_design.md`
 
 **다음 (우선순위 순)**
@@ -234,8 +235,12 @@ turtlebot3-slam-nav-vision/
    (nav.py — rclpy 호출은 ROS 스레드 큐로), 화면은 react-konva(world 그룹 scaleY=-1 로 지도 좌표 그대로 그림),
    목표는 찍은 뒤 확인 창에서 한 번 더 눌러야 전송. 가짜 Nav2(`tools/fake_nav.py`)로 로봇 안 움직이고 흐름 검증.
    로봇 모양(2026-11-12): /robot_description 의 base_link 메시로 2D 는 서버 렌더 윗모습 PNG, 3D 는 STL gzip(1.9MB) +
-   react-three-fiber 3D 화면(보기 전용, z-up, 라이다 13.5cm 높이). ⏳ 실주행 검증(바닥, 사용자 입회) 남음 — 그때 회피 V1 함께.
-   다음은 P3 모드 관리
+   react-three-fiber 3D 화면(보기 전용, z-up, 라이다 13.5cm 높이).
+   **P3 모드 관리·지도 저장·조이스틱 ✅** (2026-11-12) — mode_manager.py 가 system.launch 를 프로세스 그룹으로 켜고 끔
+   (IDLE/MAPPING/NAVIGATION, 외부 실행 감지·끈 직후 15초 유예), maps.py(map_saver_cli·미리보기·삭제, remote_pc/maps git 제외),
+   teleop.py(0.3초 워치독·속도 상한·시작 시 Nav2 취소, /cmd_vel 은 Twist — Pi 구독 형식 확인). web-api 에 GPU.
+   ★ 이 과정에서 system.launch 의 params_file 인자 충돌 발견·수정(Vision 이 9월부터 torch 기본값으로 돌았음 → scoped GroupAction,
+   troubleshooting 2026-11-12). ⏳ 실주행 검증(바닥, 사용자 입회: 클릭 주행·조이스틱·회피 V1) 남음. 다음 P4
 9. **카메라 기반 회피** — 설계 완료 `docs/vision_avoidance_design.md` (2026-11-09, 사용자 결정으로 포함).
    현재 회피 입력은 /scan 뿐(125mm 평면). ① 깊이 층: 정렬 depth → PointCloud2 → local costmap(높이 필터)
    ② 의미 층: /vision/objects(+반경 추정) → 자체 C++ `SemanticLayer` 플러그인(클래스별 여유·소멸) + 사람 근처

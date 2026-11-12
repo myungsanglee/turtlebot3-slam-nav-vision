@@ -12,7 +12,12 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
   POST /api/nav/goal          {x, y, yaw}  지도 좌표로 이동 (Nav2 NavigateToPose)
   POST /api/nav/cancel        이동 취소
   POST /api/nav/initial_pose  {x, y, yaw}  AMCL 초기 위치 (저장 지도 주행 모드)
-  WS   /ws                    status(2Hz)·pose(10Hz)·scan·path·footprint·map·costmap·nav 를 바뀔 때 push
+  GET  /api/mode · POST /api/mode {mode, map?, vision?}   운용 모드 (IDLE / MAPPING / NAVIGATION)
+  GET  /api/mode/log          모드 launch 로그 꼬리 (문제 확인용)
+  GET  /api/maps · POST /api/maps {name} · DELETE /api/maps/{name} · GET /api/maps/{name}.png
+                              저장 지도 목록 / 지금 지도 저장 / 삭제 / 미리보기
+  WS   /ws                    status(2Hz)·pose(10Hz)·scan·path·footprint·map·costmap·nav·mode 를 바뀔 때 push,
+                              브라우저 → 서버: {"type": "teleop", "x", "y", "scale"} (조이스틱, 0.1초마다) / {"type": "teleop_release"}
   GET  /docs                  자동 생성 API 문서
 """
 from __future__ import annotations
@@ -32,7 +37,25 @@ from .monitor import FrameStore
 BOUNDARY = 'frame'
 WS_TICK_SEC = 0.1          # WebSocket 루프 주기 (pose 10Hz)
 # 실패 이유 → HTTP 상태 코드
-REASON_STATUS = {'unavailable': 503, 'rejected': 409, 'no_goal': 409, 'error': 500, 'timeout': 504}
+REASON_STATUS = {'unavailable': 503, 'rejected': 409, 'no_goal': 409, 'error': 500, 'timeout': 504,
+                 'busy': 409, 'external': 409, 'bad_request': 400, 'not_found': 404, 'no_map': 409}
+
+
+class ModeRequest(BaseModel):
+    mode: str = Field(description='IDLE | MAPPING | NAVIGATION')
+    map: str | None = Field(None, description='NAVIGATION 일 때 저장 지도 이름')
+    vision: bool = Field(True, description='Vision AI(검출) 도 켤지')
+
+
+class MapSave(BaseModel):
+    name: str = Field(description='영문·숫자·_·- 1~40자')
+
+
+def result(r: dict):
+    """{'ok': bool, 'reason': …} → 성공은 200, 실패는 이유별 HTTP 코드."""
+    if r.get('ok'):
+        return r
+    return JSONResponse(r, status_code=REASON_STATUS.get(r.get('reason'), 500))
 
 
 class Pose2D(BaseModel):
@@ -138,12 +161,10 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
         """요청을 ROS 스레드 큐에 넣고 결과를 기다린다 (nav.py 의 스레드 규칙)."""
         fut = node.nav.submit(kind, **kw)
         try:
-            result = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=5.0)
+            r = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=5.0)
         except asyncio.TimeoutError:
-            result = {'ok': False, 'reason': 'timeout', 'message': 'Nav2 응답 없음 (5초)'}
-        if result.get('ok'):
-            return result
-        return JSONResponse(result, status_code=REASON_STATUS.get(result.get('reason'), 500))
+            r = {'ok': False, 'reason': 'timeout', 'message': 'Nav2 응답 없음 (5초)'}
+        return result(r)
 
     @app.get('/api/nav')
     def nav_state():
@@ -161,6 +182,52 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
     async def nav_initial_pose(pose: Pose2D):
         return await nav_call('initial_pose', x=pose.x, y=pose.y, yaw=pose.yaw)
 
+    # ---------------- 모드·지도 (P3) ----------------
+    @app.get('/api/mode')
+    def mode_state():
+        return node.mode.snapshot()
+
+    @app.post('/api/mode')
+    def mode_set(req: ModeRequest):
+        return result(node.mode.request(req.mode.upper(), req.map, req.vision))
+
+    @app.get('/api/mode/log')
+    def mode_log(lines: int = 40):
+        return {'lines': node.mode.log_tail(max(1, min(60, lines)))}
+
+    @app.get('/api/maps')
+    def maps_list():
+        return [{k: v for k, v in m.items() if k != 'yaml'} for m in node.maps.list()]
+
+    @app.post('/api/maps')
+    def maps_save(req: MapSave):
+        # 동기 함수 → FastAPI 가 스레드 풀에서 실행 (map_saver 가 수 초 걸려도 다른 요청을 막지 않는다)
+        if node.map.meta() is None:
+            return result({'ok': False, 'reason': 'no_map', 'message': '저장할 지도 없음 — 지도 만들기 모드에서'})
+        try:
+            r = node.maps.save(req.name)
+        except ValueError as e:
+            return result({'ok': False, 'reason': 'bad_request', 'message': str(e)})
+        return r if r['ok'] else result({**r, 'reason': 'error'})
+
+    @app.delete('/api/maps/{name}')
+    def maps_delete(name: str):
+        snap = node.mode.snapshot()
+        if snap['mode'] == 'NAVIGATION' and snap['map'] == name:
+            return result({'ok': False, 'reason': 'busy', 'message': '지금 주행에 쓰는 지도는 지울 수 없음'})
+        try:
+            ok = node.maps.delete(name)
+        except ValueError as e:
+            return result({'ok': False, 'reason': 'bad_request', 'message': str(e)})
+        return result({'ok': True, 'message': '삭제됨'} if ok else {'ok': False, 'reason': 'not_found', 'message': '없음'})
+
+    @app.get('/api/maps/{name}.png')
+    def maps_thumb(name: str):
+        try:
+            return Response(node.maps.thumbnail(name), media_type='image/png', headers={'Cache-Control': 'no-cache'})
+        except (ValueError, FileNotFoundError, AttributeError):
+            raise HTTPException(404, '지도 없음')
+
     # ---------------- WebSocket ----------------
     @app.websocket('/ws')
     async def ws(websocket: WebSocket):
@@ -168,6 +235,17 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
         pose 는 TF 조회값이라 버전이 없어 값이 바뀔 때만, status 는 status_period 마다."""
         await websocket.accept()
         sent: dict[str, object] = {}
+
+        async def reader():
+            """브라우저 → 서버: 조이스틱. 연결이 끊기면 finally 에서 정지."""
+            while True:
+                msg = await websocket.receive_json()
+                if msg.get('type') == 'teleop':
+                    node.teleop.command(msg.get('x', 0.0), msg.get('y', 0.0), msg.get('scale', 1.0))
+                elif msg.get('type') == 'teleop_release':
+                    node.teleop.release()
+
+        reader_task = asyncio.create_task(reader())
         status_every = max(1, round(node.status_period / WS_TICK_SEC))
         tick = 0
 
@@ -201,11 +279,20 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
                 nav = node.nav.snapshot()
                 if changed('nav', nav['version']):
                     await websocket.send_json({'type': 'nav', **nav})
+                mode = node.mode.snapshot()
+                if changed('mode', (mode['version'], mode['external'])):
+                    await websocket.send_json({'type': 'mode', **mode})
+                if reader_task.done():
+                    break                       # 읽기 쪽이 끊김 → 연결 종료
                 tick += 1
                 await asyncio.sleep(WS_TICK_SEC)
-            await websocket.close(code=1001)   # 1001 = going away (서버 종료)
+            if not reader_task.done():
+                await websocket.close(code=1001)   # 1001 = going away (서버 종료)
         except (WebSocketDisconnect, RuntimeError):
             pass   # 브라우저가 닫힘
+        finally:
+            reader_task.cancel()
+            node.teleop.release()              # 탭을 닫거나 연결이 끊기면 조이스틱 즉시 정지
 
     # 정적 파일(React 빌드)은 API 라우트 뒤에 '/' 로 붙인다 — 먼저 붙이면 /api 를 가로챈다
     if static_dir and os.path.isfile(os.path.join(static_dir, 'index.html')):

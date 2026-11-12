@@ -82,7 +82,10 @@ curl -s localhost:8080/api/status | head -c 200   # 상태 JSON
 ```
 - 접속: `http://<서버 Tailscale IP>:8080` (UFW 는 tailscale0 전체 허용이라 추가 규칙 불필요), API 문서 `/docs`.
 - 이미지에는 `fastapi`·`uvicorn` 이 pip 로 들어 있다 (Dockerfile vision 스테이지 마지막 레이어).
-- web-api 는 `restart: unless-stopped`·`stop_signal: SIGINT` (정상 종료 순서는 docs/my_web_api.md 4.6).
+- web-api 는 `restart: unless-stopped`·`stop_signal: SIGINT`·`stop_grace_period: 45s` (정상 종료 순서는
+  docs/my_web_api.md 4.6 — 웹에서 띄운 SLAM·Nav2·Vision 까지 정리할 시간).
+- web-api 는 웹 「운용 모드」 로 Vision(TensorRT) 까지 띄우므로 **GPU 를 받는다** (compose `deploy` — remote-pc 와 같은 설정).
+- 저장 지도는 `remote_pc/maps/` (컨테이너 `/overlay_ws/maps`, git 제외 — 사용자 데이터).
 
 > RViz 에서 로봇 모델이 안 보이고 로그에 `Package [my_description] does not exist` 가
 > 나오면 overlay 가 source 안 된 셸이다 (`source /overlay_ws/install/setup.bash`).

@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import type { RobotStream } from './types'
 
 // WebSocket /ws 하나로 모든 실시간 데이터를 받는다. 서버는 바뀐 것만 보낸다 (app.py ws()).
@@ -16,6 +16,8 @@ const initial: RobotStream = {
   paths: { global: [], local: [] },
   footprint: [],
   nav: null,
+  mode: null,
+  send: () => {},
 }
 
 type Action = { kind: 'open' } | { kind: 'close' } | { kind: 'message'; msg: any } // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -41,6 +43,8 @@ function reducer(s: RobotStream, a: Action): RobotStream {
       return { ...s, footprint: m.points }
     case 'nav':
       return { ...s, nav: m }
+    case 'mode':
+      return { ...s, mode: m }
     default:
       return s
   }
@@ -48,6 +52,7 @@ function reducer(s: RobotStream, a: Action): RobotStream {
 
 export function useRobot(): RobotStream {
   const [state, dispatch] = useReducer(reducer, initial)
+  const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
     let ws: WebSocket | null = null
@@ -57,6 +62,7 @@ export function useRobot(): RobotStream {
     const connect = () => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws'
       ws = new WebSocket(`${proto}://${location.host}/ws`)
+      wsRef.current = ws
       ws.onopen = () => dispatch({ kind: 'open' })
       ws.onmessage = (ev) => dispatch({ kind: 'message', msg: JSON.parse(ev.data) })
       ws.onclose = () => {
@@ -72,5 +78,11 @@ export function useRobot(): RobotStream {
     }
   }, [])
 
-  return state
+  // 열려 있을 때만 보낸다 (끊긴 동안의 조이스틱 명령은 버린다 — 재연결 후 오래된 명령이 나가면 위험)
+  const send = useCallback((msg: object) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
+  }, [])
+
+  return { ...state, send }
 }
