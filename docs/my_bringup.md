@@ -24,7 +24,7 @@ remote_pc/src/my_bringup/
 | `use_slam` / `map` | true / '' | SLAM 하며 주행 (기본) / 저장 지도 + AMCL (`use_slam:=false map:=…yaml`) |
 | `vision` | true | Vision AI 노드 포함 |
 | `target_frame` | map | 검출 물체 좌표·마커 프레임 — 지도 위 절대 위치. (SLAM/지도가 없으면 base_link 로 fallback) |
-| `backend`, `threshold` | '' | my_vision 런치로 통과 (비우면 vision_params.yaml) |
+| `backend`, `threshold` | '' | my_vision 런치로 통과 (비우면 vision_params.yaml). ★ 하위 런치를 scoped GroupAction 으로 감싸야 vision_params.yaml 이 실제로 적용된다 — 2026-11-12 전엔 nav2_params 가 넘어가 기본값(torch)으로 돌았다 (troubleshooting 2026-11-12) |
 | `rviz` | true | RViz (서버 물리 세션에 뜸 → `DISPLAY=:0`, VNC 로 봄) |
 
 ## 3. RViz 화면 구성 (system.rviz)

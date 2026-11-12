@@ -22,6 +22,7 @@
 | SSH 로 띄운 백그라운드 launch 가 `kill -INT` 로 안 꺼짐, 노드가 고아로 남음 | 비대화형 셸의 `&` 가 SIGINT 를 무시 상태로 물려줌 | 시작 스크립트에 `set -m`, 종료는 `kill -INT -<pgid>` (2026-11-05 항목) |
 | 웹 백엔드 종료 시 `CancelledError` traceback / abort(-6) | uvicorn 의 종료 후 신호 재발생 + `ros2 launch` 의 중복 SIGINT | 신호를 main() 한 곳에서 처리, 1초 내 중복 무시, 스트림이 종료 이벤트로 스스로 끝남 (2026-11-10 항목) |
 | 로봇이 정지해 있는데 odom 방향(웹 지도 화살표)이 저절로 돈다 | IMU 자이로 영점(바이어스) 틀어짐 — TurtleBot3 는 회전각을 IMU 로 계산 | 로봇 정지 상태로 Pi 에서 `ros2 service call /reset std_srvs/srv/Trigger` (2026-11-12 항목) |
+| 통합 런치에서 어떤 노드가 자기 YAML 설정을 무시하고 기본값으로 돈다 | 하위 런치끼리 같은 이름의 인자(`params_file`)가 공유돼 다른 런치의 값이 들어감 | 하위 런치를 `GroupAction(scoped=True)` 로 감싸기, `ros2 param get` 으로 확인 (2026-11-12 항목) |
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
@@ -633,4 +634,33 @@ ros2 service call /reset std_srvs/srv/Trigger   # Pi 에서 — Trigger_Response
 관찰 중 온도도 일정했으므로, "차가울 때(부팅 직후) 영점을 잡고 데워지며 틀어졌다"는 가설은 아직 확인되지 않았다.
 다음 콜드 부팅 때 부팅 직후와 30~60분 뒤의 정지 상태 드리프트를 비교하면 판가름 난다. 확인되면 대책은
 "데워진 뒤 한 번 더 `/reset`" 또는 정지 감지 시 자동 영점 보정.
+
+---
+
+## 2026-11-12 — 통합 런치에서 Vision 이 자기 설정을 못 읽고 기본값(torch)으로 돌았다: launch 인자 이름 충돌
+
+### 증상
+웹 모드 관리자로 `system.launch.py` 를 띄우자 검출 노드 로그가 `백엔드: torch`, 추론 12ms. `vision_params.yaml` 의
+`backend: tensorrt`(사용자가 2026-09 에 바꾼 기본값)가 적용되지 않았다. `ros2 param get /detector backend` → `torch`.
+
+### 진단
+- 설치된 `vision_params.yaml` 은 `tensorrt` — 파일은 맞음.
+- 실행 중인 detector 프로세스의 명령줄을 보니 `--params-file` 이 **`nav2_params.yaml`** (+ 임시 파일)이었다.
+- `navigation.launch.py` 와 `vision.launch.py` 가 **둘 다 `params_file` 이라는 이름의 인자**를 쓴다. ROS 2 launch 의 인자
+  (LaunchConfiguration)는 `IncludeLaunchDescription` 사이에 **공유**되고, `DeclareLaunchArgument` 의 기본값은 "아직 값이
+  없을 때만" 적용된다 → 먼저 포함된 navigation 이 `params_file = nav2_params.yaml` 로 정한 뒤, vision 의 기본값은 무시됐다.
+  nav2_params.yaml 엔 `detector:` 섹션이 없으니 detector 는 코드 기본값(`backend='torch'` 등)으로 동작.
+
+### 근본 원인
+여러 런치를 한 런치에 포함할 때 같은 이름의 인자가 범위 없이 섞인 것. `system.launch.py` 를 만든 2026-09-08 부터
+있었고, 그때 "통합 실행도 TensorRT 인가" 라는 질문에 확인 없이 그렇다고 답했다 (통합 런치 실기 검증은
+`backend:=tensorrt` 를 직접 넘겨서 해 차이를 못 봤다).
+
+### 해결
+`system.launch.py` 에서 각 하위 런치를 `GroupAction([...], scoped=True)` 로 감쌌다 — 안에서 정한 인자가 밖으로 새지 않는다.
+결과: detector `backend=tensorrt`·`target_frame=map`, TensorRT 엔진 로드·추론 6ms, Nav2 `controller_frequency=10.0` 유지.
+
+### 재발 방지
+- 런치를 조합할 땐 하위 런치를 scoped GroupAction 으로 감싼다. 특히 `params_file`·`use_sim_time` 같은 흔한 이름.
+- 설정이 적용됐는지는 파일이 아니라 **실행 중인 노드**로 확인한다: `ros2 param get <노드> <파라미터>`.
 

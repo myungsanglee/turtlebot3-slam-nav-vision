@@ -18,7 +18,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -43,6 +43,10 @@ def generate_launch_description():
         DeclareLaunchArgument('threshold', default_value='', description='검출 임계값 (비우면 YAML)'),
     ]
 
+    # ★ 각 하위 런치를 scoped GroupAction 으로 감싼다. navigation.launch 와 vision.launch 가 둘 다 'params_file' 이라는
+    #   같은 이름의 인자를 쓰는데, launch 인자는 런치 사이에 공유되므로 감싸지 않으면 먼저 정해진 Nav2 값
+    #   (nav2_params.yaml)이 Vision 에도 넘어가 detector 가 자기 설정(vision_params.yaml)을 못 읽고 코드 기본값
+    #   (backend torch 등)으로 돌았다 (troubleshooting 2026-11-12). scoped=True 면 안에서 정한 인자가 밖으로 새지 않는다.
     navigation = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(nav_dir, 'launch', 'navigation.launch.py')),
         launch_arguments={
@@ -63,4 +67,7 @@ def generate_launch_description():
     rviz = Node(package='rviz2', executable='rviz2', name='rviz2', output='screen',
                 arguments=['-d', rviz_config], condition=IfCondition(LaunchConfiguration('rviz')))
 
-    return LaunchDescription([*declares, navigation, vision, rviz])
+    return LaunchDescription([*declares,
+                              GroupAction([navigation], scoped=True),
+                              GroupAction([vision], scoped=True),
+                              rviz])
