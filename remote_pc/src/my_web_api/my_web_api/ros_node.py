@@ -49,17 +49,19 @@ LATCHED_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
 
 
 class Versioned:
-    """값 하나와 버전 번호. WebSocket 은 버전이 바뀐 것만 보낸다."""
+    """값 하나와 버전 번호. WebSocket 은 버전이 바뀐 것만 보낸다. stamp = 마지막 갱신 (monotonic)."""
 
     def __init__(self):
         self._lock = threading.Lock()
         self.value = None
         self.version = 0
+        self.stamp = None
 
     def set(self, value):
         with self._lock:
             self.value = value
             self.version += 1
+            self.stamp = time.monotonic()
 
     def get(self):
         with self._lock:
@@ -288,7 +290,9 @@ class WebApiNode(Node):
         if velocity is not None and by_key['odom']['state'] == 'ok':
             velocity_out = {'linear': round(velocity[0], 3), 'angular': round(velocity[1], 3)}
 
-        map_age = None if self.map.stamp is None else round(time.monotonic() - self.map.stamp, 1)
+        now = time.monotonic()
+        age = lambda stamp: None if stamp is None else round(now - stamp, 1)   # noqa: E731
+        map_age = age(self.map.stamp)
         display = self.display_frame()
         return {
             'time': time.time(),
@@ -301,6 +305,10 @@ class WebApiNode(Node):
                 'display_frame': display,          # 화면 좌표계 (map / odom / None)
                 'localized': display == self.fixed_frame,   # map→로봇 이 이어져야 지도 위 위치가 있다
                 'map_age': map_age,
+                # Nav2 가 꺼지면 costmap·footprint 는 더 오지 않는다 → 화면이 오래된 것을 숨기는 기준
+                # (publish 주기: costmap 2Hz, footprint ≈5Hz. 지도는 저장 지도면 한 번만 오므로 age 로 숨기지 않는다)
+                'costmap_age': age(self.costmap.stamp),
+                'footprint_age': age(self.footprint.stamp),
                 'nav2_ready': self._nav2_ready,
             },
             'topics': topics,

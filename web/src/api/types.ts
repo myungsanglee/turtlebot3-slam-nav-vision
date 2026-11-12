@@ -29,6 +29,8 @@ export interface NavigationStatus {
   display_frame: string | null // 화면 좌표계: map(SLAM·AMCL 동작 중) / odom(지도 없음 — 출발점 기준) / null
   localized: boolean // map → 로봇 TF 가 이어져 있음 (SLAM 또는 AMCL 실행 중)
   map_age: number | null
+  costmap_age: number | null // 마지막 갱신 후 초 — 오래되면(Nav2 꺼짐) 화면에서 숨긴다
+  footprint_age: number | null
   nav2_ready: boolean
 }
 

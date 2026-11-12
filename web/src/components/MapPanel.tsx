@@ -30,6 +30,10 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
   const initial = useInitialPose()
 
   const nav = robot.status?.navigation
+  // Nav2 가 꺼지면 costmap·footprint 가 더 오지 않는다 — 마지막 값이 옛 자리에 남지 않게 3초 넘게 안 오면 숨긴다
+  const fresh = (age: number | null | undefined) => age != null && age < 3
+  const costmap = fresh(nav?.costmap_age) ? robot.costmap : null
+  const footprint = fresh(nav?.footprint_age) ? robot.footprint : []
   const active = robot.nav && (robot.nav.state === 'active' || robot.nav.state === 'sending')
 
   const confirm = () => {
@@ -94,12 +98,12 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
                   frame={robot.pose?.frame ?? null}
                   mapFrame={nav?.fixed_frame ?? 'map'}
                   map={robot.map}
-                  costmap={robot.costmap}
+                  costmap={costmap}
                   pose={robot.pose}
                   scan={robot.scan}
                   globalPath={active ? robot.paths.global : []}
                   localPath={active ? robot.paths.local : []}
-                  footprint={robot.footprint}
+                  footprint={footprint}
                   robotModel={robotModel.data ?? null}
                         goal={active ? (robot.nav?.goal ?? null) : null}
                   layers={layers}
@@ -112,12 +116,12 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
             frame={robot.pose?.frame ?? null}
             mapFrame={nav?.fixed_frame ?? 'map'}
             map={robot.map}
-            costmap={robot.costmap}
+            costmap={costmap}
             pose={robot.pose}
             scan={robot.scan}
             globalPath={active ? robot.paths.global : []}
             localPath={active ? robot.paths.local : []}
-            footprint={robot.footprint}
+            footprint={footprint}
             robotModel={robotModel.data ?? null}
             goal={active ? (robot.nav?.goal ?? null) : null}
             pending={pending}

@@ -15,6 +15,7 @@ THREE.Object3D.DEFAULT_UP.set(0, 0, 1) // 카메라·컨트롤이 z 를 '위'로
 
 const SCAN_Z = 0.135 // base_footprint → base_scan 높이 (URDF: base_link 10mm + scan_joint 125mm)
 const LINE_Z = 0.01
+const ARROW_Z = 0.015 // 로봇 앞 방향 화살표 높이 (모든 바닥 레이어 위)
 
 interface Props {
   frame: string | null
@@ -112,9 +113,11 @@ function Robot({ pose, model, url }: { pose: Pose; model: RobotModelInfo; url: s
           </mesh>
         </group>
       )}
-      {/* 앞 방향 표시: 로봇 앞 바닥의 화살표 (+x) */}
-      <Line points={[[0.08, 0, 0.003], [0.24, 0, 0.003]]} color="#40c4ff" lineWidth={3} />
-      <mesh position={[0.26, 0, 0.003]} rotation={[0, 0, -Math.PI / 2]}>
+      {/* 앞 방향 표시: 로봇 앞 바닥의 화살표 (+x). 장애물 지도(z=4mm)·경로(z=1cm)보다 위에 그린다.
+          circleGeometry(r, 3) 은 첫 꼭짓점이 +x 를 향한 정삼각형이라 회전 없이 그대로 화살촉이 된다
+          (중심이 x=0.25 면 촉 끝 0.28, 뒷변 0.235 → 선 끝 0.24 와 맞물림) */}
+      <Line points={[[0.08, 0, ARROW_Z], [0.24, 0, ARROW_Z]]} color="#40c4ff" lineWidth={3} />
+      <mesh position={[0.25, 0, ARROW_Z]}>
         <circleGeometry args={[0.03, 3]} />
         <meshBasicMaterial color="#40c4ff" />
       </mesh>
