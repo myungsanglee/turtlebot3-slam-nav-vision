@@ -187,6 +187,10 @@ robot/systemd/tb3-bringup.service
 
 ## 9. 미결·구현 중 확인할 것
 
+- **자이로 재보정 버튼 (후보, P3/P4)** — 정지 상태에서 odom 방향이 도는 자이로 영점 문제(troubleshooting 2026-11-12)를
+  웹에서 바로 고칠 수 있게. TurtleBot3 `/reset` 서비스(재보정 5초 + odom 0 초기화)는 Pi 쪽 서비스라 지금 브리지 allow
+  목록 밖이다 → 브리지에 서비스 허용을 추가하거나 Pi 쪽 대행. SLAM·주행 중엔 odom 이 튀므로 IDLE 모드에서만 허용.
+
 - **카메라 기반 회피 — 넣기로 결정 (2026-11-09)**: 깊이 층(모든 장애물) + 의미 층(Vision AI, 클래스별 여유·사람 근처 감속)
   두 층으로 설계 → [vision_avoidance_design.md](./vision_avoidance_design.md). 웹 UI 는 장애물 지도 오버레이에
   의미 층 물체를 라벨과 함께 그린다 (P2·P4).

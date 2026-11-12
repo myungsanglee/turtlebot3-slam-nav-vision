@@ -212,7 +212,9 @@ turtlebot3-slam-nav-vision/
 3. ~~Pi 전원 보강~~ ✅ (2026-11-05) — 배터리 분기 → UBEC 5V/5A → Pi GPIO. 6/15fps 부하 시험 `0x0`·fps 고정
    (troubleshooting 2026-11-05). 남은 것: 노드 종료 순간 1회 저전압(원인 미확정)·실주행 중 재관찰,
    UBEC 가 OpenCR 스위치 우회 → 사용 후 배터리 분리 습관 (필요 시 스위치/LiPo 경보기)
-4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시
+4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시. ★ 그 전에 **자이로 영점 확인**: 정지 상태에서
+   odom 방향이 돌면(2026-11-12 실측 15°/분) Pi 에서 `ros2 service call /reset std_srvs/srv/Trigger` 로 재보정
+   (troubleshooting 2026-11-12). bringup 시작 후 5초는 로봇을 건드리지 말 것 (그때 영점을 잡음)
 5. robot_localization EKF — **보류 (2026-11-09)**. TurtleBot3 가 이미 IMU 회전 융합 중(`use_imu: true` — 거리는 바퀴, 회전각은 IMU), 실주행 검증 후 필요 시 착수.
    착수 시 쟁점: EKF 와 turtlebot3_node 가 같은 `odom→base_footprint` TF 를 발행 → 한쪽(bringup `publish_tf`) 을 꺼야 함
 6. ~~SLAM + Nav2 + Vision + RViz 통합 런치~~ ✅ (2026-09-08, `my_bringup/system.launch.py`,
