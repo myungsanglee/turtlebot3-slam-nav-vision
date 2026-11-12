@@ -24,6 +24,7 @@
 | 로봇이 정지해 있는데 odom 방향(웹 지도 화살표)이 저절로 돈다 | IMU 자이로 영점(바이어스) 틀어짐 — TurtleBot3 는 회전각을 IMU 로 계산 | 로봇 정지 상태로 Pi 에서 `ros2 service call /reset std_srvs/srv/Trigger` (2026-11-12 항목) |
 | 통합 런치에서 어떤 노드가 자기 YAML 설정을 무시하고 기본값으로 돈다 | 하위 런치끼리 같은 이름의 인자(`params_file`)가 공유돼 다른 런치의 값이 들어감 | 하위 런치를 `GroupAction(scoped=True)` 로 감싸기, `ros2 param get` 으로 확인 (2026-11-12 항목) |
 | 라이다는 돌고 odom·카메라는 오는데 `/scan` 만 끊김 (Pi 안에서도 0) | 미확정 — LDS 드라이버(`hlds_laser_publisher`)가 살아 있는데 발행 정지 | Pi 에서 시리얼 포트를 1초 읽으면 복구됨 → `scan-watchdog` 서비스가 자동 기록·복구 (2026-11-12 라이다 항목) |
+| 라이다 수신이 끊기고 bringup 재시작으로도 안 돌아옴, 배터리 값이 한 값에 멈춤 | Pi 5V 저전압 → USB 포트 전체 리셋 → 장치가 ttyUSB1·ttyACM1 로 재연결, 라이다 드라이버 종료·OpenCR 통신 끊김 | 로봇 전원 껐다 켜기 (by-id 포트 적용 후엔 `systemctl --user restart tb3-bringup`). 전원 원인은 `~/.ros/scan_watchdog/power-*.log`·`events.log` 로 추적 (2026-11-12 저전압 항목) |
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
@@ -689,7 +690,8 @@ ros2 service call /reset std_srvs/srv/Trigger   # Pi 에서 — Trigger_Response
 
 ### 근본 원인
 **미확정.** 하드웨어·네트워크는 배제됐고, 드라이버 프로세스가 시리얼 읽기 대기 상태에서 데이터를 받지 못하는(또는
-받고도 발행 못 하는) 상태로 멈춘 것까지 확인. 밤새 실행 때도 같은 증상이었는지는 기록이 없어 확인 불가.
+받고도 발행 못 하는) 상태로 멈춘 것까지 확인. 밤새 실행 때 건은 나중에 커널 로그로 보니 **다른 원인(전원 저하)**
+이었다 — 아래 "저전압 → USB 전체 재연결" 항목. 즉 이 항목(드라이버 정지)은 지금까지 13:08 한 번.
 ROBOTIS 이슈·ROS Answers 에 정확히 같은 사례는 찾지 못했다.
 
 ### 해결 (대응)
@@ -706,3 +708,60 @@ bringup 은 건드리지 않고 옆에서 `/scan` 을 구독하다가 드라이�
 - `cat ~/.ros/scan_watchdog/incidents.log` 로 기록 확인. 큐가 수 KB 쌓여 있었다면 "드라이버가 시리얼을 안 읽음"이 확정.
 - 자동 복구가 안 되면 sudo 로 `strace -f -p $(pgrep -f '[h]lds_laser_publisher')` 를 몇 초 떠서 메인 스레드가
   어떤 fd 에서 무엇을 기다리는지 확인 (사용자 입회).
+
+## 2026-11-12 — 라이다가 또 끊김: Pi 저전압 → USB 전체 재연결 (전원 원인 조사 중)
+
+### 증상
+- 18:46 쯤 웹 콘솔의 라이다 수신이 다시 0. 이번엔 bringup 서비스는 '실행 중'인데 odom 도 오지 않았고,
+  배터리 값은 11.78V 에서 움직이지 않았다 (서버에서 66 개 연속 같은 값 — 끊기기 직전 값이 브리지에 남은 것).
+- 위 13:08 건(드라이버 정지)과 달리 `scan-watchdog` 의 incidents.log 에 아무것도 없었다.
+
+### 진단
+1. **커널 로그** (`journalctl -k`, michael 은 adm 그룹이라 sudo 불필요):
+   - 09:01 부팅 후 8시간 동안 저전압 0 → **17:16 부터 `hwmon hwmon1: Undervoltage detected!` 68회**.
+   - **18:46:46 `usb usb2-port1: over-current change`** → `usb 1-1.3: USB disconnect` → `cp210x ... disconnected from ttyUSB0`
+     → 라이다·OpenCR·카메라가 **`ttyUSB1`·`ttyACM1`** 로 다시 잡힘 (옛 이름은 죽은 연결을 쥔 프로세스가 붙잡고 있어서).
+   - `vcgencmd get_throttled` = `0x50000` (부팅 후 저전압·스로틀이 있었음).
+2. **bringup 로그**:
+   - `hlds_laser_publisher`: `terminate called after throwing ... boost::system::system_error what(): write: Input/output error`
+     → 프로세스 종료(exit -6). 사라진 포트에 쓰다가 예외로 죽음.
+   - `turtlebot3_ros`: `Failed to read[[TxRxResult] Failed transmit instruction packet!]` 를 계속 찍으며 멈춤.
+   - 자체 카메라 노드: 자기 복구 로직으로 다시 붙음 (docs/realsense_bringup.md).
+3. **어젯밤 건도 같은 패턴**: 지난 부팅(01:19)에서 02:30 부터 저전압 **1,055회**, 06:01 부터 OpenCR `There is no status packet!`.
+4. **감시가 놓친 이유**: 첫 `scan-watchdog` 은 "드라이버가 살아 있는데 멈춤"만 판정했다. 드라이버가 죽으면 pid 가 사라져
+   '판정 안 함' 상태가 됐다.
+5. **bringup 재시작만으론 안 되는 이유**: `turtlebot3_bringup/robot.launch.py` 가 `/dev/ttyACM0`·`/dev/ttyUSB0` 를 쓰는데
+   장치가 1번으로 다시 잡혔다. → 로봇 전원을 껐다 켜서 복구.
+
+### 근본 원인
+**Pi 5V 공급 부족 → USB 허브 과전류/리셋.** 왜 몇 시간 뒤에 시작되는지는 **미확정**:
+- 끊기기 직전 배터리 11.78V(셀당 3.93V)라 배터리 방전은 아님.
+- 후보 ① UBEC → GPIO 배선의 전압 강하: UBEC 출력 5.25V 인데 GPIO 실측 4.91V (Pi 경고 기준 ≈4.63V 까지 여유 0.28V).
+  오래 켜 두면 접점·UBEC 발열로 순간 부하(카메라·USB) 때 기준 밑으로 내려갈 수 있음.
+- 후보 ② 충전기를 꽂은 채 계속 운용 (사용자 확인: 두 건 모두 충전기 연결 상태). 충전기가 충전 단계를 바꿀 때
+  공급 전압이 흔들릴 가능성. 전압 기록이 없어 아직 구분 불가.
+
+### 해결 (대응)
+1. **전원 기록** — `scan-watchdog` 확장 (`robot/tools/scan_watchdog.py`). 기록 위치 `~/.ros/scan_watchdog/`:
+   - `power-YYYY-MM-DD.log`: 10초마다 `batt`(OpenCR 배터리 V), `uv_now`(Pi 저전압 센서 `rpi_volt/in0_lcrit_alarm`),
+     `uv`(구간 내 커널 저전압 경고 수), `throttled`, CPU 온도, `/scan` Hz. 14일 보관.
+   - `events.log`: 저전압 시작(그때 배터리 V)·해소, 커널의 USB 과전류·끊김·재연결, 시리얼 장치 목록 변경,
+     라이다 드라이버 비정상 종료(정상 정지와 구분 — bringup 서비스 상태로), OpenCR 배터리 수신 끊김/재개, /scan 정지·복구.
+   - `incidents.log`: 드라이버 비정상 종료 때 bringup 로그(라이다·OpenCR 줄)와 최근 3분 커널 로그도 남김.
+   - 검증: Pi 에서 임시 경로로 실행(10초 기록·장치·배터리), 커널 줄 해석은 가짜 줄(저전압·과전류·끊김)로 시험.
+2. **시리얼 고정 이름** — `full_bringup.launch.py` 가 OpenCR·LDS 를 `/dev/serial/by-id/...` 로 연다
+   (udev 가 기본으로 만드는 장치 고유 이름이라 sudo·udev 규칙 불필요). `turtlebot3_bringup` 은 수정하지 않고
+   - OpenCR: robot.launch.py 의 공식 인자 `usb_port`
+   - LDS: robot.launch.py 의 공식 인자 `lidar_pkg_dir` 를 `realsense_bringup/launch/lds/` 로 → 같은 이름의 대체 런치가
+     포트만 `lds_port` 로 바꿔 같은 드라이버 노드를 띄움 (robot.launch.py 는 라이다 포트를 `/dev/ttyUSB0` 로 고정해 넘기므로)
+   - 검증: Pi 에서 launch 트리를 실행 없이 펼쳐 `hlds_laser_publisher port=/dev/serial/by-id/usb-Silicon_Labs_CP2102...`,
+     `turtlebot3_ros -i /dev/serial/by-id/usb-ROBOTIS_OpenCR...`, `frame_id=base_scan` 확인. 인자로 옛 이름도 지정 가능.
+   - 효과: USB 가 다시 잡혀도 **`systemctl --user restart tb3-bringup`** 으로 복구 (전원 껐다 켤 필요 없음).
+     단 원인이 전원이면 다시 일어나므로 근본 해결은 아님.
+
+### 재발 방지 / 다음 발생 때
+- `cat ~/.ros/scan_watchdog/events.log` → 저전압이 몇 시에, 배터리 몇 V 에서 시작됐는지.
+  `grep -v 'uv=0 ' ~/.ros/scan_watchdog/power-<날짜>.log` 로 저전압 구간 전후 전압 흐름.
+  배터리가 높은데 저전압이면 UBEC·배선 쪽(후보 ①), 충전 상태 변화와 맞물리면 충전기 쪽(후보 ②).
+- 오래 켜 둔 상태에서 GPIO 5V 를 멀티미터로 재기 (부팅 직후 4.91V 와 비교).
+- 여유 확보 방법 후보: UBEC→Pi 선을 굵고 짧게(또는 USB-C 입력으로), 출력 조정 가능한 UBEC 면 5.1~5.2V 를 GPIO 에서 맞추기.

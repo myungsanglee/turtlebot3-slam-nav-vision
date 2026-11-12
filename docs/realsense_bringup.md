@@ -17,7 +17,8 @@ robot/src/realsense_bringup/
 ├── scripts/rs_camera_node.py      # ★ 자체 카메라 노드 (기본 드라이버)
 ├── launch/rs_camera.launch.py     # 자체 노드 런치
 ├── launch/realsense.launch.py     # 공식 realsense2_camera 런치 (대안으로 유지)
-├── launch/full_bringup.launch.py  # turtlebot3_bringup + 카메라 통합 (camera_driver 선택)
+├── launch/full_bringup.launch.py  # turtlebot3_bringup + 카메라 통합 (camera_driver 선택, 시리얼 by-id 고정 이름)
+├── launch/lds/hlds_laser.launch.py # LDS 드라이버 대체 런치 — 포트만 by-id 로 (robot.launch.py 의 lidar_pkg_dir 로 지정)
 ├── CMakeLists.txt / package.xml
 ```
 
@@ -142,7 +143,16 @@ ros2 launch realsense_bringup rs_camera.launch.py
 ros2 launch realsense_bringup rs_camera.launch.py fps:=15                  # 고속 (지원값 6/15/30/60)
 # 공식 노드로 비교하고 싶을 때
 ros2 launch realsense_bringup full_bringup.launch.py camera_driver:=realsense2
+# 시리얼 포트를 직접 지정 (기본은 /dev/serial/by-id/ 의 OpenCR·CP2102 고정 이름, 없으면 ttyACM0·ttyUSB0)
+ros2 launch realsense_bringup full_bringup.launch.py opencr_port:=/dev/ttyACM0 lds_port:=/dev/ttyUSB0
 ```
+
+**시리얼 고정 이름 (by-id)**: `/dev/ttyUSB0` 같은 이름은 연결 순서대로 붙는다. Pi 저전압으로 USB 가 리셋되면
+장치가 `ttyUSB1`·`ttyACM1` 로 다시 잡혀 bringup 재시작으로도 복구되지 않았다 (troubleshooting 2026-11-12 저전압 항목).
+`/dev/serial/by-id/usb-<제조사>_<제품>_<시리얼>-...` 는 udev 가 기본으로 만드는 장치 고유 링크라 순서와 무관하다.
+`turtlebot3_bringup` 을 고치지 않으려고 robot.launch.py 의 공식 인자만 쓴다 — OpenCR 은 `usb_port`, LDS 는
+포트가 `/dev/ttyUSB0` 로 고정돼 있어 `lidar_pkg_dir`(라이다 런치 폴더)를 `launch/lds/` 로 돌린다. 그 폴더의
+`hlds_laser.launch.py` 가 원본과 같은 노드를 포트만 `lds_port` 로 바꿔 띄운다 (`LDS_MODEL=LDS-01` 일 때만).
 
 주요 파라미터 (`rs_camera_node.py`): `width/height/fps`, `jpeg_quality`, `png_compression`,
 `start_timeout_sec`(45), `stall_timeout_ms`(5000), `usb_reset_after_failures`(2),

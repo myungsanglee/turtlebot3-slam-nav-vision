@@ -227,7 +227,9 @@ systemctl --user start tb3-bringup
   남길 수 있음 — troubleshooting 2026-11-05). 카메라가 시작 중이면 끝날 때까지 최대 30초 기다린다.
 - **수동으로 `ros2 launch ... full_bringup` 을 하려면 먼저 `systemctl --user stop tb3-bringup`** — 둘이 동시에 뜨면
   OpenCR 시리얼과 카메라를 다툰다 (troubleshooting 2026-11-05 에서 겪은 상황).
-- 부팅 직후 OpenCR·LDS USB 장치가 잡힐 때까지 최대 60초 기다린 뒤 시작한다.
+- 부팅 직후 OpenCR·LDS USB 장치가 잡힐 때까지 최대 60초 기다린 뒤 시작한다. 두 장치는 `/dev/serial/by-id/` 고정 이름으로
+  열린다 (`ls -l /dev/serial/by-id/` 에 `...ROBOTIS_OpenCR...`·`...CP2102...` 가 보여야 함). USB 가 리셋돼 `ttyUSB1` 등으로
+  다시 잡혀도 `systemctl --user restart tb3-bringup` 으로 복구된다 (troubleshooting 2026-11-12 저전압 항목).
 - ⚠️ **bringup 이 시작될 때 OpenCR 가 5초 동안 자이로 영점을 잡는다 — 그동안 로봇을 움직이지 말 것.**
   영점이 틀어지면 가만히 있어도 odom 방향이 돈다 (실측 15°/분, troubleshooting 2026-11-12). 웹 지도에서 멈춘 로봇의
   화살표가 돌면 로봇을 세워 둔 채 다시 보정한다 (5초 소요, odom 도 0 으로 초기화 — SLAM 실행 중엔 하지 말 것):
@@ -237,17 +239,23 @@ systemctl --user start tb3-bringup
 - 검증 (2026-11-09): 재부팅 후 로그인 없이 서비스 시작 → 약 1분 20초 뒤 카메라 6fps, 서버 수신 /odom 20Hz·/scan 5Hz·
   카메라 color/depth 6Hz·/battery_state 20Hz, 카메라 TF 정상, `get_throttled` 0x0. `stop` 은 1초 내 전 노드 정상 종료.
 
-### 9-1. 라이다 감시 서비스 (`scan-watchdog`)
+### 9-1. 라이다·전원 감시 서비스 (`scan-watchdog`)
 
-드라이버가 살아 있는데 `/scan` 만 멈추는 증상(troubleshooting 2026-11-12) 대응. 10초 이상 끊기면 진단을 남기고
-시리얼 포트를 잠깐 같이 읽어 복구를 시도한다 (bringup 은 재시작하지 않음).
+troubleshooting 2026-11-12 의 두 라이다 항목 대응:
+- 드라이버가 살아 있는데 `/scan` 만 10초 이상 멈추면 진단을 남기고 시리얼 포트를 잠깐 같이 읽어 복구를 시도
+  (bringup 은 재시작하지 않음)
+- 전원 기록: 10초마다 배터리 V·Pi 저전압·throttled·CPU 온도·/scan Hz, 그리고 커널의 USB 끊김·과전류·저전압,
+  드라이버 비정상 종료, OpenCR 수신 끊김을 사건으로 기록 (커널 로그는 adm 그룹으로 읽음 — sudo 불필요)
 
 ```bash
 systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/scan-watchdog.service
 systemctl --user start scan-watchdog
 journalctl --user -u scan-watchdog -f          # 감시 로그
-cat ~/.ros/scan_watchdog/incidents.log         # 사고 기록 (없으면 아직 사고 없음)
+cat ~/.ros/scan_watchdog/events.log            # 사건 한 줄씩 (저전압 시작·USB 재연결·드라이버 종료 …)
+cat ~/.ros/scan_watchdog/incidents.log         # 사고별 상세 진단 (없으면 아직 사고 없음)
+less ~/.ros/scan_watchdog/power-$(date +%F).log # 10초 전원 기록 (14일 보관)
 ```
+코드가 바뀌면(git pull) `systemctl --user restart scan-watchdog`.
 
 ## 10. 최종 검증
 

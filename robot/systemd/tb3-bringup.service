@@ -29,8 +29,9 @@ Environment=LDS_MODEL=LDS-01
 Environment=TB3_LAUNCH_ARGS=
 EnvironmentFile=-%h/.config/tb3-bringup.env
 
-# OpenCR(/dev/ttyACM0)·LDS(/dev/ttyUSB0) USB 장치가 부팅 직후 늦게 잡힐 수 있어 최대 60초 대기
-ExecStartPre=/bin/bash -c 'for i in $(seq 60); do [ -e /dev/ttyACM0 ] && [ -e /dev/ttyUSB0 ] && exit 0; sleep 1; done; echo "OpenCR/LDS 장치 없음" >&2; exit 1'
+# OpenCR·LDS USB 장치가 부팅 직후 늦게 잡힐 수 있어 최대 60초 대기. full_bringup 이 /dev/serial/by-id/ 고정 이름으로
+# 열므로 그 이름으로 확인한다 (USB 리셋 뒤 ttyACM1·ttyUSB1 로 잡혀도 재시작으로 복구 — troubleshooting 2026-11-12)
+ExecStartPre=/bin/bash -c 'for i in $(seq 60); do ls /dev/serial/by-id/*OpenCR* /dev/serial/by-id/*CP210* >/dev/null 2>&1 && exit 0; sleep 1; done; echo "OpenCR/LDS 장치 없음 (/dev/serial/by-id)" >&2; exit 1'
 ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source %h/turtlebot3_ws/install/setup.bash && source %h/realsense_ros_ws/install/setup.bash && exec ros2 launch realsense_bringup full_bringup.launch.py $TB3_LAUNCH_ARGS'
 
 # 종료: ros2 launch 의 정상 종료 경로인 SIGINT 를 cgroup 전체(launch + 모든 노드)에 보낸다 — 2026-11-05 에

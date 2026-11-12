@@ -129,7 +129,7 @@ turtlebot3-slam-nav-vision/
 │   ├── src/
 │   │   └── realsense_bringup/ # RealSense 실행 런치 (bringup 은 건드리지 않음)
 │   ├── systemd/tb3-bringup.service  # Pi 부팅 시 bringup+카메라 (사용자 서비스)
-│   ├── systemd/scan-watchdog.service # /scan 정지 감시·기록·복구 (사용자 서비스)
+│   ├── systemd/scan-watchdog.service # /scan 정지·전원(저전압·USB 재연결) 감시·기록 (사용자 서비스)
 │   └── tools/scan_watchdog.py
 └── description/               # my_description 패키지: 보정 URDF + 실물 CAD 메시(meshes/, RViz 표시용)
 ```
@@ -153,8 +153,11 @@ turtlebot3-slam-nav-vision/
   Pi 의 bringup+카메라는 **systemd 사용자 서비스 `tb3-bringup`** 으로 부팅 시 자동 실행 —
   `systemctl --user status|stop|start|restart tb3-bringup`, 로그 `journalctl --user -u tb3-bringup` (sudo 불필요).
   수동 launch 전엔 반드시 서비스 stop (중복 실행 시 OpenCR 시리얼·카메라 충돌, troubleshooting 2026-11-05).
-  라이다 `/scan` 만 끊기는 증상(원인 조사 중)은 `scan-watchdog` 사용자 서비스가 `~/.ros/scan_watchdog/incidents.log` 에
-  기록·복구 — 다음 발생 시 기록 확인, 필요하면 사용자에게 sudo strace 요청 (troubleshooting 2026-11-12 라이다).
+  라이다 끊김은 두 종류 (troubleshooting 2026-11-12 두 항목): ① 드라이버는 살아 있는데 발행 정지(원인 조사 중, 시리얼 같이 읽기로 복구)
+  ② **Pi 저전압 → USB 전체 리셋 → 라이다 드라이버 종료·OpenCR 끊김** (몇 시간 켜 두면 발생, 충전기 연결 상태, 원인 조사 중).
+  `scan-watchdog` 사용자 서비스가 `~/.ros/scan_watchdog/` 에 기록 — `events.log`(사건)·`incidents.log`(진단)·
+  `power-<날짜>.log`(10초 배터리V·저전압). 다음 발생 시 먼저 이 기록 확인, ①이면 필요 시 사용자에게 sudo strace 요청.
+  bringup 은 시리얼을 `/dev/serial/by-id/` 로 열므로 ②도 `systemctl --user restart tb3-bringup` 으로 복구 (전원 껐다 켤 필요 없음).
 - **RViz 확인**: 서버 물리 세션을 x11vnc 로 미러링, 맥에서 RealVNC/화면공유로 접속
   (컨테이너 RViz 는 `DISPLAY` 를 서버 물리 세션 `:0`/`:1` 에 맞춰 실행)
 - **환경 자동 source**: 컨테이너는 entrypoint(run 용) + .bashrc(exec 용) 양쪽에서
@@ -219,7 +222,9 @@ turtlebot3-slam-nav-vision/
 2. ~~Nav2 footprint 실측 교체~~ ✅ (2026-09-08)
 3. ~~Pi 전원 보강~~ ✅ (2026-11-05) — 배터리 분기 → UBEC 5V/5A → Pi GPIO. 6/15fps 부하 시험 `0x0`·fps 고정
    (troubleshooting 2026-11-05). 남은 것: 노드 종료 순간 1회 저전압(원인 미확정)·실주행 중 재관찰,
-   UBEC 가 OpenCR 스위치 우회 → 사용 후 배터리 분리 습관 (필요 시 스위치/LiPo 경보기)
+   UBEC 가 OpenCR 스위치 우회 → 사용 후 배터리 분리 습관 (필요 시 스위치/LiPo 경보기).
+   ★ 2026-11-12 장시간 실행 중 저전압 → USB 리셋 2회 (troubleshooting) — 전원 기록(scan-watchdog)으로 원인 추적 중,
+   오래 켜 둔 뒤 GPIO 5V 재측정(부팅 직후 4.91V) 예정
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시. ★ 그 전에 **자이로 영점 확인**: 정지 상태에서
    odom 방향이 돌면(2026-11-12 실측 15°/분) Pi 에서 `ros2 service call /reset std_srvs/srv/Trigger` 로 재보정
    (troubleshooting 2026-11-12). bringup 시작 후 5초는 로봇을 건드리지 말 것 (그때 영점을 잡음)
