@@ -32,13 +32,13 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 ├── my_web_api/
 │   ├── monitor.py                   ROS 없는 순수 로직: 토픽 주기 계산, 최신 프레임 보관, 배터리 판정
 │   ├── geometry.py                  ROS 없는 2D 변환: 쿼터니언↔yaw, 점 변환, 라이다 극좌표→점, 솎기
-│   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL
+│   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL(gzip)
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
 │   ├── nav.py                       Nav2 목표·취소·진행 상태, AMCL 초기 위치 (ROS 스레드 큐)
 │   ├── ros_node.py                  rclpy 노드: 구독·TF → 지도 좌표로 정리, snapshot() 으로 상태 조립
 │   ├── app.py                       FastAPI 라우트: 상태·영상·지도·주행 API, WebSocket, 정적 파일
 │   └── server.py                    진입점: ROS 스레드 + uvicorn, 종료 순서
-├── test/                            monitor·geometry·map_codec 단위 테스트 20개 (ROS 불필요)
+├── test/                            monitor·geometry·map_codec·robot_model 단위 테스트 20개 (ROS 불필요)
 └── tools/                           fake_nav.py(로봇 안 움직이는 가짜 Nav2) · nav_api_check.py(주행 API 점검)
 
 web/                                 React 프론트엔드 (npm 프로젝트, ROS 패키지 아님)
@@ -47,7 +47,9 @@ web/                                 React 프론트엔드 (npm 프로젝트, RO
     ├── api/types.ts                 서버 데이터 형식 (ros_node·app·nav 와 1:1)
     ├── api/useRobot.ts              WebSocket 하나로 모든 실시간 데이터 (reducer), 자동 재연결
     ├── api/nav.ts                   주행 요청 (TanStack Query mutation)
-    ├── components/MapView.tsx       react-konva 지도: 레이어·확대/이동·따라가기·목표 찍기
+    ├── api/robot.ts                 로봇 모양 정보 (TanStack Query)
+    ├── components/MapView.tsx       react-konva 2D 지도: 레이어·확대/이동·따라가기·목표 찍기·로봇 CAD 윗모습
+    ├── components/Map3D.tsx         react-three-fiber 3D 화면 (보기 전용, 「3D」 누를 때만 내려받음)
     ├── components/MapPanel.tsx      도구(보기·목표·초기 위치)·레이어 토글·목표 확인 창
     ├── components/NavPanel.tsx      주행 상태·남은 거리·취소
     ├── components/StatusBar.tsx     모드·서버 연결·로봇 연결·속도
@@ -66,6 +68,7 @@ web/                                 React 프론트엔드 (npm 프로젝트, RO
 | **MUI 9** | 화면 부품 | 카드·표·칩·토글 같은 대시보드 부품이 다 있어 직접 CSS 를 거의 안 씀 |
 | **MJPEG** | 카메라 영상 | 아래 4.3 |
 | **react-konva** (Konva 10) | 지도 그리기 | 캔버스 위에 레이어(이미지·점·선·다각형)를 React 컴포넌트로 쌓고, 확대·이동·포인터 좌표 변환을 기본 제공. ros2djs 계열은 roslibjs 전제·유지보수 불분명 |
+| **three.js + react-three-fiber + drei** | 3D 화면 | 브라우저 3D 표준(WebGL). React 컴포넌트로 장면을 쌓고 STL 로더·궤도 카메라를 기본 제공. Foxglove 도 브라우저에서 같은 방식으로 URDF 메시를 그린다 |
 | **TanStack Query** | 주행 요청 | 목표·취소 POST 의 진행 중·오류 상태를 선언적으로 (P1 엔 REST 호출이 없어 P2 에서 도입) |
 | **OpenCV**(서버) | PNG 인코딩 | 컨테이너에 이미 있음. 격자 → PNG 를 버전당 한 번만 |
 
@@ -203,21 +206,38 @@ feedback·결과 콜백 ─▶ 상태(state·남은 거리·경과·복구 횟�
 
 ### 4.12 로봇 모양 — URDF 의 CAD 메시를 그대로
 
-지도 위 로봇은 화살표가 아니라 **실물 CAD 를 위에서 본 모습**으로 그린다 (RViz 의 RobotModel 을 위에서 본 것과 같다).
+지도 위 로봇은 화살표가 아니라 **실물 CAD** 로 그린다 (RViz 의 RobotModel 과 같은 모양).
 
 ![CAD 메시를 위에서 본 이미지 (서버 렌더)](./images/robot_top_view.png)
 
 - **URDF 가 단일 소스**: Pi 가 보내는 `/robot_description` 에서 base_link 의 visual 메시 경로(`package://…`)·scale·
   origin 과 `base_footprint→base_link` 조인트 오프셋을 읽는다 (`robot_model.py`). CAD 를 바꿔 URDF 를 갱신하면 웹도
   따라온다 — 웹 쪽에 치수·파일명을 따로 적지 않는다.
-- **위에서 본 이미지는 서버가 한 번 그린다**: STL(10만 삼각형)을 위에서 투영해 낮은 면부터 칠하고 높은 면이 덮는
+- **2D: 위에서 본 이미지를 서버가 한 번 그린다**: STL(10만 삼각형)을 위에서 투영해 낮은 면부터 칠하고 높은 면이 덮는
   화가 알고리즘으로 PNG(0.5mm/픽셀, 462×354)를 만든다. 색은 높이(바닥 어둡게 → 위 밝게)가 주, 면 방향 음영은 약하게.
   이미지 좌표 = base_footprint 좌표라서 웹은 로봇 위치에 놓고 yaw 만큼 돌리기만 한다. 수백 ms 걸리므로 ROS 콜백을
-  막지 않게 별도 스레드에서.
-- 3만 삼각형 경량본은 구멍 뚫린 플레이트가 구겨져 보여 이 이미지엔 쓰지 않고, 브라우저 3D 화면 전송용으로만 쓴다
-  (`GET /api/robot/mesh.stl`, docs/description.md 3.4).
-- 지도 칸은 또렷하게(이미지 보간 끔), 로봇 그림은 부드럽게(보간 켬) 보이도록 로봇은 별도 Konva 레이어에 그린다.
+  막지 않게 별도 스레드에서. 지도 칸은 또렷하게(보간 끔), 로봇 그림은 부드럽게(보간 켬) 보이도록 별도 Konva 레이어.
+- **3D: 같은 STL 을 gzip 으로** 보낸다 (`GET /api/robot/mesh.stl`, 5MB → 1.9MB). 서버 전체에 gzip 을 켜면 끝나지 않는
+  MJPEG 스트림까지 압축하려다 망가지므로, 미리 압축해 둔 메시 응답에만 `Content-Encoding: gzip` 을 붙인다.
+  주소에 `?v=<URDF·메시 해시>` 를 붙여 같은 모델은 브라우저 캐시를 쓴다. 3만 삼각형 경량본(gzip 0.57MB)도 시험했지만
+  구멍 뚫린 플레이트가 구겨져 보여 원본을 택했다.
 - Nav2 가 켜져 있으면 실측 footprint 를 점선으로 겹쳐 그린다 — 로봇 뒤 여백은 카메라 USB 케이블 돌출분(정상).
+
+### 4.13 3D 화면
+
+![웹 3D 화면 — 지도·장애물 지도 위에 실물 CAD 로봇과 라이다(13.5cm 높이)](./images/web_ui_3d.png)
+
+「2D / 3D」 전환. 3D 는 **보기 전용**이다 (목표 찍기는 2D 가 정확하고 편해서 2D 에만).
+
+- **좌표**: ROS 와 같은 z-up (`Object3D.DEFAULT_UP = (0,0,1)`), 지도 좌표(미터) 그대로 — 서버 데이터를 변환 없이 쓴다.
+- **레이어 높이**: 지도 z=0, 로컬 장애물 지도 z=4mm(겹침 깜빡임 방지), 라이다 점은 실제 라이다 높이 z=0.135
+  (URDF: base_link 10mm + scan_joint 125mm), 경로 z=1cm. 로봇은 STL → URDF visual 변환 → 로봇 pose.
+- **텍스처**: 지도 PNG 는 위쪽 = +y 이고 three 평면의 텍스처 위쪽(v=1)도 +y 라 그대로 맞는다. 지도는 5초마다 새로
+  오므로, 새 이미지를 다 받은 뒤 바꿔 끼우고 이전 텍스처는 GPU 메모리에서 해제한다.
+- **조작**: 왼쪽 끌기 회전, 오른쪽 끌기 이동, 휠 확대 (OrbitControls). 「로봇 따라가기」는 카메라와 회전 중심을 로봇이
+  움직인 만큼 같이 옮겨 보는 각도를 유지한다. 바닥 아래로 돌아가지 않게 각도 제한.
+- **가볍게**: three.js(~950KB)는 「3D」 를 누를 때만 내려받고(React.lazy → 별도 파일), 데이터가 바뀌거나 조작할 때만
+  다시 그린다(`frameloop="demand"`) — 폰 배터리·발열.
 
 ## 5. 실행
 
@@ -281,6 +301,9 @@ python3 /overlay_ws/src/my_web_api/tools/nav_api_check.py       # 목표→도�
   「취소」→ 목표 미전송(nav 버전 불변). 휠 확대·로봇 따라가기 확인.
 - 지도 없는 대기 상태(SLAM·Nav2 꺼짐): odom 기준으로 라이다 4초 21메시지(0.2초 간격, 끊김 없음), 점 좌표 매 메시지 갱신.
   라이다 점은 컴포넌트 하나(Konva Shape)로 그려 5Hz 갱신 부담을 줄였다.
+- 로봇 모양(2026-11-12): URDF 에서 메시를 읽어 위에서 본 이미지 462×354px 렌더, 2D 지도의 로봇 위치·방향에 표시.
+  3D(헤드리스 크롬 소프트웨어 WebGL): SLAM 지도·장애물 지도·라이다·CAD 로봇·점선 footprint·앞 화살표 표시 확인,
+  메시 gzip 전송 1,876,461B (원본 5,000,084B).
 - ⏳ **실제 주행(목표 클릭 → 로봇 이동 → 장애물 회피가 화면에 보임)은 로봇을 바닥에 두고 사용자 입회 하 검증 예정.**
   (이번엔 로봇 위치를 몰라 움직이는 시험을 하지 않았다.)
 

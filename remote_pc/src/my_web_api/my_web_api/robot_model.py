@@ -2,9 +2,9 @@
 
 1) Pi 의 robot_state_publisher 가 보내는 /robot_description(URDF 문자열)에서 base_link 의 visual 메시
    (package://… 경로, scale, origin)를 읽는다 → 메시 파일을 바꾸면 웹도 자동으로 따라온다.
-2) 위에서 내려다본 모습은 URDF 의 메시(10만 삼각형) 그대로 서버가 PNG 로 한 번 그려 둔다 (2D 지도용).
-3) 브라우저 3D 화면에 보내는 STL 은 메시 옆에 `<이름>_web.stl`(3만 삼각형, description/tools/make_web_mesh.py)이
-   있으면 그걸 쓴다 — 폰에서도 가볍게. 경량본은 구멍 뚫린 플레이트가 구겨져 보여 위에서 본 이미지엔 쓰지 않는다.
+2) 위에서 내려다본 모습은 서버가 PNG 로 한 번 그려 둔다 (2D 지도용).
+3) 브라우저 3D 화면엔 같은 STL 을 gzip 으로 압축해 보낸다 (10만 삼각형 5MB → 1.9MB). 3만 삼각형으로 더 줄인 경량본도
+   시험했지만 구멍 뚫린 플레이트가 구겨져 보여 원본을 쓴다. URDF 가 바뀔 때만 버전이 바뀌어 브라우저가 다시 받는다.
 
 좌표는 전부 base_footprint 기준(웹이 받는 로봇 위치가 base_footprint 이므로). base_link 는 base_footprint 위 10mm.
 """
@@ -15,6 +15,9 @@ import os
 import re
 import threading
 import xml.etree.ElementTree as ET
+
+import gzip
+import hashlib
 
 import cv2
 import numpy as np
@@ -61,12 +64,6 @@ def resolve_package_uri(uri: str) -> str:
         from ament_index_python.packages import get_package_share_directory
         return os.path.join(get_package_share_directory(m.group(1)), m.group(2))
     return uri[len('file://'):] if uri.startswith('file://') else uri
-
-
-def web_variant(path: str) -> str:
-    """<이름>_web.stl 이 있으면 그 경로, 없으면 원래 경로."""
-    web = os.path.splitext(path)[0] + '_web.stl'
-    return web if os.path.isfile(web) else path
 
 
 # ---------------- STL ----------------
@@ -143,7 +140,7 @@ class RobotModel:
         self._log = logger
         self.info: dict = {'available': False, 'reason': '/robot_description 대기 중'}
         self.top_png: bytes | None = None
-        self.mesh_path: str | None = None
+        self.mesh_gz: bytes | None = None      # 3D 화면용 STL (gzip)
         self._urdf_hash = None
 
     def update(self, urdf: str):
@@ -160,21 +157,24 @@ class RobotModel:
             vis = base_link_visual(urdf)
             if vis is None:
                 raise ValueError('URDF 의 base_link 에 메시 visual 이 없음')
-            full = resolve_package_uri(vis['filename'])
-            path = web_variant(full)
-            img, top = render_top_view(place(read_stl(full), vis, base_offset))
-            n_web = int(len(read_stl(path)))
+            path = resolve_package_uri(vis['filename'])
+            raw = open(path, 'rb').read()
+            tris = read_stl(path)
+            img, top = render_top_view(place(tris, vis, base_offset))
             self.top_png = encode_png(img)
-            self.mesh_path = path
+            self.mesh_gz = gzip.compress(raw, compresslevel=6)
             self.info = {
                 'available': True, 'source': vis['filename'], 'file': os.path.basename(path),
-                'triangles': n_web, 'top_view': top,
+                'triangles': int(len(tris)), 'mesh_bytes': len(raw), 'mesh_gzip_bytes': len(self.mesh_gz),
+                # URDF·메시가 같으면 같은 버전 → 브라우저가 캐시를 쓴다
+                'version': hashlib.sha1(urdf.encode() + raw[:4096] + str(len(raw)).encode()).hexdigest()[:12],
+                'top_view': top,
                 # 3D 화면은 원본 STL 좌표(메시 파일 그대로)에 이 변환을 적용해 base_footprint 에 놓는다
                 'transform': {'scale': vis['scale'], 'xyz': [vis['xyz'][i] + base_offset[i] for i in range(3)],
                               'rpy': vis['rpy']},
             }
-            self._log.info(f'로봇 모델: 위에서 본 이미지 {top["width"]}x{top["height"]}px ({os.path.basename(full)}), '
-                           f'3D 메시 {os.path.basename(path)} {n_web} 삼각형')
+            self._log.info(f'로봇 모델: {os.path.basename(path)} {len(tris)} 삼각형, 위에서 본 이미지 '
+                           f'{top["width"]}x{top["height"]}px, 3D 전송 {len(raw) / 1e6:.1f}MB → gzip {len(self.mesh_gz) / 1e6:.1f}MB')
         except Exception as e:  # noqa: BLE001 — 모델이 없어도 콘솔은 동작해야 한다
             self.info = {'available': False, 'reason': f'{type(e).__name__}: {e}'}
             self._log.warn(f'로봇 모델 로드 실패 → 화살표로 표시: {e}')

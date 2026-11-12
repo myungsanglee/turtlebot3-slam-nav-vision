@@ -18,11 +18,12 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
 from __future__ import annotations
 
 import asyncio
+import gzip
 import os
 import threading
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -118,13 +119,19 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
     def robot_top():
         if node.robot_model.top_png is None:
             raise HTTPException(404, node.robot_model.info.get('reason', '로봇 모델 없음'))
-        return Response(node.robot_model.top_png, media_type='image/png', headers={'Cache-Control': 'no-cache'})
+        # 주소에 ?v=버전 (URDF·메시가 바뀔 때만 바뀜) 을 붙여 요청하므로 오래 캐시해도 된다
+        return Response(node.robot_model.top_png, media_type='image/png', headers={'Cache-Control': 'max-age=86400'})
 
     @app.get('/api/robot/mesh.stl')
-    def robot_mesh():
-        if not node.robot_model.mesh_path:
+    def robot_mesh(request: Request):
+        gz = node.robot_model.mesh_gz
+        if gz is None:
             raise HTTPException(404, node.robot_model.info.get('reason', '로봇 모델 없음'))
-        return FileResponse(node.robot_model.mesh_path, media_type='model/stl', headers={'Cache-Control': 'no-cache'})
+        headers = {'Cache-Control': 'max-age=86400'}
+        if 'gzip' in request.headers.get('accept-encoding', ''):
+            # 미리 압축해 둔 바이트를 그대로 — 브라우저가 풀어서 STL 로 받는다 (서버 전체 gzip 은 MJPEG 스트림을 망쳐서 안 씀)
+            return Response(gz, media_type='model/stl', headers={**headers, 'Content-Encoding': 'gzip'})
+        return Response(gzip.decompress(gz), media_type='model/stl', headers=headers)
 
     # ---------------- 주행 (P2) ----------------
     async def nav_call(kind: str, **kw):

@@ -68,8 +68,9 @@ export interface RobotModelInfo {
   available: boolean
   reason?: string
   source?: string // URDF 의 메시 경로 (package://…)
-  file?: string // 3D 용으로 보내는 STL 파일 이름
+  file?: string // STL 파일 이름
   triangles?: number
+  version?: string // URDF·메시가 바뀔 때만 바뀜 → 이미지·메시 주소에 붙여 캐시
   top_view?: GridMeta & { z_min: number; z_max: number } // 위에서 본 이미지 (base_footprint 좌표)
   transform?: { scale: number[]; xyz: number[]; rpy: number[] } // STL → base_footprint (3D 화면용)
 }

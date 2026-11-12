@@ -119,12 +119,9 @@ CAD 를 base_link 원점으로 그리면 URDF 쪽 오프셋 보정이 필요 없
 주의: 바퀴가 base_link 메시에 포함돼 RViz 에서 **바퀴는 회전하지 않는다**(표시만).
 CAD 를 다시 export 하면 같은 방법으로 경량화한다(10만 삼각형 이하 권장 — RViz 로드 시간·git 용량).
 
-**웹 콘솔용 경량본** `my_turtlebot3_burger_lowpoly_web.stl` (3만 삼각형, 1.5 MB, 외곽 치수 동일) — 브라우저 3D 화면에
-보내는 메시. 웹 백엔드는 URDF 의 메시 경로 옆에 `<이름>_web.stl` 이 있으면 그걸 쓴다. lowpoly 를 바꿨다면 다시 만든다:
-```bash
-pip install open3d && python3 description/tools/make_web_mesh.py     # → meshes/…_lowpoly_web.stl
-```
-웹 2D 지도의 로봇 모양(위에서 본 이미지)은 서버가 lowpoly(10만) 로 직접 그린다 (docs/my_web_api.md 4.12).
+**웹 콘솔**도 이 메시를 그대로 쓴다 — 서버가 URDF 에서 경로를 읽어 2D 지도용 '위에서 본 이미지'를 그리고, 3D 화면엔
+gzip 압축(5MB → 1.9MB)해 보낸다 (docs/my_web_api.md 4.12). 3만 삼각형 경량본도 시험했지만 구멍 뚫린 플레이트가 구겨져
+보여 쓰지 않는다.
 
 ![RobotModel(CAD 메시) vs 실측 footprint](./images/robot_model_cad.png)
 

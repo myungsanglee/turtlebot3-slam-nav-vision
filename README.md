@@ -38,7 +38,7 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | 카메라 | RealSense D435i — **자체 pyrealsense2 노드** (공식 노드의 Pi4 USB 불안정을 캘리브레이션 캐시·프로세스 분리로 우회), 컬러 + 컬러 정렬 depth compressed 원격 전송 |
 | Vision AI | **RF-DETR** + **TensorRT**(fp16, 컨테이너 안에서 엔진 빌드·캐시) + 정렬 depth 거리 → 3D 위치 |
 | 센서 융합 | TurtleBot3 기본 오도메트리(바퀴 거리 + **IMU 회전각**, `use_imu: true`). robot_localization(EKF)은 실주행 검증 후 필요 시 |
-| 시각화 | RViz2 (개발자용) · **웹 콘솔** (운용자용 — FastAPI + rclpy 백엔드 API, React + TypeScript + MUI + react-konva 지도, 카메라 MJPEG) |
+| 시각화 | RViz2 (개발자용) · **웹 콘솔** (운용자용 — FastAPI + rclpy 백엔드 API, React + TypeScript + MUI, 2D 지도 react-konva · 3D three.js, 실물 CAD 로봇 모델, 카메라 MJPEG) |
 
 ## 레포 구조
 
@@ -114,6 +114,7 @@ http://100.95.193.1:8080/docs   API 문서
 
 ![웹 콘솔 — 지도에 목표를 찍으면 확인 후 이동, 오른쪽은 로봇 카메라](./docs/images/web_ui_p2.png)
 
+- 로봇은 URDF 의 실물 CAD 로 그린다. 「2D / 3D」 로 전환하면 RViz 처럼 돌려 볼 수 있다 (3D 는 보기 전용).
 - 지도에서 **「목표 지정」→ 목표 위치를 누르고 바라볼 방향으로 끌었다 놓기 → 「이동」** (확인을 한 번 더 받는다).
   저장 지도 주행 땐 「초기 위치」로 로봇 위치를 알려준다. 주행 중엔 「주행 취소」.
 - 지도는 SLAM 또는 저장 지도 주행이 실행 중이어야 나온다. 이 실행을 웹 버튼으로 켜고 끄는 건 다음 단계(P3) —

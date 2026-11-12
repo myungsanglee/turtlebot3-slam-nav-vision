@@ -31,7 +31,6 @@ interface Props {
   localPath: Point[]
   footprint: Point[]
   robotModel: RobotModelInfo | null // CAD 메시의 위에서 본 모습 (없으면 화살표만)
-  robotModelKey: number // 이미지 다시 받기용
   goal: Pose | null // 진행 중인 목표
   pending: Pose | null // 사용자가 찍었지만 아직 보내지 않은 목표
   tool: Tool
@@ -85,7 +84,7 @@ export default function MapView({ ref, ...p }: Props) {
 
   const mapImg = useImage(p.map ? `/api/map.png?v=${p.map.version}` : null)
   const costImg = useImage(p.costmap ? `/api/costmap.png?v=${p.costmap.version}` : null)
-  const robotImg = useImage(p.robotModel?.available ? `/api/robot/top.png?k=${p.robotModelKey}` : null)
+  const robotImg = useImage(p.robotModel?.available ? `/api/robot/top.png?v=${p.robotModel.version}` : null)
 
   // 컨테이너 크기 따라가기 (반응형)
   useLayoutEffect(() => {

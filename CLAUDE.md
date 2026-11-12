@@ -77,7 +77,7 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 | 원격 통신 | **zenoh-bridge-ros2dds** | Fast DDS Discovery Server 의 VPN 한계로 전환 (3번) |
 | 카메라 | **자체 pyrealsense2 노드** (`rs_camera_node.py`) | D435i. 공식 realsense2_camera 는 Pi4+RSUSB 에서 RGB 컨트롤 경로(XU 캘리브레이션)가 세션 단위로 간헐 불통 → 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 자체 해결 (docs/realsense_bringup.md). librealsense 는 RSUSB 소스 빌드 (troubleshooting 08-27) |
 | Vision AI | **RF-DETR** (Apache-2.0) + **TensorRT fp16** | `my_vision/detector_node`: `/camera/*` 구독→검출→정렬 depth 로 거리·3D 위치→`Detection2DArray`. backend torch(12ms)/tensorrt(7ms). 엔진은 이식 불가라 **컨테이너 안에서 빌드·캐시**(models/trt/, 환경명 포함). RTMDet 은 mmcv 설치 부담으로 제외. 컨테이너 `vision` 스테이지에 torch cu128 + rfdetr + tensorrt-cu12 |
-| 시각화 | RViz2 (개발자) + **웹 콘솔** (운용자) | RViz: SLAM+Nav+영상 통합 .rviz. 웹: FastAPI+rclpy 백엔드(`my_web_api`, :8080) + React 19·TS·Vite 8·MUI 9·react-konva(지도)·TanStack Query(`web/`), 카메라 MJPEG. 브라우저는 ROS 를 모름 — 서버가 TF 로 전부 map 좌표로 변환해 보냄 |
+| 시각화 | RViz2 (개발자) + **웹 콘솔** (운용자) | RViz: SLAM+Nav+영상 통합 .rviz. 웹: FastAPI+rclpy 백엔드(`my_web_api`, :8080) + React 19·TS·Vite 8·MUI 9·react-konva(2D 지도)·three.js/react-three-fiber(3D, 지연 로드)·TanStack Query(`web/`), 카메라 MJPEG, 로봇은 URDF 의 CAD 메시. 브라우저는 ROS 를 모름 — 서버가 TF 로 전부 map 좌표로 변환해 보냄 |
 
 ## 5. 커스텀 로봇 — 반드시 반영할 것 (표준 데모 그대로 못 씀)
 
@@ -233,7 +233,9 @@ turtlebot3-slam-nav-vision/
    점으로 변환해 WebSocket push(geometry.py·map_codec.py), Nav2 NavigateToPose 목표·취소·feedback·AMCL 초기 위치
    (nav.py — rclpy 호출은 ROS 스레드 큐로), 화면은 react-konva(world 그룹 scaleY=-1 로 지도 좌표 그대로 그림),
    목표는 찍은 뒤 확인 창에서 한 번 더 눌러야 전송. 가짜 Nav2(`tools/fake_nav.py`)로 로봇 안 움직이고 흐름 검증.
-   ⏳ 실주행 검증(바닥, 사용자 입회) 남음 — 그때 회피 V1 함께. 다음은 P3 모드 관리
+   로봇 모양(2026-11-12): /robot_description 의 base_link 메시로 2D 는 서버 렌더 윗모습 PNG, 3D 는 STL gzip(1.9MB) +
+   react-three-fiber 3D 화면(보기 전용, z-up, 라이다 13.5cm 높이). ⏳ 실주행 검증(바닥, 사용자 입회) 남음 — 그때 회피 V1 함께.
+   다음은 P3 모드 관리
 9. **카메라 기반 회피** — 설계 완료 `docs/vision_avoidance_design.md` (2026-11-09, 사용자 결정으로 포함).
    현재 회피 입력은 /scan 뿐(125mm 평면). ① 깊이 층: 정렬 depth → PointCloud2 → local costmap(높이 필터)
    ② 의미 층: /vision/objects(+반경 추정) → 자체 C++ `SemanticLayer` 플러그인(클래스별 여유·소멸) + 사람 근처
