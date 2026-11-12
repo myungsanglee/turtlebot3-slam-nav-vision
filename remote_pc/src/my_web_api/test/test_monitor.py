@@ -47,6 +47,16 @@ def test_goes_stale_and_rate_zero():
     assert s['state'] == 'missing' and s['rate'] == 0.0 and s['age'] > 2.0
 
 
+def test_last_received_kept_after_window():
+    # 끊기고 window(3초)보다 오래 지나도 마지막 수신 시각·경과 시간은 남아야 한다
+    m, clock = _monitor()
+    m.record()
+    clock.t += 125.0
+    s = m.snapshot()
+    assert s['state'] == 'missing' and s['rate'] == 0.0
+    assert abs(s['age'] - 125.0) < 1e-6 and s['last_received'] is not None
+
+
 def test_frame_store_version():
     f = FrameStore()
     assert f.get() == (0, None)

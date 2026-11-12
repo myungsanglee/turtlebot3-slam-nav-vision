@@ -37,7 +37,7 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 │   ├── ros_node.py                  rclpy 노드: 구독·TF → 지도 좌표로 정리, snapshot() 으로 상태 조립
 │   ├── app.py                       FastAPI 라우트: 상태·영상·지도·주행 API, WebSocket, 정적 파일
 │   └── server.py                    진입점: ROS 스레드 + uvicorn, 종료 순서
-├── test/                            monitor·geometry·map_codec 단위 테스트 14개 (ROS 불필요)
+├── test/                            monitor·geometry·map_codec 단위 테스트 15개 (ROS 불필요)
 └── tools/                           fake_nav.py(로봇 안 움직이는 가짜 Nav2) · nav_api_check.py(주행 API 점검)
 
 web/                                 React 프론트엔드 (npm 프로젝트, ROS 패키지 아님)
@@ -88,6 +88,10 @@ ROS(rclpy)는 콜백을 **자기 스레드**에서 부르고, FastAPI 는 **asyn
 최근 3초 동안 받은 메시지 시각들로 `(개수 − 1) / (마지막 − 처음)` 을 계산한다. 2초 넘게 안 오면 "수신 없음"
 (Vision 처럼 선택 토픽은 "꺼짐"). 기대 주기의 70% 미만이면 화면에 "느림" 으로 표시 — 예: Pi 전원 저하로
 카메라가 3fps 로 떨어지면 바로 보인다.
+
+**마지막 수신 시각은 주기 계산과 따로 보관한다.** 끊긴 뒤에도 "언제 마지막으로 받았는지"(3분 12초 전, 마우스를 올리면
+실제 시각)를 보여주기 위해서다. 처음 구현은 3초 창 안의 시각 목록에서 마지막 값을 꺼내 써서, 끊기고 3초가 지나면
+마지막 수신 시각까지 사라져 "—" 로만 보였다 (2026-11-12 사용자 발견 → 수정). 한 번도 받지 못한 토픽은 "기록 없음".
 
 ### 4.3 카메라 영상: MJPEG
 
@@ -224,7 +228,7 @@ docker compose restart web-api       # 설정(web_api.yaml)·백엔드 코드 �
 ### 테스트
 
 ```bash
-docker compose exec remote-pc bash -c 'cd /overlay_ws/src/my_web_api && python3 -m pytest -q test'   # 14 passed
+docker compose exec remote-pc bash -c 'cd /overlay_ws/src/my_web_api && python3 -m pytest -q test'   # 15 passed
 cd web && npm run build && npm run lint                                                              # 타입·린트
 ```
 

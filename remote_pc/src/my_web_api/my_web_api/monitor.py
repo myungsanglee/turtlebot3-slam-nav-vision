@@ -27,21 +27,29 @@ class TopicMonitor:
     주기는 최근 window_sec 동안 받은 메시지 시각들로 계산한다:
         rate = (개수 - 1) / (마지막 시각 - 첫 시각)
     메시지가 끊기면 window 안의 시각이 빠져나가 rate 가 0 으로 떨어진다.
+
+    마지막 수신 시각은 window 와 **별도로** 보관한다 — 끊긴 뒤에도 "언제 마지막으로 받았는지"를 보여줘야 하므로.
+    (처음 구현은 window 의 시각 목록에서 마지막 값을 꺼내 써서, 끊기고 3초가 지나면 마지막 수신 시각까지 사라졌다.)
     """
 
     def __init__(self, spec: TopicSpec, window_sec: float = 3.0, stale_sec: float = 2.0,
-                 clock=time.monotonic):
+                 clock=time.monotonic, wall_clock=time.time):
         self.spec = spec
         self._window = window_sec
         self._stale = stale_sec
         self._clock = clock
+        self._wall_clock = wall_clock
         self._stamps: deque[float] = deque()
+        self._last: float | None = None        # 마지막 수신 (monotonic — 경과 시간 계산용)
+        self._last_wall: float | None = None   # 마지막 수신 (실제 시각 — 화면에 '몇 시 몇 분' 표시용)
         self._lock = threading.Lock()
 
     def record(self) -> None:
         now = self._clock()
         with self._lock:
             self._stamps.append(now)
+            self._last = now
+            self._last_wall = self._wall_clock()
             self._trim(now)
 
     def _trim(self, now: float) -> None:
@@ -53,7 +61,7 @@ class TopicMonitor:
         with self._lock:
             self._trim(now)
             stamps = list(self._stamps)
-        last = stamps[-1] if stamps else None
+            last, last_wall = self._last, self._last_wall
         age = (now - last) if last is not None else None
         rate = 0.0
         if len(stamps) >= 2 and stamps[-1] > stamps[0]:
@@ -67,7 +75,8 @@ class TopicMonitor:
             'key': self.spec.key, 'topic': self.spec.topic, 'label': self.spec.label,
             'expected_hz': self.spec.expected_hz, 'optional': self.spec.optional,
             'rate': round(rate if receiving else 0.0, 1),
-            'age': None if age is None else round(age, 2),
+            'age': None if age is None else round(age, 2),          # 마지막 수신 후 경과 초 (끊겨도 유지)
+            'last_received': None if last_wall is None else round(last_wall, 3),   # epoch 초
             'state': state,
         }
 

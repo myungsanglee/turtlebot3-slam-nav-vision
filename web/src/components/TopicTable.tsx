@@ -1,5 +1,16 @@
-import { Box, Card, CardContent, Chip, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material'
+import { Box, Card, CardContent, Chip, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography } from '@mui/material'
 import type { TopicStatus } from '../api/types'
+
+// 마지막 수신 후 경과 시간. 끊긴 뒤에도 서버가 마지막 수신 시각을 유지하므로 "3분 12초 전" 처럼 계속 늘어난다.
+function ago(age: number | null) {
+  if (age === null) return '기록 없음'
+  if (age < 1) return '방금'
+  if (age < 60) return `${Math.floor(age)}초 전`
+  if (age < 3600) return `${Math.floor(age / 60)}분 ${Math.floor(age % 60)}초 전`
+  return `${Math.floor(age / 3600)}시간 ${Math.floor((age % 3600) / 60)}분 전`
+}
+
+const clock = (epoch: number) => new Date(epoch * 1000).toLocaleString('ko-KR', { hour12: false })
 
 function stateChip(t: TopicStatus) {
   if (t.state === 'off') return <Chip size="small" label="꺼짐" variant="outlined" />
@@ -38,7 +49,11 @@ export default function TopicTable({ topics }: { topics: TopicStatus[] }) {
                   {t.rate.toFixed(1)} / {t.expected_hz} Hz
                 </TableCell>
                 <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                  {t.age === null ? '—' : t.age < 1 ? '방금' : `${t.age.toFixed(1)}초 전`}
+                  <Tooltip title={t.last_received ? `마지막 수신 ${clock(t.last_received)}` : '서버가 켜진 뒤 한 번도 받지 못함'}>
+                    <Typography variant="body2" component="span" color={t.state === 'missing' ? 'error' : 'inherit'}>
+                      {ago(t.age)}
+                    </Typography>
+                  </Tooltip>
                 </TableCell>
                 <TableCell align="right">{stateChip(t)}</TableCell>
               </TableRow>

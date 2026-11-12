@@ -10,7 +10,8 @@ export interface TopicStatus {
   expected_hz: number
   optional: boolean
   rate: number
-  age: number | null // 마지막 수신 후 경과 초. 한 번도 안 왔으면 null
+  age: number | null // 마지막 수신 후 경과 초 (끊겨도 유지). 한 번도 안 왔으면 null
+  last_received: number | null // 마지막 수신 시각 (epoch 초)
   state: TopicState // ok=수신 중, missing=수신 없음(오류), off=선택 토픽이 꺼짐
 }
 
