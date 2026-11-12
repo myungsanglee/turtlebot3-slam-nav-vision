@@ -87,6 +87,20 @@ curl -s localhost:8080/api/status | head -c 200   # 상태 JSON
 - web-api 는 웹 「운용 모드」 로 Vision(TensorRT) 까지 띄우므로 **GPU 를 받는다** (compose `deploy` — remote-pc 와 같은 설정).
 - 저장 지도는 `remote_pc/maps/` (컨테이너 `/overlay_ws/maps`, git 제외 — 사용자 데이터).
 
+### 3-2. 로봇 전원 버튼용 SSH 키 (웹 콘솔 → Pi)
+
+웹의 대기·켜기·재부팅·끄기는 web-api 가 전용 키로 Pi 에 SSH 해서 `robot/tools/robot_power.sh` 만 실행한다
+(docs/my_web_api.md 4.19). 키는 레포의 `secrets/`(**git 제외**)에 두고 compose 가 `/secrets` 로 읽기 전용 마운트한다.
+
+```bash
+mkdir -p secrets && chmod 700 secrets
+ssh-keygen -q -t ed25519 -N '' -C tb3-web-power -f secrets/robot_power_key
+ssh-keygen -F 100.71.74.81 -f ~/.ssh/known_hosts | grep -v '^#' > secrets/known_hosts   # Pi 호스트 키 고정 (먼저 한 번 ssh 접속해 둘 것)
+cat secrets/robot_power_key.pub     # → Pi authorized_keys 에 command= 제한으로 등록 (docs/pi_setup.md 9-2 ②)
+docker compose up -d web-api        # 마운트 반영
+```
+키가 없으면 전원 칩이 '전원 제어 미설정' 으로 보이고 버튼이 비활성 (나머지 기능은 그대로).
+
 > RViz 에서 로봇 모델이 안 보이고 로그에 `Package [my_description] does not exist` 가
 > 나오면 overlay 가 source 안 된 셸이다 (`source /overlay_ws/install/setup.bash`).
 

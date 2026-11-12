@@ -58,3 +58,11 @@ web_api:
     topic_cmd_vel: /cmd_vel           # 조이스틱이 내보내는 속도 명령 (geometry_msgs/Twist — Pi 의 turtlebot3_node 와 일치 확인)
     teleop_max_linear: 0.15           # m/s  (TurtleBot3 burger 최대 0.22 — 실내 수동 조작은 여유 있게)
     teleop_max_angular: 1.0           # rad/s (최대 2.84)
+
+    # ---- 로봇 전원 (대기·켜기·ROS 재시작·Pi 재부팅·끄기) — robot_power.py, docs/my_web_api.md 4.19 ----
+    # Pi 에 전용 SSH 키로 접속 → Pi authorized_keys 의 command= 로 robot/tools/robot_power.sh 만 실행된다.
+    # 키·known_hosts 는 레포의 secrets/ (git 제외, compose 가 /secrets 로 읽기 전용 마운트). 없으면 버튼 비활성.
+    robot_power_host: 100.71.74.81    # Pi Tailscale IP
+    robot_power_user: michael
+    robot_power_key: /secrets/robot_power_key
+    robot_power_known_hosts: /secrets/known_hosts

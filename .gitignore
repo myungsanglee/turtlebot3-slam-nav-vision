@@ -41,3 +41,6 @@ description/meshes/my_turtleBot3_burger.stl
 
 # 저장 지도 (웹 콘솔·map_saver 가 만드는 사용자 데이터)
 remote_pc/maps/
+
+# 웹 콘솔 → Pi 전원 제어용 SSH 키 (docs/server_setup.md) — 절대 커밋 금지
+secrets/

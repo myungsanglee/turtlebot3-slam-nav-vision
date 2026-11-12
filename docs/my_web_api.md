@@ -37,6 +37,7 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 │   ├── monitor.py                   ROS 없는 순수 로직: 토픽 주기 계산, 최신 프레임 보관, 배터리 판정
 │   ├── geometry.py                  ROS 없는 2D 변환: 쿼터니언↔yaw, 점 변환, 라이다 극좌표→점, 솎기
 │   ├── zones.py                     ROS 없는 금지 구역 로직: 검증·저장·지도 좌표 다각형 → Keepout 마스크 격자
+│   ├── robot_power.py               로봇 전원(대기·켜기·재시작·재부팅·끄기) — Pi 에 전용 SSH 키로 robot_power.sh 호출
 │   ├── depth_points.py              카메라 depth → 지도 좌표 3D 점 (my_vision depth_cloud 의 역투영 재사용, 3D 회전, 5cm 솎기)
 │   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL(gzip)
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
@@ -353,6 +354,34 @@ Nav2:    global·local costmap 의 KeepoutFilter 가 마스크 칸을 LETHAL 로
   지나감(1.48m) → 구역 있을 때 0개, 돌아가는 경로(1.86m). UI 그리기·완료·삭제 흐름은 headless Chrome 으로 확인.
 
 ![금지 구역 — 빨강 영역·선, 장애물 지도에 바로 반영](images/web_zones.png)
+
+### 4.19 로봇 전원 — 대기·켜기·ROS 재시작·Pi 재부팅·끄기 (`robot_power.py`, `PowerControl.tsx`)
+
+**왜**: 배터리를 연결하면 Pi 가 켜지고 예전엔 bringup 도 바로 떠서, 쓰지 않을 때도 라이다가 계속 돌며 배터리를 썼다.
+이제 **부팅 시 기본은 대기**(Pi 의 `robot-standby.service`)이고, 웹 상단의 전원 칩·버튼으로 켜고 끈다.
+
+| 동작 | Pi 에서 일어나는 일 | 다시 켜기 |
+|---|---|---|
+| 켜기 / 대기 | `tb3-bringup` 시작 / 정지 → 라이다 모터·카메라 스트림·모터 제어 정지 (Pi·네트워크는 유지) | 웹 「켜기」 |
+| ROS 재시작 | `tb3-bringup` 재시작 (센서 끊김 복구 — by-id 포트라 USB 재연결 뒤에도 됨) | — |
+| Pi 재부팅 | `systemctl reboot` → 1~2분 뒤 대기 상태로 복귀 | 자동 |
+| Pi 끄기 | bringup 정지 → `systemctl poweroff` (SD 카드 보호) | **배터리 재연결** (꺼진 Pi 는 네트워크가 없다) |
+
+- **라이다가 정말 멈추나**: LDS-01 은 시리얼로 `b` 를 받으면 회전·송신, `e` 를 받으면 정지한다. 드라이버가 종료 때 `e` 를
+  보내므로 bringup 을 멈추면 모터도 멈춘다 — 실측: 정지 후 시리얼 수신 0 B, `b` 를 보내면 2초에 25 KB, `e` 로 다시 0 B.
+  대기 동작과 부팅 시 대기 서비스는 확실히 하려고 `e` 를 한 번 더 보낸다.
+- **왜 SSH 인가** (ROS 서비스·토픽이 아니라): 대기 중엔 Pi 의 ROS 가 꺼져 있으니 켜는 명령은 ROS 바깥으로 가야 한다.
+  zenoh 브리지는 허용 목록의 토픽만 넘기고, 목록 변경은 Pi 시스템 서비스 재시작(sudo)이 든다.
+  그래서 web-api 가 **전용 키**로 Pi 에 SSH 하고, Pi `authorized_keys` 의 `restrict,command="…/robot_power.sh"` 가
+  어떤 명령을 보내든 그 스크립트만 실행시킨다 (요청은 `SSH_ORIGINAL_COMMAND` 로 받아 6개 동작만 허용, 셸·포워딩 불가).
+  재부팅·끄기는 Pi `sudoers.d/robot-power` 에 그 두 명령만 비밀번호 없이 허용. 키는 레포 `secrets/`(git 제외)에 두고
+  compose 가 `/secrets` 로 읽기 전용 마운트, Pi 호스트 키는 고정(`StrictHostKeyChecking=yes`).
+- **상태**: 5초마다(전환 중 1.5초) Pi 에 `status` 를 물어 bringup 상태(systemd)·uptime·throttled 를 받고, 로봇 데이터(odom)
+  수신 여부와 합쳐 `running / starting / standby / stopping / rebooting / off / unreachable / error` 로 보여 준다
+  (`/api/status`·WebSocket status 의 `power`). 재부팅은 "uptime 이 요청 시각 이후"가 될 때까지 '재부팅 중'.
+- **안전**: 대기·재시작·재부팅·끄기 전에 조이스틱 해제·주행 목표 취소, 웹에서 띄운 SLAM·Nav2 를 IDLE 로 끄고 끝날 때까지
+  기다린다 (센서 없이 Nav2 가 돌거나 지도 만들기가 망가지지 않게). 모든 동작은 확인 창을 거치고, 지도 작업 중이면 경고를 띄운다.
+- 대기·꺼짐처럼 일부러 끈 상태에선 '로봇 응답 없음' 경고 칩을 숨긴다.
 
 ## 5. 실행
 

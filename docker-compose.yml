@@ -124,4 +124,5 @@ services:
       - ./remote_pc:/overlay_ws:rw
       - ./description:/overlay_ws/src/my_description:rw
       - ./web:/web:ro                  # React 빌드 결과는 /web/dist
+      - ./secrets:/secrets:ro          # 로봇 전원 버튼용 SSH 키·known_hosts (git 제외, docs/server_setup.md)
     command: ros2 launch my_web_api web_api.launch.py static_dir:=/web/dist

@@ -128,7 +128,10 @@ turtlebot3-slam-nav-vision/
 ├── robot/                     # Raspberry Pi 에서 도는 것 (RealSense 관련)
 │   ├── src/
 │   │   └── realsense_bringup/ # RealSense 실행 런치 (bringup 은 건드리지 않음)
-│   ├── systemd/tb3-bringup.service  # Pi 부팅 시 bringup+카메라 (사용자 서비스)
+│   ├── systemd/tb3-bringup.service  # Pi bringup+카메라 (사용자 서비스, 부팅 자동 X — 웹 「켜기」)
+│   ├── systemd/robot-standby.service # 부팅 시 대기 (라이다 정지 명령)
+│   ├── tools/robot_power.sh  # 웹 전원 버튼이 SSH(command= 강제)로 부르는 유일한 스크립트
+│   ├── config/sudoers-robot-power   # 재부팅·끄기만 NOPASSWD
 │   ├── systemd/scan-watchdog.service # /scan 정지·전원(저전압·USB 재연결) 감시·기록 (사용자 서비스)
 │   └── tools/scan_watchdog.py
 └── description/               # my_description 패키지: 보정 URDF + 실물 CAD 메시(meshes/, RViz 표시용)
@@ -150,7 +153,8 @@ turtlebot3-slam-nav-vision/
   ⚠️ **카메라 프로세스는 장치 열거/start 도중 kill 금지** — 카메라가 USB 버스에서 떨어져
   물리 재연결이 필요해진다 (콜드 스타트 열거 ~11s 는 정상, troubleshooting 2026-09-03).
   USB 소프트 리셋도 연타 금지. 긴 SSH 명령은 heredoc 대신 스크립트 파일로 올려 실행.
-  Pi 의 bringup+카메라는 **systemd 사용자 서비스 `tb3-bringup`** 으로 부팅 시 자동 실행 —
+  Pi 의 bringup+카메라는 **systemd 사용자 서비스 `tb3-bringup`** — **부팅 시엔 대기**(robot-standby, 라이다 정지)이고
+  웹 콘솔 전원 버튼(켜기·대기·ROS 재시작·Pi 재부팅·끄기, web-api → 전용 키 SSH → robot_power.sh, 키는 레포 `secrets/` git 제외)으로 켜고 끈다 —
   `systemctl --user status|stop|start|restart tb3-bringup`, 로그 `journalctl --user -u tb3-bringup` (sudo 불필요).
   수동 launch 전엔 반드시 서비스 stop (중복 실행 시 OpenCR 시리얼·카메라 충돌, troubleshooting 2026-11-05).
   라이다 끊김은 두 종류 (troubleshooting 2026-11-12 두 항목): ① 드라이버는 살아 있는데 발행 정지(원인 조사 중, 시리얼 같이 읽기로 복구)
@@ -214,6 +218,7 @@ turtlebot3-slam-nav-vision/
   2D/3D 실시간 표시 (web-api 가 depth 를 직접 역투영 — Nav2 없이도, 높이별 색, 2026-11-12).
   **금지 구역·가상 벽** (거울·유리 대응, 2026-11-12): 저장 지도 주행 중 웹에서 그림 → `maps/<지도>.zones.json` →
   web-api 가 Keepout 마스크·필터 정보 발행 → nav2_params local·global `keepout_filter` (실행 중 즉시 반영, 경로 계산 검증).
+  **전원 버튼** (2026-11-12): 부팅 시 대기 + 웹에서 켜기·대기·ROS 재시작·Pi 재부팅·끄기 (bringup 정지 시 LDS 모터 정지 실측).
   상세는 `docs/my_web_api.md`, 설계·이후 단계는 `docs/web_ui_design.md`
 
 **다음 (우선순위 순)**

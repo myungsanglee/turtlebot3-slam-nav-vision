@@ -38,6 +38,7 @@ from .maps import MapStore
 from .mode_manager import ModeManager
 from .nav import NavController
 from .robot_model import RobotModel
+from .robot_power import RobotPower
 from .zones import rasterize
 from .teleop import TeleopController
 
@@ -190,6 +191,13 @@ class WebApiNode(Node):
                                        float(p('teleop_max_linear', 0.15).value),
                                        float(p('teleop_max_angular', 1.0).value),
                                        on_start=lambda: self.nav.submit('cancel'))
+
+        # ---------- 로봇 전원 (대기·켜기·재시작·재부팅·끄기) — Pi 에 전용 SSH 키로 ----------
+        self.power = RobotPower(self.get_logger(), p('robot_power_host', '').value, p('robot_power_user', 'michael').value,
+                                p('robot_power_key', '/secrets/robot_power_key').value,
+                                p('robot_power_known_hosts', '/secrets/known_hosts').value,
+                                robot_connected_fn=lambda: self.monitors['odom'].snapshot()['state'] == 'ok',
+                                before_stop_fn=self._stop_for_power)
 
         # ---------- 금지 구역 → Nav2 Keepout Filter ----------
         # 필터 정보(어느 토픽의 마스크를 쓸지)와 마스크를 transient local 로 발행 — Nav2 가 나중에 떠도 마지막 값을 받는다.
@@ -383,6 +391,20 @@ class WebApiNode(Node):
             return
         self.footprint.set(transform_points(t, [(pt.x, pt.y) for pt in msg.polygon.points]))
 
+    def _stop_for_power(self):
+        """로봇을 대기·재시작·재부팅·끄기 전에: 조이스틱·주행 목표를 멈추고, 웹에서 띄운 SLAM·Nav2 를 끈다
+        (센서가 사라진 채 Nav2 가 돌면 오류만 쌓이고, 지도 만들기 중이면 지도가 망가진다)."""
+        self.teleop.release()
+        self.nav.submit('cancel')
+        if self.mode.snapshot()['mode'] != 'IDLE':
+            self.mode.request('IDLE')
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 60.0:
+            st = self.mode.snapshot()
+            if st['mode'] == 'IDLE' and st['phase'] in ('idle', 'error'):
+                return
+            time.sleep(0.5)
+
     def _poll_nav2(self):
         self._nav2_ready = self.nav.server_ready()
 
@@ -428,6 +450,7 @@ class WebApiNode(Node):
         return {
             'time': time.time(),
             'mode': self.mode.snapshot()['mode'],
+            'power': self.power.snapshot(),        # 로봇 전원 상태 (running / standby / …) — robot_power.py
             'robot_connected': by_key['odom']['state'] == 'ok',
             'battery': battery_out,
             'velocity': velocity_out,

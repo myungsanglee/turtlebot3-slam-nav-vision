@@ -47,11 +47,12 @@ turtlebot3-slam-nav-vision/
 ├── docs/                      # 컴포넌트별 상세 문서 + 트러블슈팅 로그
 ├── docker/                    # Remote PC 컨테이너 (Dockerfile, entrypoint)
 ├── docker-compose.yml         # zenoh-bridge + remote-pc + web-api 서비스
+├── secrets/                   # (git 제외) 웹 → Pi 전원 버튼용 SSH 키
 ├── config/                    # zenoh 브리지 설정 등 공용 설정
 ├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_vision, my_bringup 통합런치, my_web_api 웹 백엔드)
 ├── web/                       # 웹 콘솔 프론트엔드 (React + TypeScript + Vite)
 ├── robot/src/                 # Raspberry Pi 패키지 (realsense_bringup)
-├── robot/systemd/             # Pi 부팅 시 bringup 자동 실행 + 라이다 감시 (사용자 서비스)
+├── robot/systemd/             # Pi 사용자 서비스: bringup, 부팅 시 대기, 라이다·전원 감시
 ├── robot/tools/               # Pi 보조 스크립트 (scan_watchdog: /scan 정지·전원 저하 기록, 정지 복구)
 └── description/               # my_description 패키지: 보정 URDF + 실물 CAD 메시 (RViz 표시용)
 ```
@@ -70,7 +71,7 @@ turtlebot3-slam-nav-vision/
 | **my_bringup** | 통합 런치 — SLAM/AMCL + Nav2 + Vision(map 좌표 마커) + RViz 한 창 (`system.launch.py`, `system.rviz`) | ✅ 실기 검증 | [docs/my_bringup.md](./docs/my_bringup.md) |
 | **my_vision** | RF-DETR 물체 검출(torch/**TensorRT** 백엔드) + 정렬 depth 로 거리·3D 위치 → **TF2 로 base_link/map 좌표 변환**(`/vision/objects`), RViz 마커, 주석 영상, 카메라 뷰어 | ✅ 실물 검증 (TensorRT 6ms) | [docs/my_vision.md](./docs/my_vision.md) |
 | **카메라 기반 회피** | 라이다(125mm 평면)가 못 보는 장애물 보완 — ① depth 점 구름 → Nav2 장애물 지도, ② **Vision AI 의미 층**: 검출 물체 종류별 회피 여유·사람 근처 감속 (자체 Nav2 costmap 플러그인) | 🔧 ① 구현 (V1, 바닥 검증 대기) · ② 설계 | [docs/vision_avoidance_design.md](./docs/vision_avoidance_design.md) |
-| **web UI** | 터미널·RViz 대신 브라우저로 운용 — FastAPI + rclpy 백엔드 API(모드 관리: 지도 만들기/주행 전환, Nav2 목표, 카메라 MJPEG) + React 프론트엔드, Pi·서버 자동 실행 | 🚧 P0 자동 실행·P1 상태/카메라·P2 지도/클릭 주행·P3 모드 관리/지도 저장/조이스틱 구현 ✅ (실주행 검증 대기, 다음 P4) | [docs/my_web_api.md](./docs/my_web_api.md) · [설계](./docs/web_ui_design.md) |
+| **web UI** | 터미널·RViz 대신 브라우저로 운용 — FastAPI + rclpy 백엔드 API(모드 관리: 지도 만들기/주행 전환, Nav2 목표, 카메라 MJPEG) + React 프론트엔드, Pi·서버 자동 실행 | 🚧 P0 자동 실행·P1 상태/카메라·P2 지도/클릭 주행·P3 모드 관리/지도 저장/조이스틱·전원 버튼(대기·켜기·재부팅·끄기) 구현 ✅ (실주행 검증 대기, 다음 P4) | [docs/my_web_api.md](./docs/my_web_api.md) · [설계](./docs/web_ui_design.md) |
 
 ## 시작하기
 
@@ -80,8 +81,10 @@ turtlebot3-slam-nav-vision/
 
 ### 1. 로봇(Pi) — 전원만 켜면 된다
 
-로봇 기본(모터·오도메트리·라이다·TF) + RealSense 카메라 + zenoh-bridge 가 **부팅 시 자동 실행**된다
-(systemd 사용자 서비스 `tb3-bringup` — 설치는 [docs/pi_setup.md](./docs/pi_setup.md) 9단계). 확인·조작은 sudo 없이:
+배터리를 연결하면 Pi 와 zenoh-bridge 가 켜지고 로봇은 **대기 상태**(라이다·카메라 정지)로 기다린다.
+**웹 콘솔 상단의 「켜기」** 로 로봇 기본(모터·오도메트리·라이다·TF) + RealSense 카메라를 시작한다 — 대기·ROS 재시작·
+Pi 재부팅·끄기도 같은 전원 버튼에서 (systemd 사용자 서비스 `tb3-bringup` + `robot-standby` — 설치는
+[docs/pi_setup.md](./docs/pi_setup.md) 9단계). 터미널로 확인·조작할 때는 sudo 없이:
 
 ```bash
 ssh michael@100.71.74.81                         # 맥에서 (SSH 키 등록돼 있으면 비밀번호 없음)

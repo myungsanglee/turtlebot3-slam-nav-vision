@@ -1,0 +1,6 @@
+# /etc/sudoers.d/robot-power — 웹 콘솔의 'Pi 재부팅·끄기' 버튼용 (robot/tools/robot_power.sh)
+# michael 이 비밀번호 없이 실행할 수 있는 것은 정확히 이 두 명령뿐이다.
+# 설치 (docs/pi_setup.md 9-2):
+#   sudo install -m 440 -o root -g root ~/turtlebot3-slam-nav-vision/robot/config/sudoers-robot-power /etc/sudoers.d/robot-power
+#   sudo visudo -c
+michael ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff

@@ -150,6 +150,9 @@ RViz/Foxglove 는 개발자 디버깅용으로 남긴다.
 시작·중지·재시작이 sudo 없이 되므로, 원격(SSH·Claude)과 나중의 웹 UI 가 로봇 쪽 서비스를 다룰 수 있다.
 핵심 설정은 `KillSignal=SIGINT`(cgroup 전체에 Ctrl+C — 노드 고아 방지), `TimeoutStopSec=30`(시작 중인 카메라 보호),
 `Restart=on-failure`, OpenCR·LDS 장치 대기. 설치·운용 명령은 [pi_setup.md](./pi_setup.md) 9단계.
+**변경 (2026-11-12)**: 부팅 즉시 실행 → **부팅 시 대기 + 웹 전원 버튼**. 쓰지 않을 때도 라이다가 돌며 배터리를 써서,
+부팅하면 `robot-standby.service` 가 라이다를 멈춘 채 기다리고 웹 「켜기」·「대기」·재부팅·끄기가 전용 SSH 키로
+`robot/tools/robot_power.sh` 를 부른다 (my_web_api.md 4.19).
 
 **서버** — remote-pc 에 `restart: unless-stopped` 추가 (✅ P0, 서버 재부팅 후 자동 기동). P1 에서 compose 에
 `web-api` 서비스 추가 (`remote-pc` 이미지 재사용, 같은 재시작 정책, 포트 8080).

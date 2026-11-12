@@ -35,9 +35,25 @@ export interface NavigationStatus {
   keepout: { map: string | null; zones: number } // Nav2 에 적용 중인 금지 구역
 }
 
+// 로봇 전원 상태 (서버 robot_power.py) — Pi 에 SSH 로 물어 본 bringup 상태 + 진행 중 동작
+export type PowerState =
+  | 'unconfigured' | 'unreachable' | 'off' | 'rebooting'
+  | 'standby' | 'starting' | 'running' | 'stopping' | 'error'
+export type PowerAction = 'wake' | 'standby' | 'restart' | 'reboot' | 'poweroff'
+
+export interface Power {
+  state: PowerState
+  bringup: string | null
+  uptime: number | null
+  throttled: string | null
+  busy: PowerAction | null
+  last: { action: PowerAction; at: number; ok: boolean; message: string } | null
+}
+
 export interface Status {
   time: number
   mode: string
+  power: Power
   robot_connected: boolean
   battery: Battery | null
   velocity: { linear: number; angular: number } | null

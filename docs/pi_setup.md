@@ -203,16 +203,18 @@ URDF 가 참조하는 CAD 메시(`package://my_description/meshes/...`)는 **Pi 
 robot_state_publisher 는 URDF 텍스트만 publish 하고, 메시를 여는 것은 서버의 RViz 뿐
 (server_setup.md 3단계의 my_description 패키지). URDF 를 갱신했으면 bringup 재실행.
 
-## 9. 부팅 시 자동 실행 (systemd 사용자 서비스)
+## 9. bringup 서비스 (systemd 사용자 서비스)
 
-로봇 전원을 켜면 bringup + 카메라가 자동으로 뜨게 한다. **사용자 서비스**로 만들어 최초 1회 설정 외에는
-sudo 없이 켜고 끈다 (시스템 서비스는 매번 sudo 필요 → 원격 운용·웹 UI 에 불리).
+bringup + 카메라를 **사용자 서비스** `tb3-bringup` 으로 등록한다. 최초 1회 설정 외에는 sudo 없이 켜고 끈다
+(시스템 서비스는 매번 sudo 필요 → 원격 운용·웹 UI 에 불리). **부팅 시 자동 시작은 하지 않는다** — 부팅하면 대기 상태이고
+웹 콘솔 「켜기」 로 시작한다 (쓰지 않을 때 라이다가 돌며 배터리를 쓰지 않게, 9-2).
 
 ```bash
 sudo loginctl enable-linger michael        # 최초 1회 — 로그인 안 해도 부팅 시 사용자 서비스가 돈다
-systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/tb3-bringup.service   # 레포 파일로 링크 등록
-systemctl --user start tb3-bringup
+systemctl --user link ~/turtlebot3-slam-nav-vision/robot/systemd/tb3-bringup.service   # 레포 파일로 등록 (부팅 자동 시작 X)
+systemctl --user start tb3-bringup         # 지금 켜기 (웹 「켜기」 와 같음)
 ```
+부팅 즉시 실행을 원하면 `systemctl --user enable tb3-bringup` + `systemctl --user disable robot-standby` (9-2).
 
 | 하고 싶은 것 | 명령 |
 |---|---|
@@ -256,6 +258,25 @@ cat ~/.ros/scan_watchdog/incidents.log         # 사고별 상세 진단 (없으
 less ~/.ros/scan_watchdog/power-$(date +%F).log # 10초 전원 기록 (14일 보관)
 ```
 코드가 바뀌면(git pull) `systemctl --user restart scan-watchdog`.
+
+### 9-2. 웹 콘솔 전원 버튼 (대기·켜기·재부팅·끄기)
+
+부팅 시 대기 상태로 두고, 서버 웹 콘솔이 전용 SSH 키로 `robot/tools/robot_power.sh` 만 실행해 켜고 끈다
+(docs/my_web_api.md 4.19).
+
+```bash
+# ① 부팅 시 대기 (bringup 자동 시작 끄기 + 라이다 정지 명령 서비스)
+systemctl --user disable tb3-bringup
+systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/robot-standby.service
+
+# ② 서버의 전용 공개키를 '이 스크립트만 실행' 으로 등록 (서버 secrets/robot_power_key.pub — docs/server_setup.md 3-2)
+echo 'restrict,command="/home/michael/turtlebot3-slam-nav-vision/robot/tools/robot_power.sh" <공개키 한 줄>' >> ~/.ssh/authorized_keys
+
+# ③ 재부팅·끄기만 비밀번호 없이 (sudo 1회)
+sudo install -m 440 -o root -g root ~/turtlebot3-slam-nav-vision/robot/config/sudoers-robot-power /etc/sudoers.d/robot-power
+sudo visudo -c                                  # 문법 확인 — "parsed OK"
+```
+확인: 서버에서 `curl -s localhost:8080/api/power` → `"state": "standby"` 또는 `"running"`.
 
 ## 10. 최종 검증
 

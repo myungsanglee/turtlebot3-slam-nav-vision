@@ -1,5 +1,8 @@
 # =============================================================================
-# tb3-bringup.service — 로봇(Pi) 부팅 시 bringup + RealSense 카메라 자동 실행 (systemd **사용자** 서비스)
+# tb3-bringup.service — 로봇(Pi) bringup + RealSense 카메라 (systemd **사용자** 서비스)
+#
+# 부팅 시 자동 시작하지 않는다 (2026-11-12~): 부팅하면 대기(robot-standby.service), 웹 콘솔 「켜기」·「대기」가
+#   robot/tools/robot_power.sh 로 start/stop 한다 — 쓰지 않을 때 라이다가 돌며 배터리를 쓰지 않게.
 #
 # 왜 사용자 서비스인가: 시스템 서비스는 시작/중지마다 sudo 가 필요하다. 사용자 서비스는 최초 1회
 #   `sudo loginctl enable-linger michael` (로그인 없이도 부팅 시 사용자 서비스 실행) 만 하면
@@ -7,8 +10,9 @@
 #
 # 설치 (docs/pi_setup.md 9단계):
 #   sudo loginctl enable-linger michael                       # 최초 1회
-#   systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/tb3-bringup.service
+#   systemctl --user link ~/turtlebot3-slam-nav-vision/robot/systemd/tb3-bringup.service   # 등록만 (부팅 자동 X)
 #   systemctl --user start tb3-bringup
+#   (부팅 즉시 실행으로 되돌리기: systemctl --user enable tb3-bringup && systemctl --user disable robot-standby)
 # 레포 파일에 대한 링크로 등록되므로 git pull 로 바뀌면 `systemctl --user daemon-reload` 후 재시작.
 #
 # launch 인자 바꾸기 (예: 카메라 15fps): ~/.config/tb3-bringup.env 에 한 줄

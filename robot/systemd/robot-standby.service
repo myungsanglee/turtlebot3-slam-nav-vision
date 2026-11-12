@@ -1,0 +1,21 @@
+# =============================================================================
+# robot-standby.service — 부팅 시 '대기' 상태로 (systemd 사용자 서비스, oneshot)
+#
+# 배터리를 연결하면 Pi 가 켜지지만 bringup(라이다·카메라·모터)은 자동 시작하지 않는다 — 쓰지 않을 때 라이다가
+# 계속 돌며 배터리를 쓰지 않게. 웹 콘솔의 '켜기' 버튼(또는 systemctl --user start tb3-bringup)으로 시작한다.
+# 이 서비스는 라이다에 정지 명령만 보낸다 (전원만 들어오고 드라이버가 없는 상태에서도 확실히 멈추도록).
+#
+# 설치 (docs/pi_setup.md 9-2):
+#   systemctl --user disable tb3-bringup        # 부팅 자동 시작 끄기 (서비스 파일은 그대로 — 웹이 start/stop)
+#   systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/robot-standby.service
+# 예전처럼 부팅 즉시 실행으로 되돌리기: systemctl --user disable robot-standby && systemctl --user enable tb3-bringup
+# =============================================================================
+[Unit]
+Description=Robot standby at boot (stop LDS motor, bringup waits for web 'wake')
+
+[Service]
+Type=oneshot
+ExecStart=%h/turtlebot3-slam-nav-vision/robot/tools/robot_power.sh boot
+
+[Install]
+WantedBy=default.target

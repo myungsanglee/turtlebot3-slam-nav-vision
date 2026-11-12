@@ -19,6 +19,8 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
                               저장 지도 목록 / 지금 지도 저장 / 삭제 / 미리보기
   WS   /ws                    status(2Hz)·pose(10Hz)·scan·depth_points·path·footprint·map·costmap·nav·mode 를 바뀔 때 push,
                               브라우저 → 서버: {"type": "teleop", "x", "y", "scale"} (조이스틱, 0.1초마다) / {"type": "teleop_release"}
+  GET  /api/power · POST /api/power {action}   로봇 전원: wake(켜기) / standby(대기) / restart(ROS 재시작) /
+                              reboot(Pi 재부팅) / poweroff(Pi 끄기) — 대기·재시작·끄기 전에 웹에서 띄운 SLAM·Nav2 를 먼저 끈다
   GET  /docs                  자동 생성 API 문서
 """
 from __future__ import annotations
@@ -50,6 +52,10 @@ class ModeRequest(BaseModel):
 
 class ZonesPut(BaseModel):
     zones: list = Field(description='[{kind: area|wall, points: [[x, y], ...], name}] — 지도 좌표(m)')
+
+
+class PowerRequest(BaseModel):
+    action: str = Field(description='wake | standby | restart | reboot | poweroff')
 
 
 class MapSave(BaseModel):
@@ -186,6 +192,15 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
     @app.post('/api/nav/initial_pose')
     async def nav_initial_pose(pose: Pose2D):
         return await nav_call('initial_pose', x=pose.x, y=pose.y, yaw=pose.yaw)
+
+    # ---------------- 로봇 전원 ----------------
+    @app.get('/api/power')
+    def power_state():
+        return node.power.snapshot()
+
+    @app.post('/api/power')
+    def power_set(req: PowerRequest):
+        return result(node.power.request(req.action))
 
     # ---------------- 모드·지도 (P3) ----------------
     @app.get('/api/mode')
