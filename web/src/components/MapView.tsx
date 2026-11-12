@@ -2,7 +2,7 @@ import { Box, Typography } from '@mui/material'
 import type Konva from 'konva'
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react'
 import { Arrow, Group, Image as KImage, Layer, Line, Shape, Stage } from 'react-konva'
-import type { GridMeta, Point, Pose } from '../api/types'
+import type { GridMeta, Point, Pose, RobotModelInfo } from '../api/types'
 
 // ───────────────────────────────────────────────────────────────────────────
 // 좌표 처리 원리
@@ -30,6 +30,8 @@ interface Props {
   globalPath: Point[]
   localPath: Point[]
   footprint: Point[]
+  robotModel: RobotModelInfo | null // CAD 메시의 위에서 본 모습 (없으면 화살표만)
+  robotModelKey: number // 이미지 다시 받기용
   goal: Pose | null // 진행 중인 목표
   pending: Pose | null // 사용자가 찍었지만 아직 보내지 않은 목표
   tool: Tool
@@ -83,6 +85,7 @@ export default function MapView({ ref, ...p }: Props) {
 
   const mapImg = useImage(p.map ? `/api/map.png?v=${p.map.version}` : null)
   const costImg = useImage(p.costmap ? `/api/costmap.png?v=${p.costmap.version}` : null)
+  const robotImg = useImage(p.robotModel?.available ? `/api/robot/top.png?k=${p.robotModelKey}` : null)
 
   // 컨테이너 크기 따라가기 (반응형)
   useLayoutEffect(() => {
@@ -227,10 +230,6 @@ export default function MapView({ ref, ...p }: Props) {
             {p.layers.paths && p.localPath.length > 1 && (
               <Line points={flat(p.localPath)} stroke="#ffeb3b" strokeWidth={2.5} strokeScaleEnabled={false} listening={false} />
             )}
-            {showLive && p.footprint.length > 2 && (
-              <Line points={flat(p.footprint)} closed stroke="#40c4ff" fill="rgba(64,196,255,0.18)" strokeWidth={2} strokeScaleEnabled={false} listening={false} />
-            )}
-            {showLive && p.pose && arrow(p.pose, 0.25, '#40c4ff', 'robot')}
             {p.goal && arrow(p.goal, 0.3, '#4caf50', 'goal')}
             {p.pending && arrow(p.pending, 0.3, p.tool === 'initial' ? '#ce93d8' : '#ffa726', 'pending')}
             {drag && (
@@ -245,6 +244,22 @@ export default function MapView({ ref, ...p }: Props) {
                 listening={false}
               />
             )}
+          </Group>
+        </Layer>
+        {/* 로봇 CAD 이미지는 별도 레이어: 지도 칸은 또렷하게(보간 끔), 로봇 그림은 부드럽게(보간 켬) */}
+        <Layer listening={false}>
+          <Group scaleY={-1}>
+            {showLive && p.pose && p.robotModel?.top_view && (
+              // CAD 메시를 위에서 본 이미지를 로봇 위치·방향에 놓는다 (이미지 좌표 = base_footprint 좌표)
+              <Group x={p.pose.x} y={p.pose.y} rotation={p.pose.yaw * DEG}>
+                <Grid meta={p.robotModel.top_view} img={robotImg} opacity={0.95} />
+              </Group>
+            )}
+            {showLive && p.footprint.length > 2 && (
+              // Nav2 가 쓰는 실측 footprint (뒤쪽 여백 = 카메라 USB 케이블 돌출분)
+              <Line points={flat(p.footprint)} closed stroke="#40c4ff" dash={[6, 4]} strokeWidth={1.5} strokeScaleEnabled={false} />
+            )}
+            {showLive && p.pose && arrow(p.pose, robotImg ? 0.12 : 0.25, '#40c4ff', 'robot')}
           </Group>
         </Layer>
       </Stage>

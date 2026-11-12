@@ -23,12 +23,14 @@ from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CompressedImage, LaserScan
+from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from .geometry import compose, downsample, scan_to_points, transform_points, yaw_from_quaternion
 from .map_codec import costmap_to_rgba, encode_png, map_to_rgba
 from .monitor import FrameStore, TopicMonitor, TopicSpec, battery_level
 from .nav import NavController
+from .robot_model import RobotModel
 
 # key: (파라미터 이름, 메시지 타입, 한글 이름, 기대 Hz, optional)
 #   optional=True: 안 들어와도 오류가 아님 (Vision 은 SLAM/주행 모드에서만 켜짐)
@@ -148,6 +150,11 @@ class WebApiNode(Node):
                                  p('topic_initialpose', '/initialpose').value, self.fixed_frame)
         self._nav2_ready = False
         self.create_timer(1.0, self._poll_nav2)
+
+        # 로봇 모양: Pi 가 보내는 URDF(transient local) → base_link 메시 → 위에서 본 이미지·3D 메시
+        self.robot_model = RobotModel(self.get_logger())
+        self.create_subscription(String, p('topic_robot_description', '/robot_description').value,
+                                 lambda m: self.robot_model.update(m.data), LATCHED_QOS)
 
         self.get_logger().info(f'web_api: http://{self.host}:{self.port}  static_dir={self.static_dir or "(없음 — API 만)"}'
                                f'  fixed_frame={self.fixed_frame}')

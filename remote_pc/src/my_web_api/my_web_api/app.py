@@ -6,6 +6,8 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
   GET  /api/vision.mjpg       Vision 검출 결과 영상 (MJPEG, Vision 이 켜져 있을 때)
   GET  /api/map  · /api/map.png          지도 메타(해상도·원점·크기·버전) / 이미지
   GET  /api/costmap · /api/costmap.png   로컬 장애물 지도 메타 / 이미지 (원점은 map 좌표로 변환됨)
+  GET  /api/robot · /api/robot/top.png · /api/robot/mesh.stl
+                              로봇 모양 (URDF 의 base_link CAD 메시): 정보 / 위에서 본 이미지 / 3D 용 STL
   GET  /api/nav               주행 상태
   POST /api/nav/goal          {x, y, yaw}  지도 좌표로 이동 (Nav2 NavigateToPose)
   POST /api/nav/cancel        이동 취소
@@ -20,7 +22,7 @@ import os
 import threading
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -106,6 +108,23 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
     @app.get('/api/costmap.png')
     def costmap_png():
         return grid_png(node.costmap, '장애물 지도')
+
+    # ---------------- 로봇 모양 ----------------
+    @app.get('/api/robot')
+    def robot():
+        return node.robot_model.info
+
+    @app.get('/api/robot/top.png')
+    def robot_top():
+        if node.robot_model.top_png is None:
+            raise HTTPException(404, node.robot_model.info.get('reason', '로봇 모델 없음'))
+        return Response(node.robot_model.top_png, media_type='image/png', headers={'Cache-Control': 'no-cache'})
+
+    @app.get('/api/robot/mesh.stl')
+    def robot_mesh():
+        if not node.robot_model.mesh_path:
+            raise HTTPException(404, node.robot_model.info.get('reason', '로봇 모델 없음'))
+        return FileResponse(node.robot_model.mesh_path, media_type='model/stl', headers={'Cache-Control': 'no-cache'})
 
     # ---------------- 주행 (P2) ----------------
     async def nav_call(kind: str, **kw):

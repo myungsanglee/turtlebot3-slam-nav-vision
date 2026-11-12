@@ -3,6 +3,7 @@ import FitScreenIcon from '@mui/icons-material/FitScreen'
 import { Alert, Box, Button, Card, CardContent, Chip, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
 import { useRef, useState } from 'react'
 import { useInitialPose, useNavGoal } from '../api/nav'
+import { useRobotModel } from '../api/robot'
 import type { Pose, RobotStream } from '../api/types'
 import MapView, { type Layers, type MapHandle, type Tool } from './MapView'
 
@@ -21,6 +22,7 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
   const mapRef = useRef<MapHandle>(null)
   const [pending, setPending] = useState<Pose | null>(null)
   const goal = useNavGoal()
+  const robotModel = useRobotModel(robot.connectionId)
   const initial = useInitialPose()
 
   const nav = robot.status?.navigation
@@ -87,6 +89,8 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
             globalPath={active ? robot.paths.global : []}
             localPath={active ? robot.paths.local : []}
             footprint={robot.footprint}
+            robotModel={robotModel.data ?? null}
+            robotModelKey={robot.connectionId}
             goal={active ? (robot.nav?.goal ?? null) : null}
             pending={pending}
             tool={tool}

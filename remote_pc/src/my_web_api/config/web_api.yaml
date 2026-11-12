@@ -36,3 +36,4 @@ web_api:
     topic_footprint: /local_costmap/published_footprint # 실측 footprint (nav2_params.yaml 이 단일 소스)
     nav_action: navigate_to_pose
     topic_initialpose: /initialpose
+    topic_robot_description: /robot_description     # 로봇 모양 = URDF 의 base_link 메시 (옆에 *_web.stl 있으면 그것)

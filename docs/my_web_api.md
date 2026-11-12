@@ -32,12 +32,13 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 ├── my_web_api/
 │   ├── monitor.py                   ROS 없는 순수 로직: 토픽 주기 계산, 최신 프레임 보관, 배터리 판정
 │   ├── geometry.py                  ROS 없는 2D 변환: 쿼터니언↔yaw, 점 변환, 라이다 극좌표→점, 솎기
+│   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
 │   ├── nav.py                       Nav2 목표·취소·진행 상태, AMCL 초기 위치 (ROS 스레드 큐)
 │   ├── ros_node.py                  rclpy 노드: 구독·TF → 지도 좌표로 정리, snapshot() 으로 상태 조립
 │   ├── app.py                       FastAPI 라우트: 상태·영상·지도·주행 API, WebSocket, 정적 파일
 │   └── server.py                    진입점: ROS 스레드 + uvicorn, 종료 순서
-├── test/                            monitor·geometry·map_codec 단위 테스트 15개 (ROS 불필요)
+├── test/                            monitor·geometry·map_codec 단위 테스트 20개 (ROS 불필요)
 └── tools/                           fake_nav.py(로봇 안 움직이는 가짜 Nav2) · nav_api_check.py(주행 API 점검)
 
 web/                                 React 프론트엔드 (npm 프로젝트, ROS 패키지 아님)
@@ -200,6 +201,24 @@ feedback·결과 콜백 ─▶ 상태(state·남은 거리·경과·복구 횟�
 실패는 HTTP 코드로 구분한다: Nav2 미실행 503, 거절·진행 중 목표 없음 409, 응답 없음 504. 목표를 연달아 보내면
 이전 목표의 늦은 콜백이 새 상태를 덮어쓰지 않도록 목표 번호(seq)를 비교한다.
 
+### 4.12 로봇 모양 — URDF 의 CAD 메시를 그대로
+
+지도 위 로봇은 화살표가 아니라 **실물 CAD 를 위에서 본 모습**으로 그린다 (RViz 의 RobotModel 을 위에서 본 것과 같다).
+
+![CAD 메시를 위에서 본 이미지 (서버 렌더)](./images/robot_top_view.png)
+
+- **URDF 가 단일 소스**: Pi 가 보내는 `/robot_description` 에서 base_link 의 visual 메시 경로(`package://…`)·scale·
+  origin 과 `base_footprint→base_link` 조인트 오프셋을 읽는다 (`robot_model.py`). CAD 를 바꿔 URDF 를 갱신하면 웹도
+  따라온다 — 웹 쪽에 치수·파일명을 따로 적지 않는다.
+- **위에서 본 이미지는 서버가 한 번 그린다**: STL(10만 삼각형)을 위에서 투영해 낮은 면부터 칠하고 높은 면이 덮는
+  화가 알고리즘으로 PNG(0.5mm/픽셀, 462×354)를 만든다. 색은 높이(바닥 어둡게 → 위 밝게)가 주, 면 방향 음영은 약하게.
+  이미지 좌표 = base_footprint 좌표라서 웹은 로봇 위치에 놓고 yaw 만큼 돌리기만 한다. 수백 ms 걸리므로 ROS 콜백을
+  막지 않게 별도 스레드에서.
+- 3만 삼각형 경량본은 구멍 뚫린 플레이트가 구겨져 보여 이 이미지엔 쓰지 않고, 브라우저 3D 화면 전송용으로만 쓴다
+  (`GET /api/robot/mesh.stl`, docs/description.md 3.4).
+- 지도 칸은 또렷하게(이미지 보간 끔), 로봇 그림은 부드럽게(보간 켬) 보이도록 로봇은 별도 Konva 레이어에 그린다.
+- Nav2 가 켜져 있으면 실측 footprint 를 점선으로 겹쳐 그린다 — 로봇 뒤 여백은 카메라 USB 케이블 돌출분(정상).
+
 ## 5. 실행
 
 ### 평소 (서버 부팅 시 자동)
@@ -228,7 +247,7 @@ docker compose restart web-api       # 설정(web_api.yaml)·백엔드 코드 �
 ### 테스트
 
 ```bash
-docker compose exec remote-pc bash -c 'cd /overlay_ws/src/my_web_api && python3 -m pytest -q test'   # 15 passed
+docker compose exec remote-pc bash -c 'cd /overlay_ws/src/my_web_api && python3 -m pytest -q test'   # 20 passed
 cd web && npm run build && npm run lint                                                              # 타입·린트
 ```
 
