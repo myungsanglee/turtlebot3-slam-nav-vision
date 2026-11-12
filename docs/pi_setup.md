@@ -267,6 +267,7 @@ less ~/.ros/scan_watchdog/power-$(date +%F).log # 10초 전원 기록 (14일 보
 ```bash
 # ① 부팅 시 대기 (bringup 자동 시작 끄기 + 라이다 정지 명령 서비스)
 systemctl --user disable tb3-bringup
+systemctl --user link ~/turtlebot3-slam-nav-vision/robot/systemd/tb3-bringup.service   # ★ disable 이 레포 파일 링크까지 지우므로 다시 등록
 systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/robot-standby.service
 
 # ② 서버의 전용 공개키를 '이 스크립트만 실행' 으로 등록 (서버 secrets/robot_power_key.pub — docs/server_setup.md 3-2)

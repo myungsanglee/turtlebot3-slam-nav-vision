@@ -382,6 +382,11 @@ Nav2:    global·local costmap 의 KeepoutFilter 가 마스크 칸을 LETHAL 로
 - **안전**: 대기·재시작·재부팅·끄기 전에 조이스틱 해제·주행 목표 취소, 웹에서 띄운 SLAM·Nav2 를 IDLE 로 끄고 끝날 때까지
   기다린다 (센서 없이 Nav2 가 돌거나 지도 만들기가 망가지지 않게). 모든 동작은 확인 창을 거치고, 지도 작업 중이면 경고를 띄운다.
 - 대기·꺼짐처럼 일부러 끈 상태에선 '로봇 응답 없음' 경고 칩을 숨긴다.
+- 검증 (2026-11-12, 실기): 대기 → 3초 'stopping' → 6초 'standby', Pi 에 ROS 노드 없음·LDS 시리얼 0 B/2s.
+  켜기 → 'starting' → 15초 뒤 로봇 데이터 수신 'running'. Pi 재부팅 → 'rebooting' → **54초 뒤 'standby'**
+  (robot-standby 정상 종료, LDS 0 B, bringup 꺼짐, zenoh-bridge·scan-watchdog 실행, throttled 0x0).
+- 설치 함정: 레포 파일 링크로 enable 된 사용자 서비스는 `systemctl --user disable` 이 **링크까지 지운다** → 'Unit not found'
+  로 웹 「켜기」 가 실패. `systemctl --user link …/tb3-bringup.service` 로 다시 등록 (pi_setup 9-2 ①).
 
 ## 5. 실행
 
