@@ -3,7 +3,7 @@ import type Konva from 'konva'
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react'
 import { Arrow, Group, Image as KImage, Layer, Line, Shape, Stage } from 'react-konva'
 import { DEPTH_COLORS, splitDepth } from '../api/depth'
-import type { DepthPoints, GridMeta, Point, Point3, Pose, RobotModelInfo } from '../api/types'
+import type { DepthPoints, GridMeta, Point, Point3, Pose, RobotModelInfo, Zone, ZoneKind } from '../api/types'
 
 // ───────────────────────────────────────────────────────────────────────────
 // 좌표 처리 원리
@@ -13,7 +13,7 @@ import type { DepthPoints, GridMeta, Point, Point3, Pose, RobotModelInfo } from 
 //   선 굵기·점 크기는 확대해도 같은 픽셀로 보이게 strokeScaleEnabled=false / 반지름 = 픽셀 / s.
 // ───────────────────────────────────────────────────────────────────────────
 
-export type Tool = 'view' | 'goal' | 'initial'
+export type Tool = 'view' | 'goal' | 'initial' | 'zone'
 
 export interface Layers {
   costmap: boolean
@@ -57,6 +57,8 @@ interface Props {
   robotModel: RobotModelInfo | null // CAD 메시의 위에서 본 모습 (없으면 화살표만)
   goal: Pose | null // 진행 중인 목표
   pending: Pose | null // 사용자가 찍었지만 아직 보내지 않은 목표
+  zones: Zone[] // 저장된 금지 구역 (저장 지도로 주행 중일 때)
+  draft: { kind: ZoneKind; points: Point[] } | null // 그리는 중인 구역
   tool: Tool
   layers: Layers
   follow: boolean
@@ -248,7 +250,38 @@ export default function MapView({ ref, ...p }: Props) {
             )}
             {p.goal && arrow(p.goal, 0.3, '#4caf50', 'goal')}
             {p.pending && arrow(p.pending, 0.3, p.tool === 'initial' ? '#ce93d8' : '#ffa726', 'pending')}
-            {drag && (
+            {showMap && p.frame === p.mapFrame && p.zones.map((z, i) => (
+              // 금지 구역: 반투명 빨강 영역 / 가상 벽: 굵은 빨강 선 (Nav2 가 통과 불가로 막는 곳)
+              <Line
+                key={`zone-${i}`}
+                points={flat(z.points)}
+                closed={z.kind === 'area'}
+                fill={z.kind === 'area' ? 'rgba(255, 82, 82, 0.28)' : undefined}
+                stroke="#ff5252"
+                strokeWidth={z.kind === 'area' ? 2 : 5}
+                lineCap="round"
+                lineJoin="round"
+                strokeScaleEnabled={false}
+                listening={false}
+              />
+            ))}
+            {p.draft && p.draft.points.length > 0 && (
+              <>
+                <Line
+                  points={flat(p.draft.points)}
+                  closed={p.draft.kind === 'area' && p.draft.points.length > 2}
+                  fill={p.draft.kind === 'area' ? 'rgba(255, 167, 38, 0.25)' : undefined}
+                  stroke="#ffa726"
+                  strokeWidth={p.draft.kind === 'area' ? 2 : 5}
+                  dash={[8, 5]}
+                  lineCap="round"
+                  strokeScaleEnabled={false}
+                  listening={false}
+                />
+                <Dots points={p.draft.points} color="#ffa726" r={4 * px} />
+              </>
+            )}
+            {drag && p.tool !== 'zone' && (
               <Arrow
                 points={[...drag.from, ...drag.to]}
                 stroke="#ffa726"

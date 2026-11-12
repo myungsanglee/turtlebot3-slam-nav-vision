@@ -255,6 +255,14 @@ local_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
         inflation_radius: 0.55      # 장애물 주변 안전 여유 폭
+      # ── 금지 구역 (Keepout Filter) ── 거울·유리처럼 센서가 못 보는 곳을 사람이 웹 지도에 그려 막는다.
+      # 마스크와 필터 정보는 웹 백엔드(my_web_api)가 저장 지도별 구역 파일로 만들어 발행 (my_web_api.md 4.18).
+      # 마스크는 map 좌표 — local(odom 기준)에서도 필터가 TF 로 변환해 적용한다 (Nav2 1.1.20 KeepoutFilter).
+      filters: ["keepout_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: True
+        filter_info_topic: "/costmap_filter_info"
       always_send_full_costmap: True
 
 # ── Global Costmap: 전체 지도 기반 장애물 지도 (경로 계획용) ─────────────────
@@ -313,6 +321,14 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
         inflation_radius: 0.55
+      # ── 금지 구역 (Keepout Filter) ── 거울·유리처럼 센서가 못 보는 곳을 사람이 웹 지도에 그려 막는다.
+      # 마스크와 필터 정보는 웹 백엔드(my_web_api)가 저장 지도별 구역 파일로 만들어 발행 (my_web_api.md 4.18).
+      # 마스크는 map 좌표 — local(odom 기준)에서도 필터가 TF 로 변환해 적용한다 (Nav2 1.1.20 KeepoutFilter).
+      filters: ["keepout_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: True
+        filter_info_topic: "/costmap_filter_info"
       always_send_full_costmap: True
 
 # ── Map Server / Saver: 저장된 지도 사용 시에만 실행됨 ──────────────────────

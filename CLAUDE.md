@@ -209,6 +209,8 @@ turtlebot3-slam-nav-vision/
   지도(2D/3D, CAD 로봇) 위 라이다·장애물 지도·경로와 클릭 주행(Nav2 액션, 확인 후 전송), 운용 모드 버튼
   (지도 만들기·저장·저장 지도로 주행), 조이스틱 — 터미널 없이 운용 (실주행 검증 대기). 카메라 depth 점도 라이다처럼
   2D/3D 실시간 표시 (web-api 가 depth 를 직접 역투영 — Nav2 없이도, 높이별 색, 2026-11-12).
+  **금지 구역·가상 벽** (거울·유리 대응, 2026-11-12): 저장 지도 주행 중 웹에서 그림 → `maps/<지도>.zones.json` →
+  web-api 가 Keepout 마스크·필터 정보 발행 → nav2_params local·global `keepout_filter` (실행 중 즉시 반영, 경로 계산 검증).
   상세는 `docs/my_web_api.md`, 설계·이후 단계는 `docs/web_ui_design.md`
 
 **다음 (우선순위 순)**

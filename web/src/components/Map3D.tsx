@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three/examples/jsm/controls/OrbitControls.js'
 import { DEPTH_COLORS } from '../api/depth'
-import type { DepthPoints, GridMeta, Point, Pose, RobotModelInfo } from '../api/types'
+import type { DepthPoints, GridMeta, Point, Pose, RobotModelInfo, Zone } from '../api/types'
 
 // ───────────────────────────────────────────────────────────────────────────
 // 3D 화면 (보기 전용, RViz 의 Orbit 시점과 같은 역할) — 「3D」 탭을 누를 때만 내려받는다 (MapPanel 의 lazy import).
@@ -32,6 +32,7 @@ interface Props {
   footprint: Point[]
   robotModel: RobotModelInfo | null
   goal: Pose | null
+  zones: Zone[]
   layers: { costmap: boolean; scan: boolean; depth: boolean; paths: boolean }
   follow: boolean
 }
@@ -206,6 +207,11 @@ export default function Map3D(p: Props) {
       {p.footprint.length > 2 && (
         <Line points={xyz([...p.footprint, p.footprint[0]], 0.006)} color="#40c4ff" lineWidth={1.5} dashed dashSize={0.03} gapSize={0.02} />
       )}
+      {showMap &&
+        p.zones.map((z, i) => (
+          // 금지 구역(외곽선)·가상 벽 — 바닥 바로 위 빨강
+          <Line key={`zone-${i}`} points={xyz(z.kind === 'area' ? [...z.points, z.points[0]] : z.points, 0.012)} color="#ff5252" lineWidth={z.kind === 'area' ? 2 : 5} />
+        ))}
       {p.goal && (
         <Line
           points={[[p.goal.x, p.goal.y, 0.02], [p.goal.x + 0.3 * Math.cos(p.goal.yaw), p.goal.y + 0.3 * Math.sin(p.goal.yaw), 0.02]]}

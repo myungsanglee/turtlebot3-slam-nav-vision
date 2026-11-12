@@ -47,7 +47,10 @@ web_api:
     topic_footprint: /local_costmap/published_footprint # 실측 footprint (nav2_params.yaml 이 단일 소스)
     nav_action: navigate_to_pose
     topic_initialpose: /initialpose
-    topic_robot_description: /robot_description     # 로봇 모양 = URDF 의 base_link 메시 (옆에 *_web.stl 있으면 그것)
+    topic_robot_description: /robot_description     # 로봇 모양 = URDF 의 base_link 메시
+    # 금지 구역 → Nav2 Keepout Filter (nav2_params.yaml 의 keepout_filter.filter_info_topic 과 맞출 것)
+    topic_keepout_info: /costmap_filter_info
+    topic_keepout_mask: /keepout_filter_mask
 
     # ---- 모드 관리·지도 저장·조이스틱 (P3) ----
     maps_dir: /overlay_ws/maps        # 저장 지도 (호스트 remote_pc/maps, git 제외). map_saver 형식 yaml + pgm

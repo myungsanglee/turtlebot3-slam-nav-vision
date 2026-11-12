@@ -32,6 +32,7 @@ export interface NavigationStatus {
   costmap_age: number | null // 마지막 갱신 후 초 — 오래되면(Nav2 꺼짐) 화면에서 숨긴다
   footprint_age: number | null
   nav2_ready: boolean
+  keepout: { map: string | null; zones: number } // Nav2 에 적용 중인 금지 구역
 }
 
 export interface Status {
@@ -112,6 +113,14 @@ export interface ModeState {
   version: number
 }
 
+// 금지 구역·가상 벽 (저장 지도별, 지도 좌표 m) — 서버 zones.py
+export type ZoneKind = 'area' | 'wall'
+export interface Zone {
+  kind: ZoneKind // area: 3점 이상 닫힌 영역 / wall: 2점 이상 이은 선
+  points: Point[]
+  name: string
+}
+
 export interface SavedMap {
   name: string
   width: number
@@ -119,6 +128,7 @@ export interface SavedMap {
   resolution: number
   size_m: [number, number]
   saved: number // epoch 초
+  zones: number // 금지 구역 개수
 }
 
 export interface RobotStream {

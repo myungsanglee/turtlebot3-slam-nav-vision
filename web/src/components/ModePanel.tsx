@@ -76,7 +76,7 @@ export default function ModePanel({ mode }: { mode: ModeState | null }) {
             <TextField select size="small" label="저장 지도" value={chosen} onChange={(e) => setSelected(e.target.value)} sx={{ flex: 1 }} disabled={!mapList.length}>
               {mapList.map((m) => (
                 <MenuItem key={m.name} value={m.name}>
-                  {m.name} ({m.size_m[0]}×{m.size_m[1]} m)
+                  {m.name} ({m.size_m[0]}×{m.size_m[1]} m{m.zones > 0 && ` · 금지 구역 ${m.zones}`})
                 </MenuItem>
               ))}
             </TextField>

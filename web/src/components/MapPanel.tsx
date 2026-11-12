@@ -5,7 +5,9 @@ import { lazy, Suspense, useRef, useState } from 'react'
 import { useInitialPose, useNavGoal } from '../api/nav'
 import { useRobotModel } from '../api/robot'
 import type { Pose, RobotStream } from '../api/types'
+import { useZones } from '../api/zones'
 import MapView, { type Layers, type MapHandle, type Tool } from './MapView'
+import { type Draft, ZoneDraftBar, ZoneList } from './ZoneEditor'
 
 // three.js(~700KB)는 「3D」 를 누를 때만 내려받는다 — 2D 만 쓰는 폰에서 첫 로딩이 늘지 않게
 const Map3D = lazy(() => import('./Map3D'))
@@ -14,6 +16,7 @@ const TOOL_HINT: Record<Tool, string> = {
   view: '끌어서 이동 · 휠로 확대',
   goal: '목표 위치를 누르고 바라볼 방향으로 끌었다 놓기 → 확인 후 이동',
   initial: '로봇의 실제 위치를 누르고 바라보는 방향으로 끌기 (저장 지도 주행 시 AMCL 초기화)',
+  zone: '거울·유리 앞(10cm 쯤 떨어져)에 점을 차례로 누르기 → 「완료」. 가상 벽 = 선, 금지 구역 = 닫힌 영역',
 }
 
 const deg = (r: number) => Math.round((r * 180) / Math.PI)
@@ -28,6 +31,10 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
   const goal = useNavGoal()
   const robotModel = useRobotModel(robot.connectionId)
   const initial = useInitialPose()
+  // 금지 구역: 저장 지도로 주행 중일 때 그 지도의 구역 (SLAM 중엔 지도 원점이 매번 달라 편집 불가)
+  const zoneMap = robot.mode?.mode === 'NAVIGATION' ? robot.mode.map : null
+  const zones = useZones(zoneMap)
+  const [draft, setDraft] = useState<Draft>({ kind: 'wall', points: [] })
 
   const nav = robot.status?.navigation
   // Nav2 가 꺼지면 costmap·footprint 가 더 오지 않는다 — 마지막 값이 옛 자리에 남지 않게 3초 넘게 안 오면 숨긴다
@@ -58,13 +65,21 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
             <ToggleButton value="2d">2D</ToggleButton>
             <ToggleButton value="3d">3D</ToggleButton>
           </ToggleButtonGroup>
-          <ToggleButtonGroup size="small" exclusive value={tool} onChange={(_, v) => v && (setTool(v), setPending(null))}>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={tool}
+            onChange={(_, v) => v && (setTool(v), setPending(null), setDraft({ ...draft, points: [] }))}
+          >
             <ToggleButton value="view">보기</ToggleButton>
             <ToggleButton value="goal" disabled={!nav?.nav2_ready || view === '3d'}>
               목표 지정
             </ToggleButton>
             <ToggleButton value="initial" disabled={!robot.map || !nav?.nav2_ready || view === '3d'}>
               초기 위치
+            </ToggleButton>
+            <ToggleButton value="zone" disabled={!zoneMap || view === '3d' || robot.pose?.frame !== nav?.fixed_frame}>
+              금지 구역
             </ToggleButton>
           </ToggleButtonGroup>
           <ToggleButtonGroup
@@ -110,6 +125,7 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
                   footprint={footprint}
                   robotModel={robotModel.data ?? null}
                   goal={active ? (robot.nav?.goal ?? null) : null}
+                  zones={zoneMap ? (zones.data ?? []) : []}
                   layers={layers}
                   follow={follow}
                 />
@@ -134,8 +150,13 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
             layers={layers}
             follow={follow}
             ref={mapRef}
-            onPick={setPending}
+            zones={zoneMap ? (zones.data ?? []) : []}
+            draft={tool === 'zone' ? draft : null}
+            onPick={(q) => (tool === 'zone' ? setDraft({ ...draft, points: [...draft.points, [q.x, q.y]] }) : setPending(q))}
           />
+          )}
+          {tool === 'zone' && zoneMap && view === '2d' && (
+            <ZoneDraftBar map={zoneMap} zones={zones.data ?? []} draft={draft} setDraft={setDraft} onClose={() => (setTool('view'), setDraft({ ...draft, points: [] }))} />
           )}
           {pending && (
             <Alert
@@ -161,7 +182,9 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
           {view === '3d' ? '왼쪽 끌기: 회전 · 오른쪽 끌기: 이동 · 휠: 확대 (3D 는 보기 전용 — 목표 지정은 2D 에서)' : TOOL_HINT[tool]}
           {!nav?.nav2_ready && tool === 'view' && ' · 목표 지정은 Nav2 실행 중일 때 가능'}
+          {!zoneMap && tool === 'view' && ' · 금지 구역은 「저장 지도로 주행」 중에 그린다'}
         </Typography>
+        {zoneMap && <ZoneList map={zoneMap} zones={zones.data ?? []} applied={nav?.keepout?.map === zoneMap} />}
         {(goal.error || initial.error) && (
           <Alert severity="error" sx={{ mt: 1 }} onClose={() => (goal.reset(), initial.reset())}>
             {(goal.error ?? initial.error)?.message}

@@ -4,6 +4,7 @@
 - 카메라(P1): JPEG 바이트 그대로 보관 → MJPEG
 - 지도 화면(P2): 지도·로컬 장애물 지도(PNG), 라이다 점·경로·로봇 외곽(지도 좌표 점 목록), 로봇 위치(TF)
 - 카메라 depth 점: 정렬 depth → 지도 좌표 3D 점 (depth_points.py, Nav2 없이도 표시)
+- 금지 구역(zones.py): 저장 지도로 주행 중이면 그 지도의 구역을 마스크로 만들어 Nav2 Keepout Filter 에 발행
 
 모든 좌표는 '표시 좌표계' 기준 미터로 바꿔서 내보낸다. 브라우저는 좌표 변환을 하지 않는다.
 표시 좌표계 = fixed_frame(map) — SLAM·AMCL 이 돌아 map→로봇 TF 가 있을 때.
@@ -21,6 +22,7 @@ import cv2
 import numpy as np
 import rclpy.time
 from geometry_msgs.msg import PolygonStamped
+from nav2_msgs.msg import CostmapFilterInfo
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
@@ -36,6 +38,7 @@ from .maps import MapStore
 from .mode_manager import ModeManager
 from .nav import NavController
 from .robot_model import RobotModel
+from .zones import rasterize
 from .teleop import TeleopController
 
 # key: (파라미터 이름, 메시지 타입, 한글 이름, 기대 Hz, optional)
@@ -187,6 +190,25 @@ class WebApiNode(Node):
                                        float(p('teleop_max_linear', 0.15).value),
                                        float(p('teleop_max_angular', 1.0).value),
                                        on_start=lambda: self.nav.submit('cancel'))
+
+        # ---------- 금지 구역 → Nav2 Keepout Filter ----------
+        # 필터 정보(어느 토픽의 마스크를 쓸지)와 마스크를 transient local 로 발행 — Nav2 가 나중에 떠도 마지막 값을 받는다.
+        # 마스크가 바뀌면 Nav2 가 실행 중에도 새 마스크로 바꿔 끼운다 (KeepoutFilter::maskCallback).
+        mask_topic = p('topic_keepout_mask', '/keepout_filter_mask').value
+        self._keepout_mask_pub = self.create_publisher(OccupancyGrid, mask_topic, LATCHED_QOS)
+        info_pub = self.create_publisher(CostmapFilterInfo, p('topic_keepout_info', '/costmap_filter_info').value,
+                                         LATCHED_QOS)
+        info = CostmapFilterInfo()
+        info.header.frame_id = self.fixed_frame
+        info.type = 0                  # KEEPOUT_FILTER
+        info.filter_mask_topic = mask_topic
+        info.base, info.multiplier = 0.0, 1.0   # keepout 은 기본값이어야 함
+        info_pub.publish(info)
+        self._keepout_key = None
+        self._keepout_lock = threading.Lock()   # ROS 타이머와 웹 요청(PUT zones)이 동시에 부를 수 있다
+        self.keepout = {'map': None, 'zones': 0}
+        self.create_timer(1.0, self.sync_keepout)
+
         self.create_subscription(String, p('topic_robot_description', '/robot_description').value,
                                  lambda m: self.robot_model.update(m.data), LATCHED_QOS)
 
@@ -248,6 +270,40 @@ class WebApiNode(Node):
         local = scan_to_points(msg.ranges, msg.angle_min, msg.angle_increment,
                                msg.range_min, msg.range_max, self._scan_points)
         self.scan_pts.set({'frame': frame, 'points': transform_points(t, local)})
+
+    def sync_keepout(self, force: bool = False):
+        """지금 주행 중인 저장 지도의 금지 구역을 마스크로 발행. 지도·구역 파일이 바뀌었을 때만 (1초마다 확인).
+        저장 지도 주행이 아니면(대기·SLAM) 빈 마스크 — SLAM 지도는 켤 때마다 원점이 달라 구역을 둘 수 없다."""
+        with self._keepout_lock:
+            self._sync_keepout(force)
+
+    def _sync_keepout(self, force: bool):
+        st = self.mode.snapshot()
+        name = st['map'] if st['mode'] == 'NAVIGATION' and st['phase'] in ('starting', 'running') else None
+        try:
+            key = (name, self.maps.zones_mtime(name) if name else 0.0)
+            if key == self._keepout_key and not force:
+                return
+            zones = self.maps.get_zones(name) if name else []
+            g = self.maps.geometry(name) if name else {'width': 1, 'height': 1, 'resolution': 0.05,
+                                                        'origin_x': 0.0, 'origin_y': 0.0}
+            grid = rasterize(zones, g['width'], g['height'], g['resolution'], g['origin_x'], g['origin_y'])
+        except Exception as e:  # noqa: BLE001 — 구역 파일이 깨져도 웹은 계속
+            self.get_logger().error(f'금지 구역 마스크 생성 실패: {e}')
+            return
+        msg = OccupancyGrid()
+        msg.header.frame_id = self.fixed_frame
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.info.resolution = g['resolution']
+        msg.info.width, msg.info.height = g['width'], g['height']
+        msg.info.origin.position.x, msg.info.origin.position.y = g['origin_x'], g['origin_y']
+        msg.info.origin.orientation.w = 1.0
+        msg.data = grid.ravel().tolist()
+        self._keepout_mask_pub.publish(msg)
+        self._keepout_key = key
+        self.keepout = {'map': name, 'zones': len(zones)}
+        self.get_logger().info(f'금지 구역 마스크 발행: 지도={name or "(없음)"} 구역 {len(zones)}개 '
+                               f'({g["width"]}x{g["height"]}, 막힌 칸 {int((grid > 0).sum())})')
 
     def lookup3d(self, target_frame: str, source_frame: str):
         """3D 변환 (회전 행렬, 이동). 카메라처럼 기울어진 좌표계용. 없으면 None."""
@@ -385,6 +441,7 @@ class WebApiNode(Node):
                 'costmap_age': age(self.costmap.stamp),
                 'footprint_age': age(self.footprint.stamp),
                 'nav2_ready': self._nav2_ready,
+                'keepout': self.keepout,           # Nav2 에 적용 중인 금지 구역 (지도 이름·개수)
             },
             'topics': topics,
         }

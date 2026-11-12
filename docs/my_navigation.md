@@ -37,6 +37,7 @@ static_layer    : SLAM/저장 지도의 벽          → 비용 254 (절대 불�
 obstacle_layer  : 라이다에 지금 보이는 장애물   → 비용 254 (지도에 없던 의자, 사람 등)
 camera_layer    : 카메라 depth 점 중 높이 4~25cm → 비용 254 (라이다 평면보다 낮거나 튀어나온 것)
 inflation_layer : 위 장애물 주변을 부풀림       → 벽에서 멀수록 비용 감소
+keepout_filter  : 사람이 그린 금지 구역·가상 벽 → 비용 254 (거울·유리처럼 센서가 못 보는 곳, my_web_api.md 4.18)
 ```
 
 **camera_layer (카메라 회피 V1, 2026-11-12)** — 라이다는 13.5cm 높이 평면만 보므로, depth 점 구름
@@ -175,6 +176,7 @@ my_slam 과 마찬가지로 소스 코드가 없다 — 검증된 표준 스택(
 | `robot_base_frame` | `base_footprint` | slam_toolbox 와 프레임 규약 통일 (프로젝트 공통) |
 | `controller_frequency` | 10.0 | ROBOTIS TB3 검증값. cmd_vel 이 VPN 을 건너는 원격 구조라 과한 주기보다 안정성 |
 | `max_vel_x`, `max_velocity` | 0.22 | burger 하드웨어 한계와 일치 (velocity_smoother 까지 동일하게) |
+| costmap `filters` | `keepout_filter` (local·global) | 금지 구역 마스크(`/costmap_filter_info` → `/keepout_filter_mask`, 웹 백엔드가 발행). 필터는 inflation 뒤에 적용돼 여유 폭이 붙지 않는다 |
 | costmap `plugins` | obstacle + **camera_layer** + inflation | 라이다 층 + 카메라 깊이 층(2D ObstacleLayer 두 개, 2.1). 3D voxel_layer 대신 2D 층 + 높이 필터 — 로봇이 낮아(14cm) 높이 구분이 거의 필요 없음 |
 | `allow_unknown` | true | 미탐사 영역 주행 허용 (SLAM 동시 주행에 필수) |
 | `footprint` | 앞 0.062 / 뒤 −0.220 / 좌우 ±0.090 | **실측 다각형** (2026-09-08). 표준 robot_radius 0.105 원 대체. 뒤는 카메라 USB 케이블 돌출 포함(몸체 CAD 는 −0.165) |

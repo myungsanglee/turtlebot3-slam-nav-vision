@@ -15,6 +15,7 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
   GET  /api/mode · POST /api/mode {mode, map?, vision?}   운용 모드 (IDLE / MAPPING / NAVIGATION)
   GET  /api/mode/log          모드 launch 로그 꼬리 (문제 확인용)
   GET  /api/maps · POST /api/maps {name} · DELETE /api/maps/{name} · GET /api/maps/{name}.png
+  GET|PUT /api/maps/{name}/zones   금지 구역·가상 벽 (저장 지도별, 주행 중이면 Nav2 에 즉시 반영)
                               저장 지도 목록 / 지금 지도 저장 / 삭제 / 미리보기
   WS   /ws                    status(2Hz)·pose(10Hz)·scan·depth_points·path·footprint·map·costmap·nav·mode 를 바뀔 때 push,
                               브라우저 → 서버: {"type": "teleop", "x", "y", "scale"} (조이스틱, 0.1초마다) / {"type": "teleop_release"}
@@ -45,6 +46,10 @@ class ModeRequest(BaseModel):
     mode: str = Field(description='IDLE | MAPPING | NAVIGATION')
     map: str | None = Field(None, description='NAVIGATION 일 때 저장 지도 이름')
     vision: bool = Field(True, description='Vision AI(검출) 도 켤지')
+
+
+class ZonesPut(BaseModel):
+    zones: list = Field(description='[{kind: area|wall, points: [[x, y], ...], name}] — 지도 좌표(m)')
 
 
 class MapSave(BaseModel):
@@ -220,6 +225,26 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
         except ValueError as e:
             return result({'ok': False, 'reason': 'bad_request', 'message': str(e)})
         return result({'ok': True, 'message': '삭제됨'} if ok else {'ok': False, 'reason': 'not_found', 'message': '없음'})
+
+    @app.get('/api/maps/{name}/zones')
+    def zones_get(name: str):
+        try:
+            return {'map': name, 'zones': node.maps.get_zones(name)}
+        except ValueError as e:
+            return result({'ok': False, 'reason': 'bad_request', 'message': str(e)})
+
+    @app.put('/api/maps/{name}/zones')
+    def zones_put(name: str, req: ZonesPut):
+        try:
+            zones = node.maps.set_zones(name, req.zones)
+        except ValueError as e:
+            return result({'ok': False, 'reason': 'bad_request', 'message': str(e)})
+        except FileNotFoundError:
+            return result({'ok': False, 'reason': 'not_found', 'message': f'지도 {name} 없음'})
+        node.sync_keepout()   # 지금 주행 중인 지도면 바로 Nav2 에 (아니면 그 지도로 주행할 때 적용)
+        applied = node.keepout['map'] == name
+        return {'ok': True, 'zones': zones, 'applied': applied,
+                'message': f'금지 구역 {len(zones)}개 저장' + (' · 주행에 바로 적용' if applied else ' · 이 지도로 주행할 때 적용')}
 
     @app.get('/api/maps/{name}.png')
     def maps_thumb(name: str):

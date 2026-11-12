@@ -36,6 +36,7 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 ├── my_web_api/
 │   ├── monitor.py                   ROS 없는 순수 로직: 토픽 주기 계산, 최신 프레임 보관, 배터리 판정
 │   ├── geometry.py                  ROS 없는 2D 변환: 쿼터니언↔yaw, 점 변환, 라이다 극좌표→점, 솎기
+│   ├── zones.py                     ROS 없는 금지 구역 로직: 검증·저장·지도 좌표 다각형 → Keepout 마스크 격자
 │   ├── depth_points.py              카메라 depth → 지도 좌표 3D 점 (my_vision depth_cloud 의 역투영 재사용, 3D 회전, 5cm 솎기)
 │   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL(gzip)
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
@@ -322,6 +323,36 @@ WebSocket 이 끊기면 → 즉시 정지
 | 2D | 3D |
 |---|---|
 | ![2D 카메라 점](images/web_depth_2d.png) | ![3D 카메라 점](images/web_depth_3d.png) |
+
+### 4.18 금지 구역·가상 벽 — 거울·유리 대응 (Nav2 Keepout Filter)
+
+**왜**: 라이다(적외선 레이저)와 카메라 depth(적외선 스테레오)는 거울에서 빛이 튕겨 나가 **빈 공간으로 보거나**, 거울 속 상을
+**거울 뒤에 있는 것처럼** 찍는다. 유리는 통과한다. 센서만으로는 확실히 못 막으므로, 로봇청소기 앱의 "가상 벽·금지 구역"처럼
+사람이 지도에 그린다. 이 방에도 큰 거울 패널이 있다 (카메라 영상에서 확인).
+
+```
+웹: 「금지 구역」 도구 → 점 찍기 → 완료 ─PUT /api/maps/{지도}/zones─▶ maps/<지도>.zones.json
+                                                                   │ (그 지도로 주행 중이면 즉시)
+web-api: 지도 격자(yaml+pgm 크기·원점)에 다각형을 칠한 마스크(100 = 금지) ─▶ /keepout_filter_mask   (transient local)
+         필터 정보(type=keepout, 마스크 토픽)                               ─▶ /costmap_filter_info  (transient local)
+Nav2:    global·local costmap 의 KeepoutFilter 가 마스크 칸을 LETHAL 로 덮음 → 경로 계획·회피가 그곳을 지나지 않음
+```
+
+- **가상 벽**(점 2개 이상, 선, 두께 6cm) / **금지 구역**(점 3개 이상, 닫힌 영역). 지도 아래 칩으로 목록·삭제(확인 후).
+- **저장 지도로 주행(NAVIGATION) 중에만 편집**: 구역은 지도 좌표라 그 지도에서만 의미가 있다. SLAM 지도는 켤 때마다 원점이
+  달라 구역을 둘 수 없다. 같은 이름으로 지도를 다시 저장하면(새 지도) 옛 구역 파일은 지운다.
+- **별도 노드 없이 web-api 가 마스크를 발행**: Nav2 표준 예제는 map_server 로 마스크 이미지 파일을 띄우지만, 그러면 고칠 때마다
+  다시 불러와야 한다. Humble 1.1.20 KeepoutFilter 는 새 마스크가 오면 실행 중에도 바꿔 끼우므로(`maskCallback`) 웹에서
+  고치면 바로 반영된다. 마스크는 map 좌표 — local costmap(odom 기준)에도 필터가 TF 로 변환해 적용한다 (소스 확인).
+  대기·SLAM 중엔 1×1 빈 마스크를 보내 필터가 '마스크 없음' 경고를 내지 않게 한다.
+- **주의 — 여유 폭 없음**: 필터는 inflation 층 **뒤에** 적용돼 금지 구역 둘레엔 부풀림이 붙지 않는다. 몸체는 들어가지 않지만
+  경계에 붙을 수 있으므로 실제 거울보다 10cm 쯤 앞에 긋는다 (화면 안내에 표시).
+- 웹 콘솔 없이 서버 터미널로 Nav2 만 띄우면 마스크 발행자가 없어 금지 구역이 적용되지 않는다 (필터는 정보를 기다리기만 함).
+- 검증 (2026-11-12, 로봇 정지): 저장 지도로 주행 중 구역을 추가·삭제 → 두 costmap 로그 `New filter mask arrived`,
+  local costmap 에 즉시 반영. 경로 계산(`compute_path_to_pose`)으로 금지 구역 너머 목표: 구역 없을 때 경로 점 24개가 그 영역을
+  지나감(1.48m) → 구역 있을 때 0개, 돌아가는 경로(1.86m). UI 그리기·완료·삭제 흐름은 headless Chrome 으로 확인.
+
+![금지 구역 — 빨강 영역·선, 장애물 지도에 바로 반영](images/web_zones.png)
 
 ## 5. 실행
 
