@@ -1,0 +1,29 @@
+# =============================================================================
+# scan-watchdog.service — 라이다 /scan 발행 정지 감시·기록·복구 (systemd 사용자 서비스)
+#
+# 드라이버가 살아 있는데 /scan 만 멈추는 증상(troubleshooting 2026-11-12) 대응. bringup 은 건드리지 않고
+# 옆에서 /scan 을 구독만 하다가, 10초 이상 끊기면 진단을 ~/.ros/scan_watchdog/incidents.log 에 남기고
+# 시리얼 포트를 잠깐 같이 읽어 복구를 시도한다 (robot/tools/scan_watchdog.py).
+#
+# 설치 (docs/pi_setup.md 9단계):
+#   systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/scan-watchdog.service
+#   systemctl --user start scan-watchdog
+# 로그: journalctl --user -u scan-watchdog / 사고 기록: cat ~/.ros/scan_watchdog/incidents.log
+# =============================================================================
+[Unit]
+Description=LDS /scan stall watchdog (record + recover)
+After=tb3-bringup.service
+
+[Service]
+Type=simple
+WorkingDirectory=/tmp
+Environment=ROS_DOMAIN_ID=30
+Environment=ROS_LOCALHOST_ONLY=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && exec python3 %h/turtlebot3-slam-nav-vision/robot/tools/scan_watchdog.py'
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

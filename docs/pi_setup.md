@@ -237,6 +237,18 @@ systemctl --user start tb3-bringup
 - 검증 (2026-11-09): 재부팅 후 로그인 없이 서비스 시작 → 약 1분 20초 뒤 카메라 6fps, 서버 수신 /odom 20Hz·/scan 5Hz·
   카메라 color/depth 6Hz·/battery_state 20Hz, 카메라 TF 정상, `get_throttled` 0x0. `stop` 은 1초 내 전 노드 정상 종료.
 
+### 9-1. 라이다 감시 서비스 (`scan-watchdog`)
+
+드라이버가 살아 있는데 `/scan` 만 멈추는 증상(troubleshooting 2026-11-12) 대응. 10초 이상 끊기면 진단을 남기고
+시리얼 포트를 잠깐 같이 읽어 복구를 시도한다 (bringup 은 재시작하지 않음).
+
+```bash
+systemctl --user enable ~/turtlebot3-slam-nav-vision/robot/systemd/scan-watchdog.service
+systemctl --user start scan-watchdog
+journalctl --user -u scan-watchdog -f          # 감시 로그
+cat ~/.ros/scan_watchdog/incidents.log         # 사고 기록 (없으면 아직 사고 없음)
+```
+
 ## 10. 최종 검증
 
 ```bash

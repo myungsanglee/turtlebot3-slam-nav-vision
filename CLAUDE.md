@@ -128,7 +128,9 @@ turtlebot3-slam-nav-vision/
 ├── robot/                     # Raspberry Pi 에서 도는 것 (RealSense 관련)
 │   ├── src/
 │   │   └── realsense_bringup/ # RealSense 실행 런치 (bringup 은 건드리지 않음)
-│   └── systemd/tb3-bringup.service  # Pi 부팅 시 bringup+카메라 (사용자 서비스)
+│   ├── systemd/tb3-bringup.service  # Pi 부팅 시 bringup+카메라 (사용자 서비스)
+│   ├── systemd/scan-watchdog.service # /scan 정지 감시·기록·복구 (사용자 서비스)
+│   └── tools/scan_watchdog.py
 └── description/               # my_description 패키지: 보정 URDF + 실물 CAD 메시(meshes/, RViz 표시용)
 ```
 
@@ -151,6 +153,8 @@ turtlebot3-slam-nav-vision/
   Pi 의 bringup+카메라는 **systemd 사용자 서비스 `tb3-bringup`** 으로 부팅 시 자동 실행 —
   `systemctl --user status|stop|start|restart tb3-bringup`, 로그 `journalctl --user -u tb3-bringup` (sudo 불필요).
   수동 launch 전엔 반드시 서비스 stop (중복 실행 시 OpenCR 시리얼·카메라 충돌, troubleshooting 2026-11-05).
+  라이다 `/scan` 만 끊기는 증상(원인 조사 중)은 `scan-watchdog` 사용자 서비스가 `~/.ros/scan_watchdog/incidents.log` 에
+  기록·복구 — 다음 발생 시 기록 확인, 필요하면 사용자에게 sudo strace 요청 (troubleshooting 2026-11-12 라이다).
 - **RViz 확인**: 서버 물리 세션을 x11vnc 로 미러링, 맥에서 RealVNC/화면공유로 접속
   (컨테이너 RViz 는 `DISPLAY` 를 서버 물리 세션 `:0`/`:1` 에 맞춰 실행)
 - **환경 자동 source**: 컨테이너는 entrypoint(run 용) + .bashrc(exec 용) 양쪽에서

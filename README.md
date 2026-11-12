@@ -51,7 +51,8 @@ turtlebot3-slam-nav-vision/
 ├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_vision, my_bringup 통합런치, my_web_api 웹 백엔드)
 ├── web/                       # 웹 콘솔 프론트엔드 (React + TypeScript + Vite)
 ├── robot/src/                 # Raspberry Pi 패키지 (realsense_bringup)
-├── robot/systemd/             # Pi 부팅 시 bringup 자동 실행 (사용자 서비스)
+├── robot/systemd/             # Pi 부팅 시 bringup 자동 실행 + 라이다 감시 (사용자 서비스)
+├── robot/tools/               # Pi 보조 스크립트 (scan_watchdog: /scan 정지 기록·복구)
 └── description/               # my_description 패키지: 보정 URDF + 실물 CAD 메시 (RViz 표시용)
 ```
 

@@ -23,6 +23,7 @@
 | 웹 백엔드 종료 시 `CancelledError` traceback / abort(-6) | uvicorn 의 종료 후 신호 재발생 + `ros2 launch` 의 중복 SIGINT | 신호를 main() 한 곳에서 처리, 1초 내 중복 무시, 스트림이 종료 이벤트로 스스로 끝남 (2026-11-10 항목) |
 | 로봇이 정지해 있는데 odom 방향(웹 지도 화살표)이 저절로 돈다 | IMU 자이로 영점(바이어스) 틀어짐 — TurtleBot3 는 회전각을 IMU 로 계산 | 로봇 정지 상태로 Pi 에서 `ros2 service call /reset std_srvs/srv/Trigger` (2026-11-12 항목) |
 | 통합 런치에서 어떤 노드가 자기 YAML 설정을 무시하고 기본값으로 돈다 | 하위 런치끼리 같은 이름의 인자(`params_file`)가 공유돼 다른 런치의 값이 들어감 | 하위 런치를 `GroupAction(scoped=True)` 로 감싸기, `ros2 param get` 으로 확인 (2026-11-12 항목) |
+| 라이다는 돌고 odom·카메라는 오는데 `/scan` 만 끊김 (Pi 안에서도 0) | 미확정 — LDS 드라이버(`hlds_laser_publisher`)가 살아 있는데 발행 정지 | Pi 에서 시리얼 포트를 1초 읽으면 복구됨 → `scan-watchdog` 서비스가 자동 기록·복구 (2026-11-12 라이다 항목) |
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
@@ -664,3 +665,44 @@ ros2 service call /reset std_srvs/srv/Trigger   # Pi 에서 — Trigger_Response
 - 런치를 조합할 땐 하위 런치를 scoped GroupAction 으로 감싼다. 특히 `params_file`·`use_sim_time` 같은 흔한 이름.
 - 설정이 적용됐는지는 파일이 아니라 **실행 중인 노드**로 확인한다: `ros2 param get <노드> <파라미터>`.
 
+## 2026-11-12 — 라이다 `/scan` 만 끊김: 드라이버는 살아 있는데 발행 정지 (원인 조사 중)
+
+### 증상
+- 밤새 켜 둔 로봇을 아침에 보니 웹 콘솔의 라이다 수신이 없었다. 라이다는 돌고 있었다. 아침에 로봇을 껐다 켰는데,
+  4시간쯤 뒤(09:01 부팅 → 13:08) 다시 `/scan` 만 끊겼다. odom 20Hz·카메라 6fps·배터리는 정상.
+
+### 진단
+1. **어디서 끊겼나** — Pi 안에서 직접 구독해도(`ros2 topic echo /scan --qos-reliability best_effort`) 6초간 0 개.
+   → zenoh·Tailscale·서버 문제가 아니라 **Pi 의 라이다 쪽**.
+2. **프로세스** — `tb3-bringup` 서비스·`hlds_laser_publisher` 살아 있음, 드라이버 로그에 오류 없음.
+3. **하드웨어** — 커널 로그에 USB 끊김 없음, `get_throttled=0x0` (이번 부팅 저전압 없음).
+   시리얼을 1초 직접 읽어 보니 12,474 B, 패킷 헤더 60종(0xA0~0xDB) 전부, 프레임 시작(`FA A0`) 초당 5회
+   → **LDS-01 은 정상 프레임을 5Hz 로 보내고 있었다.**
+4. **드라이버 코드** (ROBOTIS `hls_lfcd_lds_driver` humble, `hlds_laser_publisher.cpp`) — 메인 루프는
+   "시리얼에서 `FA A0` 찾기 → 나머지 2518 B 읽기 → 바로 `publish`" 뿐. 정상 프레임이 들어오는데 발행이 멈출 경로가
+   코드상으로는 보이지 않는다.
+5. **복구** — 위 3번에서 시리얼을 1초 같이 읽은 직후 `/scan` 이 5Hz 로 돌아왔다 (32분 정지 후, 수십 초 안에 복구).
+6. 단서: 정지 중 1초 같이 읽기는 12,474 B(=거의 전부)를 가져갔고, 정상일 때 같은 시험은 210~274 B 뿐이었다
+   (드라이버가 먼저 읽어 가므로). → **정지 중엔 드라이버가 시리얼을 실제로 읽지 않고 있었던 것**으로 보인다.
+   반면 `/proc/<pid>/io` 의 rchar 는 정지 중에도 ≈12.6 KB/s 로 늘고 있어 서로 맞지 않는다 — 다음 발생 때 확인할 점.
+   (메인 스레드 wchan=`do_poll` — 읽기 대기. sudo 없이는 `strace -p` 불가: `ptrace_scope=1`)
+
+### 근본 원인
+**미확정.** 하드웨어·네트워크는 배제됐고, 드라이버 프로세스가 시리얼 읽기 대기 상태에서 데이터를 받지 못하는(또는
+받고도 발행 못 하는) 상태로 멈춘 것까지 확인. 밤새 실행 때도 같은 증상이었는지는 기록이 없어 확인 불가.
+ROBOTIS 이슈·ROS Answers 에 정확히 같은 사례는 찾지 못했다.
+
+### 해결 (대응)
+Pi 사용자 서비스 **`scan-watchdog`** (`robot/tools/scan_watchdog.py`, `robot/systemd/scan-watchdog.service`) 추가 —
+bringup 은 건드리지 않고 옆에서 `/scan` 을 구독하다가 드라이버가 살아 있는데 10초 이상 끊기면:
+1. 진단 기록 → `~/.ros/scan_watchdog/incidents.log`: 드라이버 rchar 속도, 스레드별 상태·wchan, 전압 플래그,
+   bringup 로그, **시리얼 입력 큐에 쌓인 바이트(FIONREAD)**, 같이 읽기로 가져온 바이트
+2. 복구 시도: 시리얼 1초 같이 읽기 (최대 3회, 60초 간격). 실패하면 "수동 조치 필요"를 기록
+   (bringup 자동 재시작은 하지 않음 — 자이로 영점·odom 초기화·카메라 재열거를 동반하므로 사람이 판단)
+
+검증: Pi 에서 사고 처리 경로를 강제로 실행 — 기록 항목 전부 수집, 정상 기준값(큐 0 B, 같이 읽기 210 B) 확인.
+
+### 재발 방지 / 다음 발생 때
+- `cat ~/.ros/scan_watchdog/incidents.log` 로 기록 확인. 큐가 수 KB 쌓여 있었다면 "드라이버가 시리얼을 안 읽음"이 확정.
+- 자동 복구가 안 되면 sudo 로 `strace -f -p $(pgrep -f '[h]lds_laser_publisher')` 를 몇 초 떠서 메인 스레드가
+  어떤 fd 에서 무엇을 기다리는지 확인 (사용자 입회).
