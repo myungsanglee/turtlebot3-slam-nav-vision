@@ -153,8 +153,12 @@ class ScanWatchdog(Node):
             f.write(text)
 
     def event(self, s, warn=True):
-        (self.get_logger().warn if warn else self.get_logger().info)(s)
-        self.write('events.log', f'{time.strftime("%F %T")} {s}\n')
+        self.write('events.log', f'{time.strftime("%F %T")} {s}\n')   # 파일 먼저 — 기록이 1차 목적
+        # rclpy 는 '같은 호출 위치에서 등급을 바꾸면' 예외를 낸다 → 등급별로 호출 위치를 나눈다
+        if warn:
+            self.get_logger().warn(s)
+        else:
+            self.get_logger().info(s)
 
     def batt_text(self):
         if self.batt is None:
@@ -177,14 +181,17 @@ class ScanWatchdog(Node):
     def follow_kernel(self):
         """커널 로그를 실시간으로 읽는다 (michael 은 adm 그룹 → sudo 불필요)."""
         while rclpy.ok():
+            p = subprocess.Popen(['journalctl', '-k', '-f', '-n', '0', '-o', 'cat', '--no-pager'],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
             try:
-                p = subprocess.Popen(['journalctl', '-k', '-f', '-n', '0', '-o', 'cat', '--no-pager'],
-                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
                 for line in p.stdout:
-                    self.on_kernel(line.rstrip())
+                    try:
+                        self.on_kernel(line.rstrip())
+                    except Exception as e:  # noqa: BLE001 — 한 줄 처리 실패로 읽기를 멈추지 않는다
+                        self.get_logger().error(f'커널 로그 줄 처리 실패: {type(e).__name__}: {e}')
+            finally:
+                p.kill()   # 다시 시작할 때 이전 journalctl 이 남지 않게
                 p.wait()
-            except Exception as e:  # noqa: BLE001
-                self.get_logger().error(f'커널 로그 읽기 실패: {e}')
             time.sleep(5.0)
 
     def on_kernel(self, line):
