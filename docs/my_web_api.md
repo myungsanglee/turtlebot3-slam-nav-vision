@@ -37,7 +37,8 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 │   ├── monitor.py                   ROS 없는 순수 로직: 토픽 주기 계산, 최신 프레임 보관, 배터리 판정
 │   ├── geometry.py                  ROS 없는 2D 변환: 쿼터니언↔yaw, 점 변환, 라이다 극좌표→점, 솎기
 │   ├── zones.py                     ROS 없는 금지 구역 로직: 검증·저장·지도 좌표 다각형 → Keepout 마스크 격자
-│   ├── robot_power.py               로봇 전원(대기·켜기·재시작·재부팅·끄기) — Pi 에 전용 SSH 키로 robot_power.sh 호출
+│   ├── robot_power.py               로봇 전원(대기·켜기·재시작·재부팅·끄기·자이로 재보정) — Pi 에 전용 SSH 키로 robot_power.sh 호출
+│   ├── gyro_watch.py                ROS 없는 자이로 드리프트 판정(정지 중 방향 변화율)·자동 재보정 조건
 │   ├── depth_points.py              카메라 depth → 지도 좌표 3D 점 (my_vision depth_cloud 의 역투영 재사용, 3D 회전, 5cm 솎기)
 │   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL(gzip)
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
@@ -65,6 +66,7 @@ web/                                 React 프론트엔드 (npm 프로젝트, RO
     ├── components/Map3D.tsx         react-three-fiber 3D 화면 (보기 전용, 「3D」 누를 때만 내려받음)
     ├── components/MapPanel.tsx      도구(보기·목표·초기 위치)·레이어 토글·목표 확인 창
     ├── components/NavPanel.tsx      주행 상태·남은 거리·취소
+    ├── components/PowerControl.tsx   전원 칩·메뉴(대기·켜기·재시작·재부팅·끄기·자이로 재보정)·드리프트 경고 칩
     ├── components/LocalizationBar.tsx 자동 위치 찾기 상태 칩·「위치 찾기」·후보 선택 (저장 지도 주행)
     ├── components/StatusBar.tsx     모드·서버 연결·로봇 연결·속도
     ├── components/CameraPanel.tsx   MJPEG <img>, 원본/검출 결과 전환
@@ -400,6 +402,29 @@ Nav2:    global·local costmap 의 KeepoutFilter 가 마스크 칸을 LETHAL 로
   「초기 위치」 확인 창으로 띄운다 — 로봇 모양이 그 자리에 미리 그려지니 실제와 비교해 「설정」.
   「초기 위치」 도구는 그대로 두되 '자동이 실패했을 때만' 으로 안내.
 - 모드 전환 메시지도 "로봇 위치는 자동으로 찾습니다" 로.
+
+### 4.21 자이로 드리프트 감지·재보정 (`gyro_watch.py`, `robot_power.py gyro_reset`, `PowerControl.tsx`)
+
+**왜**: TurtleBot3 는 회전각을 IMU 자이로로 계산한다. 영점(바이어스)이 틀어지면 정지 중에도 odom 방향이 분당 13~15° 돈다
+(troubleshooting 2026-11-12, 11-14 — 켜고 50분쯤 뒤 데워진 상태에서 재발). AMCL 은 움직여야 갱신하므로 그동안 지도 위 로봇·
+스캔이 같이 돌아 "지도가 이상하게 보인다". 고치는 법은 정지 상태에서 Pi 의 `/reset`(OpenCR 영점 5초 + odom 0).
+
+- **감지**: `/odom` 과 `/joint_states`(바퀴 각도)를 받아, 30초 동안 바퀴 변화 < 0.01 rad·위치 변화 < 5mm 면 '정지',
+  그 구간의 방향 변화율(°/분)이 드리프트. 정상 보정 직후 0.03°/분, 틀어지면 13~15°/분이라 구분이 쉽다.
+  바퀴를 보는 이유: 제자리 회전은 위치가 안 변해 위치만으론 '정지' 로 오인한다.
+  결과는 `/api/status` 의 `gyro` (state·rate_deg_min·still_sec·last_reset).
+- **경고**: 2°/분 이상이면 상단에 「방향 드리프트 −13.4°/분」 칩 — 누르면 재보정 확인 창.
+- **자동 재보정**: 3°/분 이상 + 바퀴 정보 있음 + 로봇 실행 중 + 주행·조이스틱 아님 + **지도 만들기 아님** + 10분 쿨다운
+  → 자동 실행, 상단에 「자이로 자동 재보정됨」 칩 1분. 지도 만들기 중엔 경고만 — `/reset` 이 odom 을 0 으로 튀게 해
+  slam_toolbox 지도가 망가질 수 있다. 설정은 `web_api.yaml` 의 `gyro_*`.
+- **수동**: 전원 메뉴 「자이로 재보정」 (로봇 실행 중). 서버가 먼저 막는 경우: 지도 만들기 중·주행 중·조이스틱 중·움직이는 중.
+- **경로**: 전원 버튼과 같은 SSH 강제 명령 — `robot_power.sh gyro_reset` 이 Pi 안에서 `ros2 service call /reset` (서비스는
+  브리지 allow 목록 밖이라 서버에서 직접 못 부른다. 목록을 넓히는 대신 이미 묶어 둔 경로에 동작 하나 추가). 결과 실패면
+  `{"error": …}` 줄을 서버가 메시지로 보여 준다. 진행 중 전원 상태는 'calibrating' (「자이로 보정 중 — 건드리지 마세요」).
+- **뒤처리**: 저장 지도 주행 중이면 odom 이 0 으로 바뀌어 AMCL 위치가 틀어지므로, 1.5초 뒤 자동 위치 찾기(전체 검색)를 부른다.
+- 검증: 단위 시험(드리프트 −13.4°/분 판정·±180° 경계·바퀴 회전은 'moving'·멈춘 직후 'settling'·자동 조건 7가지, 전원 guard·
+  'calibrating'·오류 JSON 합치기). Pi 스크립트: bringup 꺼짐 → `{"error"}` exit 3, 강제 명령 환경에서 ROS 환경 확인.
+  ⏳ 로봇 실행 중 실기 (Pi `git pull` 후 — 강제 명령은 레포의 스크립트를 실행한다).
 
 ## 5. 실행
 

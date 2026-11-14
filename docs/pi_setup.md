@@ -262,7 +262,7 @@ less ~/.ros/scan_watchdog/power-$(date +%F).log # 10초 전원 기록 (14일 보
 ### 9-2. 웹 콘솔 전원 버튼 (대기·켜기·재부팅·끄기)
 
 부팅 시 대기 상태로 두고, 서버 웹 콘솔이 전용 SSH 키로 `robot/tools/robot_power.sh` 만 실행해 켜고 끈다
-(docs/my_web_api.md 4.19).
+(docs/my_web_api.md 4.19). 자이로 재보정(`gyro_reset`, 4.21)도 같은 경로 — 추가 설정 없음 (git pull 만).
 
 ```bash
 # ① 부팅 시 대기 (bringup 자동 시작 끄기 + 라이다 정지 명령 서비스)

@@ -229,6 +229,9 @@ turtlebot3-slam-nav-vision/
   (마지막 위치 확인 → 지도 전체 검색, 확신 없으면 후보 제시, 위치 잃음 감지 후 재탐색). 시뮬 192/192, 실기 0.12초·점수 0.94.
   웹: 지도 머리줄 상태 칩·「위치 찾기」·후보 선택. ⏳ 바닥에서 들어 옮기기 시험·기준값 조정, 다음: IMU 들어 올림 감지.
   상세는 `docs/my_localization.md`
+- **자이로 드리프트 감지·재보정 (2026-11-14)** — web-api `gyro_watch.py`: 바퀴(/joint_states)·위치가 30초 멈춘 채 odom 방향이
+  2°/분 이상 돌면 상단 경고 칩, 3°/분 이상이면 자동 재보정(지도 만들기·주행·조이스틱 중 제외, 10분 쿨다운).
+  재보정 = Pi `robot_power.sh gyro_reset`(SSH 강제 명령 → `/reset`), 주행 모드면 이어서 위치 다시 찾기. ⏳ 실기 시험 (Pi git pull 후)
 
 **다음 (우선순위 순)**
 1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) + ~~Vision 3D 위치의 base_link/map 변환~~ ✅
@@ -240,8 +243,9 @@ turtlebot3-slam-nav-vision/
    ★ 2026-11-12 장시간 실행 중 저전압 → USB 리셋 2회 (troubleshooting) — 전원 기록(scan-watchdog)으로 원인 추적 중,
    오래 켜 둔 뒤 GPIO 5V 재측정(부팅 직후 4.91V) 예정
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시. ★ 그 전에 **자이로 영점 확인**: 정지 상태에서
-   odom 방향이 돌면(2026-11-12 실측 15°/분) Pi 에서 `ros2 service call /reset std_srvs/srv/Trigger` 로 재보정
-   (troubleshooting 2026-11-12). bringup 시작 후 5초는 로봇을 건드리지 말 것 (그때 영점을 잡음)
+   odom 방향이 돌면(2026-11-12 실측 15°/분, 11-14 데워진 뒤 13.4°/분) 재보정 — 이제 웹이 감지(상단 경고 칩)·자동 재보정,
+   수동은 전원 메뉴 「자이로 재보정」 또는 Pi 에서 `ros2 service call /reset std_srvs/srv/Trigger`
+   (troubleshooting 2026-11-12·14). bringup 시작 후 5초는 로봇을 건드리지 말 것 (그때 영점을 잡음)
 5. robot_localization EKF — **보류 (2026-11-09)**. TurtleBot3 가 이미 IMU 회전 융합 중(`use_imu: true` — 거리는 바퀴, 회전각은 IMU), 실주행 검증 후 필요 시 착수.
    착수 시 쟁점: EKF 와 turtlebot3_node 가 같은 `odom→base_footprint` TF 를 발행 → 한쪽(bringup `publish_tf`) 을 꺼야 함
 6. ~~SLAM + Nav2 + Vision + RViz 통합 런치~~ ✅ (2026-09-08, `my_bringup/system.launch.py`,

@@ -650,7 +650,8 @@ ros2 service call /reset std_srvs/srv/Trigger   # Pi 에서 — Trigger_Response
 - **해결**: Pi 에서 `/reset` (정지 상태) → 드리프트 **0.03°/분**, odom 이 0 으로 튀어 위치 잃음 4초 → 전체 검색으로 `recovered` 0.91,
   추적 점수 0.90. 화면 정상.
 - **의미**: "부팅 직후 영점 → 데워지며 틀어짐" 가설을 지지하는 두 번째 사례 (부팅 직후 드리프트를 재지 않아 확정은 아님).
-  대책 후보: 웹 「자이로 재보정」 버튼(Pi `robot_power.sh` 에 동작 추가), 정지 중 odom 회전 감지 시 경고·자동 재보정.
+  대책 (같은 날 구현): 웹 「자이로 재보정」 버튼(`robot_power.sh gyro_reset`) + 정지 중 드리프트 감지 시 경고·자동 재보정
+  (my_web_api.md 4.21).
 
 ---
 

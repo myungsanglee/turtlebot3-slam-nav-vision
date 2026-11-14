@@ -91,3 +91,31 @@ def test_reboot_without_sudo_rule(power, monkeypatch):
         time.sleep(0.02)
     last = power.snapshot()['last']
     assert not last['ok'] and 'sudoers' in last['message']
+
+
+def test_gyro_reset_guard_state_and_after(power, monkeypatch):
+    """재보정: guard 가 막으면 SSH 안 함, 진행 중엔 'calibrating', 끝나면 after 호출, 오류 JSON 은 메시지로."""
+    calls, after = [], []
+    power._guard = lambda a: '로봇이 움직이는 중' if power.moving else None
+    power._after = lambda a, ok: after.append((a, ok))
+    power.moving = True
+    monkeypatch.setattr(power, '_ssh', lambda c, t: (calls.append(c), (True, {'bringup': 'active'}, ''))[1])
+    r = power.request('gyro_reset')
+    assert not r['ok'] and '움직' in r['message'] and calls == []
+    power.moving = False
+    assert power._state({'bringup': 'active'}, True, 'gyro_reset', None) == 'calibrating'
+    assert power.request('gyro_reset')['ok']
+    for _ in range(50):
+        if after:
+            break
+        time.sleep(0.02)
+    assert calls == ['gyro_reset'] and after == [('gyro_reset', True)]
+    # 실패: 스크립트가 {"error"} 줄 + 상태 줄을 내고 exit 4
+    after.clear()
+    monkeypatch.setattr(power, '_ssh', lambda c, t: (False, {'error': '/reset 실패', 'bringup': 'active'}, ''))
+    power.request('gyro_reset')
+    for _ in range(50):
+        if after:
+            break
+        time.sleep(0.02)
+    assert after == [('gyro_reset', False)] and power.snapshot()['last']['message'] == '/reset 실패'

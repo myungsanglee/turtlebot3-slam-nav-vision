@@ -28,7 +28,7 @@ export default function StatusBar({ status, connected }: { status: Status | null
               color={status?.robot_connected ? 'success' : 'warning'}
             />
           )}
-          <PowerControl power={status?.power} mode={status?.mode} />
+          <PowerControl power={status?.power} mode={status?.mode} gyro={status?.gyro} />
         </Stack>
       </Toolbar>
     </AppBar>

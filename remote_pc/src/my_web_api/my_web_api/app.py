@@ -22,6 +22,7 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
                               브라우저 → 서버: {"type": "teleop", "x", "y", "scale"} (조이스틱, 0.1초마다) / {"type": "teleop_release"}
   GET  /api/power · POST /api/power {action}   로봇 전원: wake(켜기) / standby(대기) / restart(ROS 재시작) /
                               reboot(Pi 재부팅) / poweroff(Pi 끄기) — 대기·재시작·끄기 전에 웹에서 띄운 SLAM·Nav2 를 먼저 끈다
+                              / gyro_reset(자이로 재보정 — 정지 상태에서만, 지도 만들기 중 불가. 상태의 gyro 에 드리프트 °/분)
   GET  /docs                  자동 생성 API 문서
 """
 from __future__ import annotations
@@ -56,7 +57,7 @@ class ZonesPut(BaseModel):
 
 
 class PowerRequest(BaseModel):
-    action: str = Field(description='wake | standby | restart | reboot | poweroff')
+    action: str = Field(description='wake | standby | restart | reboot | poweroff | gyro_reset')
 
 
 class MapSave(BaseModel):

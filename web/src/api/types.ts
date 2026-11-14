@@ -38,8 +38,8 @@ export interface NavigationStatus {
 // 로봇 전원 상태 (서버 robot_power.py) — Pi 에 SSH 로 물어 본 bringup 상태 + 진행 중 동작
 export type PowerState =
   | 'unconfigured' | 'unreachable' | 'off' | 'rebooting'
-  | 'standby' | 'starting' | 'running' | 'stopping' | 'error'
-export type PowerAction = 'wake' | 'standby' | 'restart' | 'reboot' | 'poweroff'
+  | 'standby' | 'starting' | 'running' | 'stopping' | 'error' | 'calibrating'
+export type PowerAction = 'wake' | 'standby' | 'restart' | 'reboot' | 'poweroff' | 'gyro_reset'
 
 export interface Power {
   state: PowerState
@@ -50,10 +50,22 @@ export interface Power {
   last: { action: PowerAction; at: number; ok: boolean; message: string } | null
 }
 
+// 자이로 드리프트 (서버 gyro_watch.py) — 바퀴가 멈춘 채 odom 방향이 도는 정도
+export interface GyroStatus {
+  state: 'unknown' | 'moving' | 'settling' | 'ok' | 'drift'
+  rate_deg_min: number | null // 정지 중 방향 변화율 (정상 ≈0, 틀어지면 13~15)
+  still_sec: number | null
+  wheels: boolean // 바퀴 정보(/joint_states) 수신 여부
+  auto: boolean // 자동 재보정 켜짐
+  auto_min_deg_min: number
+  last_reset: { time: number; auto: boolean; ok: boolean; reason: string | null } | null
+}
+
 export interface Status {
   time: number
   mode: string
   power: Power
+  gyro?: GyroStatus
   robot_connected: boolean
   battery: Battery | null
   velocity: { linear: number; angular: number } | null

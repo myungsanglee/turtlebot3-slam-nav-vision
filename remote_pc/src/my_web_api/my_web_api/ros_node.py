@@ -26,11 +26,12 @@ from nav2_msgs.msg import CostmapFilterInfo
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
-from sensor_msgs.msg import BatteryState, CameraInfo, CompressedImage, LaserScan
+from sensor_msgs.msg import BatteryState, CameraInfo, CompressedImage, JointState, LaserScan
 from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from .depth_points import PixelRays, depth_to_display, quat_matrix
+from .gyro_watch import GyroDriftWatch, auto_reset_reason
 from .geometry import compose, downsample, scan_to_points, transform_points, yaw_from_quaternion
 from .map_codec import costmap_to_rgba, encode_png, map_to_rgba
 from .monitor import FrameStore, TopicMonitor, TopicSpec, battery_level
@@ -134,6 +135,14 @@ class WebApiNode(Node):
         self._lock = threading.Lock()
         self._battery = None     # (voltage, percentage, 수신 시각)
         self._velocity = None    # (linear.x, angular.z)
+        # 자이로 드리프트 감시 (gyro_watch.py) — 정지 중 odom 방향이 도는지. 입력은 /odom(아래 odom 콜백)·/joint_states
+        self.gyro = GyroDriftWatch(float(p('gyro_window_sec', 30.0).value), float(p('gyro_warn_deg_min', 2.0).value))
+        self._gyro_auto = bool(p('gyro_auto_reset', True).value)
+        self._gyro_auto_min = float(p('gyro_auto_min_deg_min', 3.0).value)
+        self._gyro_cooldown = float(p('gyro_auto_cooldown_sec', 600.0).value)
+        self._gyro_last = None   # 마지막 재보정 {time, auto, ok, reason}
+        self.create_subscription(JointState, p('topic_joint_states', '/joint_states').value,
+                                 lambda m: self.gyro.add_wheels(time.monotonic(), m.position), qos_profile_sensor_data)
         for key, (param, msg_type, label, hz, optional) in TOPICS.items():
             topic = p(param, '').value
             self.monitors[key] = TopicMonitor(TopicSpec(key, topic, label, hz, optional))
@@ -197,7 +206,10 @@ class WebApiNode(Node):
                                 p('robot_power_key', '/secrets/robot_power_key').value,
                                 p('robot_power_known_hosts', '/secrets/known_hosts').value,
                                 robot_connected_fn=lambda: self.monitors['odom'].snapshot()['state'] == 'ok',
-                                before_stop_fn=self._stop_for_power)
+                                before_stop_fn=self._stop_for_power,
+                                guard_fn=self._power_guard, after_fn=self._power_after)
+        self._gyro_pending_reason = None
+        self.create_timer(1.0, self._gyro_tick)
 
         # ---------- 금지 구역 → Nav2 Keepout Filter ----------
         # 필터 정보(어느 토픽의 마스크를 쓸지)와 마스크를 transient local 로 발행 — Nav2 가 나중에 떠도 마지막 값을 받는다.
@@ -260,6 +272,8 @@ class WebApiNode(Node):
             elif key == 'odom':
                 with self._lock:
                     self._velocity = (msg.twist.twist.linear.x, msg.twist.twist.angular.z)
+                q, pos = msg.pose.pose.orientation, msg.pose.pose.position
+                self.gyro.add_odom(time.monotonic(), yaw_from_quaternion(q.x, q.y, q.z, q.w), pos.x, pos.y)
             elif key == 'scan':
                 self._on_scan(msg)
             elif key == 'depth':
@@ -405,6 +419,53 @@ class WebApiNode(Node):
                 return
             time.sleep(0.5)
 
+    # ---------- 자이로 재보정 (robot_power 'gyro_reset') ----------
+    def _nav_active(self) -> bool:
+        return self.nav.snapshot()['state'] in ('active', 'sending')
+
+    def _power_guard(self, action: str) -> str | None:
+        """재보정은 로봇이 완전히 멈춰 있을 때만 (OpenCR 이 5초 동안 영점을 잡는다).
+        지도 만들기 중엔 막는다 — /reset 이 odom 을 0 으로 튀게 해 slam_toolbox 지도가 망가질 수 있다."""
+        if action != 'gyro_reset':
+            return None
+        if self.mode.snapshot()['mode'] == 'MAPPING':
+            return '지도 만들기 중엔 재보정할 수 없음 (odom 이 0 으로 바뀌어 지도가 망가짐) — 저장 후 하세요'
+        if self._nav_active():
+            return '주행 중 — 주행을 취소하고 멈춘 뒤에 하세요'
+        if self.teleop.state()['active']:
+            return '조이스틱 조작 중 — 손을 떼고 멈춘 뒤에 하세요'
+        if self.gyro.snapshot(time.monotonic())['state'] == 'moving':
+            return '로봇이 움직이는 중 — 완전히 멈춘 뒤에 하세요'
+        return None
+
+    def _power_after(self, action: str, ok: bool):
+        if action != 'gyro_reset':
+            return
+        self.gyro.reset()
+        reason, self._gyro_pending_reason = self._gyro_pending_reason, None
+        self._gyro_last = {'time': time.time(), 'auto': reason is not None, 'ok': ok, 'reason': reason}
+        self.get_logger().info(f'자이로 재보정 {"성공" if ok else "실패"}' + (f' (자동: {reason})' if reason else ''))
+        if ok and self.mode.snapshot()['mode'] == 'NAVIGATION':
+            # odom 이 0 으로 바뀌어 AMCL 위치가 틀어진다 → 스캔으로 위치 다시 찾기 (odom 초기화가 도착할 시간 1.5초)
+            threading.Timer(1.5, lambda: self.nav.submit('relocalize')).start()
+
+    def _gyro_tick(self):
+        """정지 중 방향 드리프트가 크면 자동 재보정 (조건: auto_reset_reason)."""
+        last = self._gyro_last['time'] if self._gyro_last else None
+        reason = auto_reset_reason(
+            self.gyro.snapshot(time.monotonic()), enabled=self._gyro_auto, min_deg_min=self._gyro_auto_min,
+            mode=self.mode.snapshot()['mode'], nav_active=self._nav_active(),
+            teleop_active=self.teleop.state()['active'], power_state=self.power.snapshot()['state'],
+            busy=self.power.snapshot()['busy'] is not None,
+            since_last=None if last is None else time.time() - last, cooldown_sec=self._gyro_cooldown)
+        if reason:
+            self.get_logger().warn(f'자이로 드리프트 → 자동 재보정: {reason}')
+            self._gyro_pending_reason = reason
+            r = self.power.request('gyro_reset')
+            if not r['ok']:
+                self._gyro_pending_reason = None
+                self._gyro_last = {'time': time.time(), 'auto': True, 'ok': False, 'reason': f'{reason} — {r["message"]}'}
+
     def _poll_nav2(self):
         self._nav2_ready = self.nav.server_ready()
 
@@ -451,6 +512,9 @@ class WebApiNode(Node):
             'time': time.time(),
             'mode': self.mode.snapshot()['mode'],
             'power': self.power.snapshot(),        # 로봇 전원 상태 (running / standby / …) — robot_power.py
+            # 자이로 드리프트: 정지 중 odom 방향 변화율 + 자동 재보정 설정·마지막 재보정 — gyro_watch.py
+            'gyro': {**self.gyro.snapshot(now), 'auto': self._gyro_auto, 'auto_min_deg_min': self._gyro_auto_min,
+                     'last_reset': self._gyro_last},
             'robot_connected': by_key['odom']['state'] == 'ok',
             'battery': battery_out,
             'velocity': velocity_out,
