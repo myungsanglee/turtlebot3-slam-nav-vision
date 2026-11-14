@@ -16,3 +16,4 @@ async function post(path: string, body?: unknown): Promise<{ ok: boolean; messag
 export const useNavGoal = () => useMutation({ mutationFn: (p: Pose) => post('/api/nav/goal', p) })
 export const useNavCancel = () => useMutation({ mutationFn: () => post('/api/nav/cancel') })
 export const useInitialPose = () => useMutation({ mutationFn: (p: Pose) => post('/api/nav/initial_pose', p) })
+export const useRelocalize = () => useMutation({ mutationFn: () => post('/api/nav/relocalize') })

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_localization</name>
+  <version>0.1.0</version>
+  <description>
+    자동 위치 찾기 (전역 위치 추정, Remote PC). 라이다 스캔을 저장 지도 전체에 맞춰 보고(correlative scan
+    matching + 빔 일관성 검사) 가장 잘 맞는 자세를 AMCL 초기 위치(/initialpose)로 보낸다. 시작 시 마지막 위치 확인,
+    요청 시 전체 검색, 위치를 잃으면(로봇을 들어 옮김) 다시 찾기.
+  </description>
+  <maintainer email="mslee@robotegra.com">Myungsang Lee</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>tf2_ros_py</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

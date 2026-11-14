@@ -41,7 +41,7 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 │   ├── depth_points.py              카메라 depth → 지도 좌표 3D 점 (my_vision depth_cloud 의 역투영 재사용, 3D 회전, 5cm 솎기)
 │   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL(gzip)
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
-│   ├── nav.py                       Nav2 목표·취소·진행 상태, AMCL 초기 위치 (ROS 스레드 큐)
+│   ├── nav.py                       Nav2 목표·취소·진행 상태, AMCL 초기 위치, 자동 위치 찾기 상태·요청 (ROS 스레드 큐)
 │   ├── mode_manager.py              운용 모드: system.launch 를 프로세스 그룹으로 켜고 끔, 외부 실행 감지
 │   ├── maps.py                      저장 지도 목록·미리보기·저장(map_saver_cli)·삭제
 │   ├── teleop.py                    조이스틱 → /cmd_vel (0.3초 워치독, 속도 상한, 시작 시 Nav2 목표 취소)
@@ -65,6 +65,7 @@ web/                                 React 프론트엔드 (npm 프로젝트, RO
     ├── components/Map3D.tsx         react-three-fiber 3D 화면 (보기 전용, 「3D」 누를 때만 내려받음)
     ├── components/MapPanel.tsx      도구(보기·목표·초기 위치)·레이어 토글·목표 확인 창
     ├── components/NavPanel.tsx      주행 상태·남은 거리·취소
+    ├── components/LocalizationBar.tsx 자동 위치 찾기 상태 칩·「위치 찾기」·후보 선택 (저장 지도 주행)
     ├── components/StatusBar.tsx     모드·서버 연결·로봇 연결·속도
     ├── components/CameraPanel.tsx   MJPEG <img>, 원본/검출 결과 전환
     ├── components/BatteryCard.tsx   전압·셀 전압·판정
@@ -388,6 +389,18 @@ Nav2:    global·local costmap 의 KeepoutFilter 가 마스크 칸을 LETHAL 로
 - 설치 함정: 레포 파일 링크로 enable 된 사용자 서비스는 `systemctl --user disable` 이 **링크까지 지운다** → 'Unit not found'
   로 웹 「켜기」 가 실패. `systemctl --user link …/tb3-bringup.service` 로 다시 등록 (pi_setup 9-2 ①).
 
+### 4.20 자동 위치 찾기 — 저장 지도 주행에서 「초기 위치」 를 찍지 않아도 (`nav.py`, `LocalizationBar.tsx`)
+
+알고리즘·노드는 별도 패키지 [my_localization](./my_localization.md). 웹 쪽은 얇다:
+- `nav.py` 가 `/relocalization/status`(JSON, transient local)를 구독해 `nav.localization` 으로 WebSocket push,
+  `POST /api/nav/relocalize` 는 `/relocalizer/relocalize`(std_srvs/Trigger) 호출 — 다른 주행 요청과 같은 ROS 스레드 큐 규칙.
+- 지도 머리줄(저장 지도 주행 중에만): 상태 칩 — 위치 확인됨·찾는 중·후보 여럿·위치 모름·위치 잃음 (툴팁: 방법·지금 맞는 정도) —
+  과 「위치 찾기」 버튼 (로봇을 옮겨 놓았을 때).
+- 확신 못 할 때(후보 여럿·모름): 지도 위 안내와 후보 버튼 3개(좌표·방향·점수). 누르면 2D 지도로 전환하고 그 자리를
+  「초기 위치」 확인 창으로 띄운다 — 로봇 모양이 그 자리에 미리 그려지니 실제와 비교해 「설정」.
+  「초기 위치」 도구는 그대로 두되 '자동이 실패했을 때만' 으로 안내.
+- 모드 전환 메시지도 "로봇 위치는 자동으로 찾습니다" 로.
+
 ## 5. 실행
 
 ### 평소 (서버 부팅 시 자동)
@@ -464,6 +477,11 @@ python3 /overlay_ws/src/my_web_api/tools/nav_api_check.py       # 목표→도�
 - 화면(헤드리스 크롬 원격 조작): 「지도 만들기 시작」→「지도 저장」→ 목록·미리보기 →「이 지도로 주행」→「정지」.
 - ⏳ 조이스틱으로 실제 로봇을 움직이는 시험은 바닥에서 사용자 입회 하에.
   (이번엔 로봇 위치를 몰라 움직이는 시험을 하지 않았다.)
+
+**자동 위치 찾기 (2026-11-14, 로봇 실기 — 정지 상태)**
+- 웹 「저장 지도로 주행」 → relocalizer 가 0.12초 만에 (0.954, 1.797) −68.6° 점수 0.94 → `/api/nav` 의 `localization`
+  `localized/global`, 추적 점수 0.79~0.82. 재시작 시 `last_pose` 0.94. 상세·시뮬레이션은 my_localization.md 7장.
+- ⏳ 화면 확인 (칩·버튼·후보 선택), 바닥에서 들어 옮기기 시험.
 
 ## 7. 다음
 

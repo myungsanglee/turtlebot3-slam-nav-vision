@@ -139,7 +139,7 @@ remote_pc/src/my_navigation/
 ├── config/
 │   └── nav2_params.yaml                # ★ Nav2 전체 노드의 파라미터 (핵심 파일)
 ├── launch/
-│   └── navigation.launch.py            # SLAM 동시 실행(기본) / 저장 지도 모드 + 카메라 점 구름 노드(camera_obstacles)
+│   └── navigation.launch.py            # SLAM 동시 실행(기본) / 저장 지도 모드(+자동 위치 찾기 relocalize) + 카메라 점 구름 노드(camera_obstacles)
 └── rviz/
     └── nav.rviz                        # 코스트맵/경로/footprint 시각화 설정
 ```
@@ -156,6 +156,7 @@ my_slam 과 마찬가지로 소스 코드가 없다 — 검증된 표준 스택(
 | nav2_behaviors / bt_navigator | 복구 동작 / 행동 트리 지휘 |
 | nav2_velocity_smoother | cmd_vel 을 가감속 한도로 다듬기 |
 | nav2_amcl + nav2_map_server | 저장 지도 모드에서의 위치추정 (모드 2에서만) |
+| **my_localization** (자체) | 저장 지도 모드의 **초기 위치 자동 찾기** — 스캔을 지도 전체에 맞춰 `/initialpose` 발행 (docs/my_localization.md) |
 | my_slam | 기본 모드에서 지도+위치 제공 (slam_toolbox) |
 
 ## 4. 파라미터 작성 기준 — 어디서 온 값인가
@@ -180,6 +181,8 @@ my_slam 과 마찬가지로 소스 코드가 없다 — 검증된 표준 스택(
 | costmap `plugins` | obstacle + **camera_layer** + inflation | 라이다 층 + 카메라 깊이 층(2D ObstacleLayer 두 개, 2.1). 3D voxel_layer 대신 2D 층 + 높이 필터 — 로봇이 낮아(14cm) 높이 구분이 거의 필요 없음 |
 | `allow_unknown` | true | 미탐사 영역 주행 허용 (SLAM 동시 주행에 필수) |
 | `footprint` | 앞 0.062 / 뒤 −0.220 / 좌우 ±0.090 | **실측 다각형** (2026-09-08). 표준 robot_radius 0.105 원 대체. 뒤는 카메라 USB 케이블 돌출 포함(몸체 CAD 는 −0.165) |
+| `xy_goal_tolerance` | **0.07** (기본 0.25) | 도착 판정 반경. 기본값이면 클릭한 곳 25cm 앞에서 "도착" — 실주행에서 목표 27cm 앞 정지 확인(2026-11-14). AMCL 오차(3~5cm)보다 조금 크게 — 더 줄이면 목표 근처에서 맴돌 수 있다. goal checker 와 DWB 양쪽 같은 값 |
+| `yaw_goal_tolerance` | **0.15** rad (기본 0.25) | 도착 방향 허용 ≈9° |
 
 ## 5. 실행 방법
 
@@ -206,7 +209,13 @@ ros2 launch my_navigation navigation.launch.py \
 ```
 
 slam_toolbox 대신 map_server(저장 지도) + AMCL(파티클 필터 위치추정)이 뜬다.
-이때는 RViz "2D Pose Estimate" 로 초기 위치를 알려줘야 AMCL 이 수렴한다.
+AMCL 은 "대략 여기쯤" 이라는 초기 위치를 받아야 그 근처를 추적한다 — 이 초기 위치를
+**my_localization 의 relocalizer 가 자동으로 만든다** (마지막 위치 확인 → 안 맞으면 지도 전체 검색,
+로봇을 들어 옮기면 '위치 잃음' 감지 후 다시 찾기 — docs/my_localization.md).
+확신이 없을 때만 RViz "2D Pose Estimate"(또는 웹 「초기 위치」)로 직접 지정. 끄기: `relocalize:=false`.
+
+> 지도 저장은 `map_saver_cli ... --free 0.196` — nav2 기본값(0.25)이면 미탐사 영역이 다시 불러올 때
+> 빈 칸으로 읽힌다 (troubleshooting 2026-11-14).
 
 ## 6. 검증 기록 (2026-07-07, 실물 로봇 연결 상태)
 
@@ -235,8 +244,8 @@ slam_toolbox 대신 map_server(저장 지도) + AMCL(파티클 필터 위치추�
    통로 통과·벽 여유를 보고 inflation_radius(0.55) 와 함께 미세 조정.
 2. ~~URDF 보정과 연동~~ → **완료 (2026-08)**: LDS 실측 보정 URDF 가 Pi 에
    배포되어 지도·코스트맵 정확도의 기반은 확보됨 (description.md 참고).
-3. **실주행 튜닝** — 실제 목표점 주행에서 DWB critic 가중치, inflation,
-   goal tolerance 를 환경에 맞게 조정.
+3. **실주행 튜닝** — 실제 목표점 주행에서 DWB critic 가중치, inflation 을 환경에 맞게 조정.
+   goal tolerance 는 0.25 → 0.07 로 줄임 (2026-11-14, 목표 앞 정지 문제) — 바닥에서 맴돎 없는지 확인 남음.
 4. **robot_localization(EKF)** — 보류. TurtleBot3 가 이미 IMU 회전 융합 중(`use_imu: true` — 거리는 바퀴, 회전각은 IMU), 실주행 검증 후 필요 시 착수.
 5. **Vision AI 연동** — ① 깊이 층(camera_layer) ✅ 구현 (2026-11-12, 바닥 실측 조정 남음).
    ② 의미 층(검출 물체 종류별 여유·사람 근처 감속) — vision_avoidance_design.md V2~V4.

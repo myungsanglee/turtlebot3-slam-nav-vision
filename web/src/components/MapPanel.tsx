@@ -7,6 +7,7 @@ import { useRobotModel } from '../api/robot'
 import type { Pose, RobotStream } from '../api/types'
 import { useZones } from '../api/zones'
 import MapView, { type Layers, type MapHandle, type Tool } from './MapView'
+import { LocalizationAlert, LocalizationControl } from './LocalizationBar'
 import { type Draft, ZoneDraftBar, ZoneList } from './ZoneEditor'
 
 // three.js(~700KB)는 「3D」 를 누를 때만 내려받는다 — 2D 만 쓰는 폰에서 첫 로딩이 늘지 않게
@@ -15,7 +16,7 @@ const Map3D = lazy(() => import('./Map3D'))
 const TOOL_HINT: Record<Tool, string> = {
   view: '끌어서 이동 · 휠로 확대',
   goal: '목표 위치를 누르고 바라볼 방향으로 끌었다 놓기 → 확인 후 이동',
-  initial: '로봇의 실제 위치를 누르고 바라보는 방향으로 끌기 (저장 지도 주행 시 AMCL 초기화)',
+  initial: '로봇의 실제 위치를 누르고 바라보는 방향으로 끌기 — 자동 위치 찾기가 실패했을 때만 (저장 지도 주행)',
   zone: '거울·유리 앞(10cm 쯤 떨어져)에 점을 차례로 누르기 → 「완료」. 가상 벽 = 선, 금지 구역 = 닫힌 영역',
 }
 
@@ -42,6 +43,8 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
   const costmap = fresh(nav?.costmap_age) ? robot.costmap : null
   const footprint = fresh(nav?.footprint_age) ? robot.footprint : []
   const active = robot.nav && (robot.nav.state === 'active' || robot.nav.state === 'sending')
+  // 자동 위치 찾기: 저장 지도 주행 중에만 (SLAM 모드는 slam_toolbox 가 위치를 스스로 안다)
+  const loc = robot.mode?.mode === 'NAVIGATION' ? (robot.nav?.localization ?? null) : null
 
   const confirm = () => {
     if (!pending) return
@@ -61,6 +64,7 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
           </Typography>
           {nav?.display_frame === 'odom' && <Chip size="small" variant="outlined" label="출발점(odom) 기준" />}
           {nav && nav.display_frame === null && <Chip size="small" color="warning" label="로봇 위치 없음" />}
+          {robot.mode?.mode === 'NAVIGATION' && <LocalizationControl loc={loc} />}
           <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v) => v && (setView(v), setTool('view'), setPending(null))}>
             <ToggleButton value="2d">2D</ToggleButton>
             <ToggleButton value="3d">3D</ToggleButton>
@@ -108,6 +112,7 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
           </Tooltip>
         </Stack>
 
+        <LocalizationAlert loc={loc} onPick={(p) => (setView('2d'), setTool('initial'), setPending(p))} />
         <Box sx={{ position: 'relative' }}>
           {view === '3d' ? (
             <Box sx={{ height: { xs: 420, md: '68vh' }, bgcolor: '#0b0d10', borderRadius: 1 }}>

@@ -1,4 +1,4 @@
-"""Nav2 목표 전송·취소·진행 상태 (NavigateToPose 액션) + AMCL 초기 위치.
+"""Nav2 목표 전송·취소·진행 상태 (NavigateToPose 액션) + AMCL 초기 위치 + 자동 위치 찾기 상태·요청.
 
 스레드 규칙: rclpy 호출(액션 전송·취소·publish)은 **ROS executor 스레드에서만** 한다.
 FastAPI(asyncio) 쪽은 submit() 으로 요청을 큐에 넣고 concurrent.futures.Future 로 결과를 기다린다.
@@ -10,6 +10,7 @@ ROS 타이머(20Hz)가 큐를 비우며 실제 호출을 한다 → rclpy 객체
 """
 from __future__ import annotations
 
+import json
 import math
 import queue
 import threading
@@ -20,6 +21,9 @@ from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import String
+from std_srvs.srv import Trigger
 
 from .geometry import quaternion_from_yaw
 
@@ -31,11 +35,19 @@ RESULT_STATE = {
 
 
 class NavController:
-    def __init__(self, node, action_name: str, initialpose_topic: str, frame: str):
+    def __init__(self, node, action_name: str, initialpose_topic: str, frame: str,
+                 relocalize_service: str = '/relocalizer/relocalize',
+                 relocalization_topic: str = '/relocalization/status'):
         self._node = node
         self._frame = frame
         self._client = ActionClient(node, NavigateToPose, action_name)
         self._initialpose_pub = node.create_publisher(PoseWithCovarianceStamped, initialpose_topic, 10)
+        # 자동 위치 찾기 (my_localization relocalizer — 저장 지도 주행 모드에서만 뜬다)
+        self._reloc_client = node.create_client(Trigger, relocalize_service)
+        latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                             durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        node.create_subscription(String, relocalization_topic, self._on_localization, latched)
+        self._localization = None
         self._queue: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
         self._goal_handle = None
@@ -55,7 +67,7 @@ class NavController:
 
     def snapshot(self) -> dict:
         with self._lock:
-            return {**self._state, 'version': self.version}
+            return {**self._state, 'localization': self._localization, 'version': self.version}
 
     # ---------- 이하 ROS 스레드 ----------
     def _set(self, **kw):
@@ -127,6 +139,31 @@ class NavController:
                'aborted': '주행 실패 (경로 없음·복구 동작 한도 초과 등 — Nav2 로그 확인)'}[state]
         self._goal_handle = None
         self._set(state=state, message=msg)
+
+    def _on_localization(self, msg: String):
+        try:
+            loc = json.loads(msg.data)
+        except ValueError:
+            return
+        with self._lock:
+            self._localization = loc
+            self.version += 1
+
+    def _do_relocalize(self, fut: Future):
+        """relocalizer 에 지도 전체 검색 요청. 결과는 /relocalization/status 로 따로 온다."""
+        if not self._reloc_client.service_is_ready():
+            fut.set_result({'ok': False, 'reason': 'unavailable',
+                            'message': '자동 위치 찾기가 실행 중이 아님 (저장 지도로 주행 모드에서만 동작)'})
+            return
+        call = self._reloc_client.call_async(Trigger.Request())
+
+        def done(f):
+            try:
+                r = f.result()
+                fut.set_result({'ok': bool(r.success), 'reason': None if r.success else 'busy', 'message': r.message})
+            except Exception as e:  # noqa: BLE001
+                fut.set_result({'ok': False, 'reason': 'error', 'message': str(e)})
+        call.add_done_callback(done)
 
     def _do_cancel(self, fut: Future):
         if self._goal_handle is None:

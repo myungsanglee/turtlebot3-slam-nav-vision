@@ -25,6 +25,8 @@
 | 통합 런치에서 어떤 노드가 자기 YAML 설정을 무시하고 기본값으로 돈다 | 하위 런치끼리 같은 이름의 인자(`params_file`)가 공유돼 다른 런치의 값이 들어감 | 하위 런치를 `GroupAction(scoped=True)` 로 감싸기, `ros2 param get` 으로 확인 (2026-11-12 항목) |
 | 라이다는 돌고 odom·카메라는 오는데 `/scan` 만 끊김 (Pi 안에서도 0) | 미확정 — LDS 드라이버(`hlds_laser_publisher`)가 살아 있는데 발행 정지 | Pi 에서 시리얼 포트를 1초 읽으면 복구됨 → `scan-watchdog` 서비스가 자동 기록·복구 (2026-11-12 라이다 항목) |
 | 라이다 수신이 끊기고 bringup 재시작으로도 안 돌아옴, 배터리 값이 한 값에 멈춤 | Pi 5V 저전압 → USB 포트 전체 리셋 → 장치가 ttyUSB1·ttyACM1 로 재연결, 라이다 드라이버 종료·OpenCR 통신 끊김 | 로봇 전원 껐다 켜기 (by-id 포트 적용 후엔 `systemctl --user restart tb3-bringup`). 전원 원인은 `~/.ros/scan_watchdog/power-*.log`·`events.log` 로 추적 (2026-11-12 저전압 항목) |
+| 저장 지도로 주행할 때 벽 바깥(미탐사 회색)까지 빈 곳으로 취급됨 | nav2 `map_saver_cli` 기본 `free_thresh 0.25` → 미탐사 픽셀(205)이 불러올 때 0.196 < 0.25 로 '빈 칸' | 저장 시 `--free 0.196` (웹 저장은 적용됨), 옛 지도는 yaml 의 `free_thresh: 0.196` 으로 (2026-11-14 항목) |
+| 클릭한 목표보다 20~25cm 앞에서 "도착" 하고 멈춤 | Nav2 도착 판정 반경 `xy_goal_tolerance` 기본 0.25 m | 0.07 로 (goal checker·DWB 둘 다) (2026-11-14 항목) |
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
 | 카메라 토픽은 discover 되는데 데이터 수신 0 (라이다는 됨) | Fast DDS Discovery Server 가 VPN+멀티홈+복잡 참가자(카메라)에서 데이터 전달 실패 | Zenoh 전환 (아래 2026-08-29 항목) |
@@ -767,3 +769,41 @@ bringup 은 건드리지 않고 옆에서 `/scan` 을 구독하다가 드라이�
   배터리가 높은데 저전압이면 UBEC·배선 쪽(후보 ①), 충전 상태 변화와 맞물리면 충전기 쪽(후보 ②).
 - 오래 켜 둔 상태에서 GPIO 5V 를 멀티미터로 재기 (부팅 직후 4.91V 와 비교).
 - 여유 확보 방법 후보: UBEC→Pi 선을 굵고 짧게(또는 USB-C 입력으로), 출력 조정 가능한 UBEC 면 5.1~5.2V 를 GPIO 에서 맞추기.
+
+---
+
+## 2026-11-14 — 첫 바닥 시험에서 나온 세 가지: 목표 앞 정지 · 미탐사=빈 칸 지도 · 아무도 몰랐던 AMCL 위치 잃음
+
+첫 실주행(지도 만들기 → 저장 → 저장 지도 주행 → 초기 위치 → 클릭 주행)은 전부 동작했다. 사용자가 두 가지를 짚었고,
+자동 위치 찾기(my_localization)를 만들며 하나가 더 나왔다.
+
+### ① 클릭한 곳까지 안 가고 그 앞에서 멈춤
+
+- **증상**: 목표 부근까지 가서 멈춘다. 정확히 찍은 곳에 서지 않는다.
+- **진단**: launch 로그(`/tmp/web_api_mode_launch.log`)의 bt_navigator 기록 — 목표 (1.36, 2.05), 다음 목표를 보낼 때의
+  출발 위치 (1.46, 1.80) → **27cm 앞**에서 "Reached the goal!". `nav2_params.yaml` 의
+  `general_goal_checker.xy_goal_tolerance: 0.25` (Nav2·ROBOTIS 예제 기본값) — 목표 25cm 안이면 도착.
+- **해결**: `xy_goal_tolerance` 0.07 (goal checker 와 DWB `FollowPath` 둘 다 — DWB 의 GoalDist·RotateToGoal critic 도 이 값을 본다),
+  `yaw_goal_tolerance` 0.25 → 0.15 rad. AMCL 오차(3~5cm)보다는 크게 — 더 작으면 목표 근처에서 맴돌 수 있다.
+- **남은 것**: 바닥에서 맴돎 없이 서는지 확인. 벽·장애물 바로 옆을 찍으면 planner `tolerance 0.5` 로 갈 수 있는 가장 가까운 점까지만 간다 (정상).
+
+### ② 저장 지도의 미탐사 영역이 '빈 칸' 으로 읽힘
+
+- **증상**: 자동 위치 찾기의 후보 칸 수가 지도의 흰 칸(1270)보다 훨씬 많은 2692. `/map` 값 분포 `{0: 3283, 100: 469}` — **-1(미탐사)이 하나도 없다.**
+- **근본 원인**: nav2 `map_saver_cli` 는 미탐사를 회색 205 로 쓰고 yaml 에 `free_thresh: 0.25` 를 적는다.
+  map_server 는 불러올 때 `occ = (255 − 205)/255 = 0.196 < free_thresh 0.25` → **빈 칸**. 저장·불러오기 기본값끼리 어긋나는 것
+  (ROS 1 map_saver 는 0.196 을 썼다).
+- **영향**: 벽 바깥 미탐사 영역까지 '빈 곳' — AMCL·전역 경로 계획이 벽 너머를 빈 땅으로 본다(벽은 막혀 있어 실주행 영향은 작았음),
+  위치 찾기 후보가 벽 바깥까지 늘어 오답 위험 증가.
+- **해결**: 웹 지도 저장(`maps.py`)에 `--free 0.196` (README·my_slam.md 수동 명령도). 기존 지도 `map_20261113_1833.yaml` 은
+  `free_thresh: 0.196` 로 고침 → `{-1: 2013, 0: 1270, 100: 469}` (실측), 후보 칸 985.
+- **재발 방지**: 지도를 새로 저장한 뒤 `/map` 에 -1 이 있는지 (위치 찾기 로그의 "후보 칸" 수가 흰 영역과 비슷한지) 확인.
+
+### ③ AMCL 이 위치를 잃은 채 아무도 몰랐다
+
+- **발견**: 자동 위치 찾기 첫 실기 시험 직전, 시험 주행 후 정지해 있던 로봇의 AMCL 위치 (1.03, 1.92) −168°.
+  자동 위치 찾기가 찾은 위치는 (0.95, 1.80) −69° — 방향이 99° 다르다. `tools/score_pose.py` 로 지금 스캔의 일치 점수를 비교:
+  AMCL 쪽 **0.08**, 찾은 쪽 **0.93**. AMCL 이 이미 틀린 곳에 수렴해 있었다.
+- **원인**: 확정 못 함 — 손으로 찍은 초기 위치 오차, 주행 뒤 로봇을 옮김 등. AMCL 은 스스로 "틀렸다" 를 알리지 않는다.
+- **대응**: my_localization 이 1초마다 추적 점수를 계산해 4초 동안 0.3 미만이면 '위치 잃음' → 지도 전체 검색으로 바로잡는다.
+  웹 지도 머리줄 칩에 상태·점수 표시 (docs/my_localization.md).

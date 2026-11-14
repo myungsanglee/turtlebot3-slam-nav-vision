@@ -1,0 +1,17 @@
+# 자동 위치 찾기 (my_localization relocalizer_node) — docs/my_localization.md
+# 점수는 0~1. 최종 점수 = 우도장 평균(점이 벽 근처에 떨어진 정도) × 빔 일관성(벽을 뚫고 본 빔이 없는 정도)
+relocalizer:
+  ros__parameters:
+    base_frame: base_footprint
+    global_frame: map
+    accept_score: 0.4          # 이보다 낮으면 '찾지 못함' (시뮬레이션 정답 최저 0.70 — 실측으로 조정)
+    ambiguity_margin: 0.1      # 1등이 다른 곳(2등)보다 이만큼 높아야 확신 (시뮬레이션 최소 차 0.135)
+    last_pose_radius: 0.5      # 시작 시 마지막 위치 확인 범위 [m] — 이 밖으로 옮겼으면 전체 검색
+    last_pose_angle_deg: 30.0
+    auto_start: true           # 저장 지도 주행 시작 때 자동으로 찾기
+    lost_check: true           # 위치 잃음 감시 (로봇을 들어 옮긴 경우)
+    lost_score: 0.3            # 추적 점수(현재 위치의 최종 점수)가 이보다 낮으면 의심 (시뮬: 정상 하위5% 0.49, 엉뚱한 곳 상위5% 0.24)
+    lost_sec: 4.0              # 그 상태가 이만큼 이어지면 '위치 잃음' → 전체 검색
+    retry_sec: 3.0             # 잃은 동안 전체 검색 간격 (내려놓으면 다음 시도에서 찾음)
+    pose_save_sec: 2.0         # 마지막 위치 저장 간격 (<지도>.pose.json)
+    max_range: 3.5             # LDS-01 사거리 [m]

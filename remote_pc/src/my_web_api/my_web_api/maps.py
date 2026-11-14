@@ -82,18 +82,24 @@ class MapStore:
     def save(self, name: str, timeout_sec: float = 15.0) -> dict:
         """지금 /map 을 파일로 (map_saver_cli). 같은 이름이 있으면 덮어쓴다."""
         base = self.path(name, 'yaml')[:-5]
-        cmd = ['ros2', 'run', 'nav2_map_server', 'map_saver_cli', '-f', base,
+        # --free 0.196: nav2 기본값(0.25)으로 저장하면 미탐사(회색 205) 픽셀이 다시 불러올 때 (255-205)/255=0.196 < 0.25
+        #   → '빈 칸' 으로 읽힌다 (벽 바깥까지 빈 곳이 됨 — troubleshooting 2026-11-14). ROS 1 map_saver 의 값.
+        cmd = ['ros2', 'run', 'nav2_map_server', 'map_saver_cli', '-f', base, '--free', '0.196',
                '--ros-args', '-p', f'save_map_timeout:={timeout_sec}']
         t0 = time.time()
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec + 10)
         ok = r.returncode == 0 and os.path.isfile(base + '.yaml') and os.path.getmtime(base + '.yaml') >= t0 - 1
         tail = (r.stdout + r.stderr).strip().splitlines()[-3:]
         msg = '저장됨' if ok else '저장 실패: ' + ' / '.join(tail)
-        # 같은 이름으로 덮어쓴 새 지도는 좌표 원점이 다를 수 있다 (SLAM 을 새로 켜면 원점이 바뀜) → 옛 금지 구역은 버린다
+        # 같은 이름으로 덮어쓴 새 지도는 좌표 원점이 다를 수 있다 (SLAM 을 새로 켜면 원점이 바뀜)
+        #   → 옛 금지 구역·마지막 위치(자동 위치 찾기)는 버린다
         zpath = self.path(name, 'zones.json')
         if ok and os.path.isfile(zpath):
             os.remove(zpath)
             msg += ' (새 지도라 이전 금지 구역은 지움)'
+        ppath = self.path(name, 'pose.json')
+        if ok and os.path.isfile(ppath):
+            os.remove(ppath)
         return {'ok': ok, 'name': name, 'message': msg}
 
     # ---------- 금지 구역 (zones.py) ----------
@@ -124,7 +130,8 @@ class MapStore:
         if not os.path.isfile(y_path):
             return False
         img = read_yaml_simple(y_path).get('image', f'{name}.pgm')
-        for p in (y_path, os.path.join(self.dir, os.path.basename(img)), self.path(name, 'zones.json')):
+        for p in (y_path, os.path.join(self.dir, os.path.basename(img)), self.path(name, 'zones.json'),
+                  self.path(name, 'pose.json')):
             if os.path.isfile(p):
                 os.remove(p)
         return True

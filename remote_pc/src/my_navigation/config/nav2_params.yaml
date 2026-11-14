@@ -147,8 +147,10 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25       # 목표점 도착 판정 반경 (m)
-      yaw_goal_tolerance: 0.25      # 도착 방향 허용 오차 (rad)
+      # 도착 판정: 기본값(0.25 m)이면 클릭한 곳 25cm 앞에서 "도착" 처리돼 멈춘다 (2026-11-14 실주행 — 27cm 앞 정지).
+      # AMCL 위치 오차(3~5cm)보다 조금 크게: 더 줄이면 목표 근처에서 앞뒤로 맴돌 수 있음
+      xy_goal_tolerance: 0.07       # 목표점 도착 판정 반경 (m)
+      yaw_goal_tolerance: 0.15      # 도착 방향 허용 오차 (rad, ≈9°)
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
@@ -173,7 +175,7 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.07       # general_goal_checker 와 같게
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
       stateful: True

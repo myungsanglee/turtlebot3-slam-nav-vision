@@ -17,6 +17,7 @@
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>my_slam</exec_depend>
   <exec_depend>my_vision</exec_depend>   <!-- depth_cloud_node (카메라 깊이 층) -->
+  <exec_depend>my_localization</exec_depend>   <!-- relocalizer (자동 위치 찾기) -->
   <exec_depend>rviz2</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

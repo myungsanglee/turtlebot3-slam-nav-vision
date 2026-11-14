@@ -8,7 +8,9 @@
 # [모드 2] 저장된 지도로 주행 (지도 완성 후):
 #   ros2 launch my_navigation navigation.launch.py \
 #       use_slam:=false map:=/overlay_ws/maps/my_map.yaml
-#   → map_server + AMCL(localization) + Nav2 + RViz.
+#   → map_server + AMCL(localization) + 자동 위치 찾기(my_localization) + Nav2 + RViz.
+#   초기 위치는 relocalizer 가 스캔을 지도에 맞춰 스스로 찾는다 (마지막 위치 확인 → 지도 전체 검색).
+#   끄기: relocalize:=false (그때는 RViz '2D Pose Estimate'·웹으로 직접 지정)
 #
 # 카메라 깊이 층 (회피 V1): my_vision depth_cloud_node 가 depth → /camera/points 를 만들어 costmap 의
 #   camera_layer 에 넣는다. 끄기: camera_obstacles:=false (Nav2 는 camera_layer 입력 없이도 그대로 동작)
@@ -39,6 +41,7 @@ def generate_launch_description():
     map_yaml = LaunchConfiguration('map')
     use_rviz = LaunchConfiguration('use_rviz')
     camera_obstacles = LaunchConfiguration('camera_obstacles')
+    relocalize = LaunchConfiguration('relocalize')
 
     declare_params_file = DeclareLaunchArgument(
         'params_file',
@@ -65,6 +68,22 @@ def generate_launch_description():
         'camera_obstacles',
         default_value='true',
         description='카메라 depth 점 구름을 장애물 지도에 넣기 (회피 V1)')
+
+    declare_relocalize = DeclareLaunchArgument(
+        'relocalize',
+        default_value='true',
+        description='저장 지도 주행에서 자동 위치 찾기 (my_localization relocalizer)')
+
+    # 자동 위치 찾기: 저장 지도 모드에서만 (SLAM 모드는 slam_toolbox 가 위치를 스스로 안다)
+    relocalizer_node = Node(
+        package='my_localization',
+        executable='relocalizer_node',
+        name='relocalizer',
+        output='screen',
+        parameters=[os.path.join(get_package_share_directory('my_localization'), 'config', 'relocalizer.yaml'),
+                    {'map_yaml': map_yaml}],
+        condition=IfCondition(PythonExpression(["'", map_yaml, "' != '' and '", relocalize, "' == 'true'"])),
+    )
 
     # 카메라 깊이 층 입력: 정렬 depth → /camera/points (가벼운 CPU 노드, Vision AI 와 무관하게 Nav2 와 함께 뜬다)
     depth_cloud_node = Node(
@@ -123,9 +142,11 @@ def generate_launch_description():
         declare_map,
         declare_use_rviz,
         declare_camera_obstacles,
+        declare_relocalize,
         depth_cloud_node,
         slam_launch,
         localization_launch,
+        relocalizer_node,
         navigation_launch,
         rviz_node,
     ])

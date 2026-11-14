@@ -216,7 +216,7 @@ ros2 launch my_slam slam.launch.py
 # 로봇을 teleop 으로 천천히 몰면서 지도가 그려지는 것을 확인
 # 지도가 완성되면 저장:
 mkdir -p /overlay_ws/maps
-ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map
+ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map --free 0.196
 ```
 
 저장하면 `my_map.pgm`(지도 이미지) + `my_map.yaml`(해상도/원점 메타데이터)가 생기며,

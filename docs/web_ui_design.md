@@ -97,7 +97,7 @@ RViz/Foxglove 는 개발자 디버깅용으로 남긴다.
 |---|---|---|
 | IDLE | 없음 (web-api 만) | 로봇 상태·배터리·카메라 보기, 조이스틱 |
 | MAPPING | `system.launch.py use_slam:=true rviz:=false` | 실시간 지도, 클릭 목표로 탐사, 조이스틱, **지도 저장** |
-| NAVIGATION | `system.launch.py use_slam:=false map:=<yaml> rviz:=false` | 초기 위치 지정, 클릭 목표 주행, 검출 물체 보기 |
+| NAVIGATION | `system.launch.py use_slam:=false map:=<yaml> rviz:=false` | 위치 자동 찾기(my_localization, 실패 시 후보 선택·초기 위치 지정), 클릭 목표 주행, 검출 물체 보기 |
 
 - 모드 전환 = 현재 launch 의 **프로세스 그룹 전체에 SIGINT** → 최대 15초 대기 → 남으면 SIGTERM → SIGKILL,
   그다음 새 launch. (2026-11-05 에 겪은 "백그라운드 launch 가 SIGINT 를 무시하는" 함정을 피하려고
@@ -118,6 +118,7 @@ RViz/Foxglove 는 개발자 디버깅용으로 남긴다.
 | `POST /api/nav/goal {x, y, yaw}` | 지도 좌표로 이동 | Nav2 `NavigateToPose` 액션 |
 | `POST /api/nav/cancel` | 이동 취소 | 액션 cancel |
 | `POST /api/nav/initial_pose {x, y, yaw}` | AMCL 초기 위치 | `/initialpose` 발행 |
+| `POST /api/nav/relocalize` | 자동 위치 찾기 (지도 전체 검색) | `/relocalizer/relocalize` 서비스 (2026-11-14) |
 | `GET /api/costmap` | 로컬 장애물 지도 PNG(반투명 오버레이용) + 메타. Nav2 가 "어디를 피하는지" 보여줌 | `/local_costmap/costmap` → PNG (odom 기준이므로 TF 로 지도 위치 계산) |
 | `GET /api/camera.mjpg` · `GET /api/vision.mjpg` | 카메라 / 검출 결과 영상 | `/camera/color/compressed`, `/vision/annotated/compressed` 의 JPEG 를 그대로 전달 |
 

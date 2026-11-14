@@ -66,7 +66,7 @@ CAD 메시를 읽기 위한 패키지, docs/description.md 3.4). 우리 패키�
 
 ```bash
 docker compose exec remote-pc bash
-colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_vision, my_bringup, my_web_api, my_description)
+colcon build --symlink-install        # /overlay_ws 에서 (my_slam, my_navigation, my_localization, my_vision, my_bringup, my_web_api, my_description)
 exit && docker compose exec remote-pc bash   # 재진입하면 자동 source 됨
 ```
 

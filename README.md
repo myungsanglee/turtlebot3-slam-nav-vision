@@ -34,6 +34,7 @@ ROBOTIS **TurtleBot3 실물 로봇**으로 **SLAM · Navigation · Vision AI**�
 | 실행 환경 | Docker (`osrf/ros:humble-desktop` 기반) |
 | SLAM | slam_toolbox (online async) |
 | Navigation | Nav2 |
+| Localization | 저장 지도 주행: AMCL + **자체 전역 위치 찾기**(스캔-지도 매칭 + 빔 일관성 — 초기 위치 자동, 로봇을 옮기면 다시 찾기) |
 | 원격 통신 | **Zenoh Bridge** (zenoh-bridge-ros2dds) — Fast DDS 의 VPN 한계 진단 후 전환 |
 | 카메라 | RealSense D435i — **자체 pyrealsense2 노드** (공식 노드의 Pi4 USB 불안정을 캘리브레이션 캐시·프로세스 분리로 우회), 컬러 + 컬러 정렬 depth compressed 원격 전송 |
 | Vision AI | **RF-DETR** + **TensorRT**(fp16, 컨테이너 안에서 엔진 빌드·캐시) + 정렬 depth 거리 → 3D 위치 |
@@ -49,7 +50,7 @@ turtlebot3-slam-nav-vision/
 ├── docker-compose.yml         # zenoh-bridge + remote-pc + web-api 서비스
 ├── secrets/                   # (git 제외) 웹 → Pi 전원 버튼용 SSH 키
 ├── config/                    # zenoh 브리지 설정 등 공용 설정
-├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_vision, my_bringup 통합런치, my_web_api 웹 백엔드)
+├── remote_pc/src/             # Remote PC 패키지 (my_slam, my_navigation, my_localization 자동 위치 찾기, my_vision, my_bringup 통합런치, my_web_api 웹 백엔드)
 ├── web/                       # 웹 콘솔 프론트엔드 (React + TypeScript + Vite)
 ├── robot/src/                 # Raspberry Pi 패키지 (realsense_bringup)
 ├── robot/systemd/             # Pi 사용자 서비스: bringup, 부팅 시 대기, 라이다·전원 감시
@@ -64,7 +65,8 @@ turtlebot3-slam-nav-vision/
 | 컴포넌트 | 내용 | 상태 | 문서 |
 |---|---|---|---|
 | **my_slam** | slam_toolbox 기반 2D SLAM. 로봇 라이다(`/scan`)로 지도 작성 + 위치추정 | ✅ 실물 검증 | [docs/my_slam.md](./docs/my_slam.md) |
-| **my_navigation** | Nav2 자율주행. 지도 만들며 주행(기본) / 저장 지도+AMCL 모드. **실측 footprint**(전장 28cm 직사각형) 반영 | ✅ 실기 검증 (실주행 튜닝 예정) | [docs/my_navigation.md](./docs/my_navigation.md) |
+| **my_navigation** | Nav2 자율주행. 지도 만들며 주행(기본) / 저장 지도+AMCL 모드. **실측 footprint**(전장 28cm 직사각형) 반영, 도착 판정 7cm | ✅ 실주행 검증 (지도 만들기·저장 지도 클릭 주행, 튜닝 중) | [docs/my_navigation.md](./docs/my_navigation.md) |
+| **my_localization** | **자동 위치 찾기** — 라이다 스캔을 저장 지도 전체에 맞춰(correlative scan matching, 흐린→선명 우도장 + 빔 일관성) AMCL 초기 위치를 스스로 정함. 마지막 위치 확인, 확신 없으면 후보 제시, 위치 잃음(들어 옮김) 감지 후 재탐색 | ✅ 시뮬 192/192·실기 0.12초 (들어 옮기기 바닥 시험 대기) | [docs/my_localization.md](./docs/my_localization.md) |
 | **description** | 커스텀 로봇 URDF 센서 TF 실측 보정 (LDS 위치, IMU 회전·위치, **RealSense 카메라 프레임 체인**) + **실물 CAD 메시**로 RViz 로봇 모델 교체 | ✅ Pi 배포·TF 실기 검증 (전 항목 실측 완료), CAD 메시 RViz 확인 | [docs/description.md](./docs/description.md) |
 | **realsense_bringup** | D435i 브링업 — **자체 pyrealsense2 노드**: 컬러 + 컬러에 정렬된 depth(PNG 16bit, mm) compressed publish. 공식 노드가 Pi4 에서 간헐 실패하는 문제를 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 해결 | ✅ 원격 수신 검증 (기본 6fps, 15fps 까지 확인) | [docs/realsense_bringup.md](./docs/realsense_bringup.md) |
 | **인프라/네트워크** | Tailscale + **Zenoh Bridge** (Fast DDS Discovery Server 의 VPN 한계를 진단 후 전환) | ✅ 검증 완료 | [docs/troubleshooting.md](./docs/troubleshooting.md) |
@@ -122,7 +124,8 @@ http://100.95.193.1:8080/docs   API 문서
 1. 「운용 모드」 →「지도 만들기 시작」 (SLAM + Nav2 + Vision 이 뜬다, 약 10초)
 2. **조이스틱**(누르고 있는 동안만 움직임, 손 떼면 정지) 또는 지도의 「목표 지정」으로 돌아다니며 지도를 그린다
 3. 이름을 정해 「지도 저장」 → 목록에 미리보기와 함께 나타남
-4. 저장 지도를 고르고 「이 지도로 주행」 → 지도의 「초기 위치」로 로봇 위치를 알려 준다
+4. 저장 지도를 고르고 「이 지도로 주행」 → 로봇이 라이다로 **지도 위 자기 위치를 스스로 찾는다** (지도 머리줄 「위치 확인됨」).
+   로봇을 들어 옮기면 몇 초 안에 다시 찾는다. 확신이 없을 때만 후보를 고르거나 「초기 위치」로 알려 준다
 5. 「목표 지정」→ 목표 위치를 누르고 바라볼 방향으로 끌었다 놓기 →「이동」(확인을 한 번 더 받는다). 「정지」로 대기 모드
 
 - 로봇은 URDF 의 실물 CAD 로 그린다. 「2D / 3D」 로 전환하면 RViz 처럼 돌려 볼 수 있다 (3D 는 보기 전용).
@@ -146,10 +149,11 @@ RViz 툴바의 **2D Goal Pose** 로 목표를 찍으면 주행하고, 카메라�
 
 자주 쓰는 변형:
 ```bash
-ros2 launch my_bringup system.launch.py use_slam:=false map:=/overlay_ws/maps/my_map.yaml   # 저장 지도 + AMCL
+ros2 launch my_bringup system.launch.py use_slam:=false map:=/overlay_ws/maps/my_map.yaml   # 저장 지도 + AMCL + 자동 위치 찾기
+ros2 service call /relocalizer/relocalize std_srvs/srv/Trigger    # 위치 다시 찾기 (지도 전체 검색)
 ros2 launch my_bringup system.launch.py threshold:=0.3            # 검출 더 민감하게 (backend:=torch 로 비교 가능)
 ros2 launch my_bringup system.launch.py vision:=false             # SLAM + Nav2 만
-ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map # 지도 저장 (SLAM 모드, 다른 터미널에서)
+ros2 run nav2_map_server map_saver_cli -f /overlay_ws/maps/my_map --free 0.196 # 지도 저장 (SLAM 모드, 다른 터미널에서)
 ```
 Vision 설정(모델·가중치 경로·임계값·백엔드·TensorRT 옵션)은 `remote_pc/src/my_vision/config/vision_params.yaml`
 한 곳에서 바꾼다. 전이학습 모델은 YAML 의 `weights` 에 .pth 경로 (클래스 수 자동 추론, 엔진 캐시 자동 분리).

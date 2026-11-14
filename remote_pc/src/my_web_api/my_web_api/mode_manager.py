@@ -134,7 +134,7 @@ class ModeManager:
                 return   # _watch 가 오류로 표시
             if self._ready_fn(mode, started):
                 msg = '지도를 만드는 중 — 조이스틱이나 「목표 지정」으로 돌아다니세요' if mode == 'MAPPING' \
-                    else '「초기 위치」로 로봇이 지도의 어디에 있는지 알려 주세요'
+                    else '저장 지도로 주행 — 로봇 위치는 자동으로 찾습니다 (안 되면 「위치 찾기」·후보 선택·「초기 위치」)'
                 self._set(phase='running', message=msg)
                 return
             time.sleep(0.5)

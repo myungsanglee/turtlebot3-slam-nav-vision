@@ -108,11 +108,31 @@ export interface NavFeedback {
   recoveries: number
 }
 
+// 자동 위치 찾기 (my_localization relocalizer → /relocalization/status). 저장 지도 주행 모드에서만 온다.
+export type LocalizationStateName = 'waiting' | 'searching' | 'localized' | 'ambiguous' | 'failed' | 'lost'
+export interface LocalizationCandidate {
+  x: number
+  y: number
+  yaw: number
+  score: number // 0~1 (우도장 × 빔 일관성)
+}
+export interface LocalizationStatus {
+  state: LocalizationStateName
+  method: 'last_pose' | 'global' | 'manual' | 'recovered' | null
+  score: number | null // 위치를 정할 때의 점수
+  track_score: number | null // 지금 위치에서 스캔이 지도와 맞는 정도 (1초마다)
+  pose: Pose | null
+  candidates: LocalizationCandidate[]
+  message: string
+  time: number
+}
+
 export interface NavState {
   state: NavStateName
   goal: Pose | null
   feedback: NavFeedback | null
   message: string
+  localization: LocalizationStatus | null
   version: number
 }
 

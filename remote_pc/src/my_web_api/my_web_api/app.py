@@ -12,6 +12,7 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
   POST /api/nav/goal          {x, y, yaw}  지도 좌표로 이동 (Nav2 NavigateToPose)
   POST /api/nav/cancel        이동 취소
   POST /api/nav/initial_pose  {x, y, yaw}  AMCL 초기 위치 (저장 지도 주행 모드)
+  POST /api/nav/relocalize    자동 위치 찾기 — 지도 전체 검색 (my_localization, 결과는 nav.localization)
   GET  /api/mode · POST /api/mode {mode, map?, vision?}   운용 모드 (IDLE / MAPPING / NAVIGATION)
   GET  /api/mode/log          모드 launch 로그 꼬리 (문제 확인용)
   GET  /api/maps · POST /api/maps {name} · DELETE /api/maps/{name} · GET /api/maps/{name}.png
@@ -192,6 +193,10 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
     @app.post('/api/nav/initial_pose')
     async def nav_initial_pose(pose: Pose2D):
         return await nav_call('initial_pose', x=pose.x, y=pose.y, yaw=pose.yaw)
+
+    @app.post('/api/nav/relocalize')
+    async def nav_relocalize():
+        return await nav_call('relocalize')
 
     # ---------------- 로봇 전원 ----------------
     @app.get('/api/power')

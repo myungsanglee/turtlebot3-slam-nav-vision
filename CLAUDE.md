@@ -73,7 +73,7 @@ Server** 방식은 라이다까진 됐지만 **카메라(토픽 20+개 복잡 �
 | SLAM | **slam_toolbox** | 현 ROS2 표준. Cartographer 아님(유지보수/Nav2 통합/성능 우위) |
 | Navigation | **Nav2** | ROS2 내비게이션 표준 |
 | 센서 융합 | TurtleBot3 기본 오도메트리 (EKF 는 보류) | turtlebot3_node 가 이미 `use_imu: true` 로 **이동거리=바퀴, 회전각=IMU** 융합해 `odom→base_footprint` TF 발행. robot_localization(EKF)을 더하면 같은 TF 를 두 노드가 발행하게 돼 bringup 의 `publish_tf` 수정이 필요 → 실주행에서 odom 문제가 보일 때만 착수 |
-| Localization | AMCL 또는 slam_toolbox localization 모드 | 지도 완성 후 주행 단계 |
+| Localization | AMCL + **자체 전역 위치 찾기 `my_localization`** | 저장 지도 주행. AMCL 은 초기 위치가 필요 → relocalizer 가 스캔을 지도 전체에 맞춰(우도장 흐림→선명 + 빔 일관성) 자동으로 `/initialpose`. 마지막 위치(`maps/<지도>.pose.json`) 먼저 확인, 확신 없으면 후보 제시, 추적 점수 4초 저하 = 위치 잃음 → 재탐색 (docs/my_localization.md) |
 | 원격 통신 | **zenoh-bridge-ros2dds** | Fast DDS Discovery Server 의 VPN 한계로 전환 (3번) |
 | 카메라 | **자체 pyrealsense2 노드** (`rs_camera_node.py`) | D435i. 공식 realsense2_camera 는 Pi4+RSUSB 에서 RGB 컨트롤 경로(XU 캘리브레이션)가 세션 단위로 간헐 불통 → 캘리브레이션 캐시·프로세스 분리 감시·온화한 복구로 자체 해결 (docs/realsense_bringup.md). librealsense 는 RSUSB 소스 빌드 (troubleshooting 08-27) |
 | Vision AI | **RF-DETR** (Apache-2.0) + **TensorRT fp16** | `my_vision/detector_node`: `/camera/*` 구독→검출→정렬 depth 로 거리·3D 위치→`Detection2DArray`. backend torch(12ms)/tensorrt(7ms). 엔진은 이식 불가라 **컨테이너 안에서 빌드·캐시**(models/trt/, 환경명 포함). RTMDet 은 mmcv 설치 부담으로 제외. 컨테이너 `vision` 스테이지에 torch cu128 + rfdetr + tensorrt-cu12 |
@@ -121,6 +121,7 @@ turtlebot3-slam-nav-vision/
 │   └── src/
 │       ├── my_slam/           # slam_toolbox 설정/런치
 │       ├── my_navigation/     # Nav2 설정/런치
+│       ├── my_localization/   # 자동 위치 찾기 (전역 위치 추정 → AMCL 초기 위치)
 │       ├── my_vision/         # Vision AI 노드 (TensorRT 추론)
 │       ├── my_bringup/        # 통합 런치 (SLAM/AMCL+Nav2+Vision+RViz) — system.launch.py, system.rviz
 │       └── my_web_api/        # 웹 콘솔 백엔드 (FastAPI + rclpy) — compose web-api 서비스
@@ -220,6 +221,14 @@ turtlebot3-slam-nav-vision/
   web-api 가 Keepout 마스크·필터 정보 발행 → nav2_params local·global `keepout_filter` (실행 중 즉시 반영, 경로 계산 검증).
   **전원 버튼** (2026-11-12): 부팅 시 대기 + 웹에서 켜기·대기·ROS 재시작·Pi 재부팅·끄기 (bringup 정지 시 LDS 모터 정지 실측).
   상세는 `docs/my_web_api.md`, 설계·이후 단계는 `docs/web_ui_design.md`
+- **첫 바닥 실주행 (2026-11-14)** — 웹으로 지도 만들기·저장 → 저장 지도 주행·초기 위치·클릭 주행 전부 동작.
+  발견·수정: ① 목표 25cm 앞 정지 → `xy_goal_tolerance` 0.25→0.07, yaw 0.25→0.15 (바닥 재확인 남음)
+  ② nav2 map_saver 기본 free_thresh 0.25 → 미탐사가 빈 칸으로 읽힘 → 저장 시 `--free 0.196`
+  ③ AMCL 이 위치를 잃은 채 아무도 모름(일치 점수 0.08) (troubleshooting 2026-11-14)
+- **my_localization — 자동 위치 찾기 (2026-11-14)** — 저장 지도 주행에서 초기 위치를 스캔-지도 매칭으로 자동 결정
+  (마지막 위치 확인 → 지도 전체 검색, 확신 없으면 후보 제시, 위치 잃음 감지 후 재탐색). 시뮬 192/192, 실기 0.12초·점수 0.94.
+  웹: 지도 머리줄 상태 칩·「위치 찾기」·후보 선택. ⏳ 바닥에서 들어 옮기기 시험·기준값 조정, 다음: IMU 들어 올림 감지.
+  상세는 `docs/my_localization.md`
 
 **다음 (우선순위 순)**
 1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) + ~~Vision 3D 위치의 base_link/map 변환~~ ✅
@@ -257,7 +266,7 @@ turtlebot3-slam-nav-vision/
    (IDLE/MAPPING/NAVIGATION, 외부 실행 감지·끈 직후 15초 유예), maps.py(map_saver_cli·미리보기·삭제, remote_pc/maps git 제외),
    teleop.py(0.3초 워치독·속도 상한·시작 시 Nav2 취소, /cmd_vel 은 Twist — Pi 구독 형식 확인). web-api 에 GPU.
    ★ 이 과정에서 system.launch 의 params_file 인자 충돌 발견·수정(Vision 이 9월부터 torch 기본값으로 돌았음 → scoped GroupAction,
-   troubleshooting 2026-11-12). ⏳ 실주행 검증(바닥, 사용자 입회: 클릭 주행·조이스틱·회피 V1) 남음. 다음 P4
+   troubleshooting 2026-11-12). 클릭 주행·지도 만들기 실주행 ✅ (2026-11-14). ⏳ 조이스틱·회피 V1 바닥 검증 남음. 다음 P4
 9. **카메라 기반 회피** — 설계 완료 `docs/vision_avoidance_design.md` (2026-11-09, 사용자 결정으로 포함).
    현재 회피 입력은 /scan 뿐(125mm 평면). ① 깊이 층: 정렬 depth → PointCloud2 → local costmap(높이 필터)
    ② 의미 층: /vision/objects(+반경 추정) → 자체 C++ `SemanticLayer` 플러그인(클래스별 여유·소멸) + 사람 근처
