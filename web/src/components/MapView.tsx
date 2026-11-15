@@ -330,7 +330,7 @@ export default function MapView({ ref, ...p }: Props) {
         </Layer>
       </Stage>
       {p.notice && !p.compact && (
-        <Typography variant="caption" color="warning.main" sx={{ position: 'absolute', left: 10, right: p.fill ? 190 : 10, bottom: 34, pointerEvents: 'none' }}>
+        <Typography variant="caption" color="warning.main" sx={{ position: 'absolute', left: 10, right: p.fill ? 190 : 10, bottom: 46, pointerEvents: 'none' }}>
           {p.notice}
         </Typography>
       )}
