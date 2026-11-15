@@ -52,9 +52,12 @@ def test_to_velocity_direction_and_clamp():
 class _FakePub:
     def __init__(self):
         self.sent = []
+        self.msgs = []
 
     def publish(self, msg):
-        self.sent.append((msg.linear.x, msg.angular.z))
+        self.msgs.append(msg)
+        if hasattr(msg, 'linear'):
+            self.sent.append((msg.linear.x, msg.angular.z))
 
 
 class _FakeNode:
@@ -85,3 +88,16 @@ def test_teleop_watchdog_stops_and_goes_quiet():
     t.command(1, 0)
     t._tick()
     assert node.pub.sent[-1] == (0.0, -1.0) and started == [1, 1]
+
+
+def test_speed_setting_publishes_limit_and_persists(tmp_path):
+    from my_web_api.teleop import SpeedSetting
+    node = _FakeNode()
+    f = str(tmp_path / '.speed_scale')
+    s = SpeedSetting(node, '/speed_limit', 0.15, 1.0, state_file=f, default=0.6)
+    assert s.snapshot() == {'scale': 0.6, 'linear': 0.09, 'angular': 0.6}
+    assert s.set(5) == 1.0 and s.set(0.05) == 0.2           # 0.2~1 로 자른다
+    s.set(0.4)
+    msg = node.pub.msgs[-1]
+    assert msg.percentage is False and abs(msg.speed_limit - 0.06) < 1e-9   # m/s 절대값
+    assert SpeedSetting(_FakeNode(), '/speed_limit', 0.15, 1.0, state_file=f).scale == 0.4   # 재시작 후 유지

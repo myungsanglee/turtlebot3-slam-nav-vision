@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import math
+import os
 import threading
 import time
 
@@ -44,7 +45,7 @@ from .nav import NavController
 from .robot_model import RobotModel
 from .robot_power import RobotPower
 from .zones import rasterize
-from .teleop import TeleopController
+from .teleop import SpeedSetting, TeleopController
 
 # key: (파라미터 이름, 메시지 타입, 한글 이름, 기대 Hz, optional)
 #   optional=True: 안 들어와도 오류가 아님 (Vision 은 SLAM/주행 모드에서만 켜짐)
@@ -217,6 +218,11 @@ class WebApiNode(Node):
                                        float(p('teleop_max_linear', 0.15).value),
                                        float(p('teleop_max_angular', 1.0).value),
                                        on_start=lambda: self.nav.submit('cancel'))
+        # 속도 조절(화면 슬라이더) — 조이스틱과 자동 주행(Nav2 /speed_limit) 공통
+        self.speed = SpeedSetting(self, p('topic_speed_limit', '/speed_limit').value,
+                                  self.teleop.max_linear, self.teleop.max_angular,
+                                  state_file=os.path.join(self.maps.dir, '.speed_scale'),
+                                  default=float(p('speed_scale_default', 0.6).value))
 
         # ---------- 로봇 전원 (대기·켜기·재시작·재부팅·끄기) — Pi 에 전용 SSH 키로 ----------
         self.power = RobotPower(self.get_logger(), p('robot_power_host', '').value, p('robot_power_user', 'michael').value,
@@ -618,6 +624,7 @@ class WebApiNode(Node):
             # 자이로 드리프트: 정지 중 odom 방향 변화율 + 자동 재보정 설정·마지막 재보정 — gyro_watch.py
             'gyro': {**self.gyro.snapshot(now), 'auto': self._gyro_auto, 'auto_min_deg_min': self._gyro_auto_min,
                      'last_reset': self._gyro_last},
+            'speed': self.speed.snapshot(),        # 속도 조절 (조이스틱·자동 주행 공통) — teleop.py SpeedSetting
             'robot_connected': by_key['odom']['state'] == 'ok',
             'battery': battery_out,
             'velocity': velocity_out,

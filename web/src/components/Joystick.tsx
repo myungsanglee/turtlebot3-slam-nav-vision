@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // ───────────────────────────────────────────────────────────────────────────
 // 수동 조작 — 화면 위에 겹쳐 두는 조이스틱 + 키보드(방향키·WASD)
 //   누르고 있는 동안만 0.1초마다 (x, y) 를 서버로 보낸다. 떼면 즉시 정지를 보낸다.
+//   속도 조절 슬라이더는 서버에 저장되는 공통 값 — 지도에서 목표를 찍어 가는 자동 주행도 같은 속도로 간다.
 //   진짜 안전 장치는 서버에 있다: 0.3초 동안 명령이 없으면 서버가 정지시킨다 (teleop.py) — 브라우저가 멈추거나
 //   탭이 닫히거나 와이파이가 끊겨도 로봇이 계속 달리지 않는다. 속도 상한도 서버가 자른다.
 // ───────────────────────────────────────────────────────────────────────────
@@ -21,7 +22,16 @@ const KEYS: Record<string, Vec> = {
 const typing = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
 
-export default function Joystick({ send, connected, maxLinear = 0.15, maxAngular = 1.0 }: { send: (m: object) => void; connected: boolean; maxLinear?: number; maxAngular?: number }) {
+type Props = {
+  send: (m: object) => void
+  connected: boolean
+  scale: number // 속도 조절 0.2~1 (서버 값)
+  onScale: (s: number) => void
+  maxLinear?: number
+  maxAngular?: number
+}
+
+export default function Joystick({ send, connected, scale, onScale, maxLinear = 0.15, maxAngular = 1.0 }: Props) {
   const touch = useMediaQuery('(pointer: coarse)')
   const SIZE = touch ? 150 : 128
   const KNOB = touch ? 58 : 50
@@ -31,7 +41,6 @@ export default function Joystick({ send, connected, maxLinear = 0.15, maxAngular
   const [active, setActive] = useState<'pointer' | 'keys' | null>(null)
   const [knob, setKnob] = useState<Vec>({ x: 0, y: 0 }) // 손잡이 위치 (px, 화면 표시용)
   const [stick, setStick] = useState<Vec>({ x: 0, y: 0 }) // 정규화 값 (화면 표시용 — 전송은 vec ref 로)
-  const [scale, setScale] = useState(0.6)
   const R = (SIZE - KNOB) / 2
 
   const show = useCallback(
@@ -53,9 +62,9 @@ export default function Joystick({ send, connected, maxLinear = 0.15, maxAngular
   // 누르고 있는 동안 0.1초마다 전송
   useEffect(() => {
     if (!active) return
-    const id = window.setInterval(() => send({ type: 'teleop', x: vec.current.x, y: vec.current.y, scale }), 100)
+    const id = window.setInterval(() => send({ type: 'teleop', x: vec.current.x, y: vec.current.y }), 100)
     return () => window.clearInterval(id)
-  }, [active, scale, send])
+  }, [active, send])
 
   // 창을 떠나거나(탭 전환·앱 전환) 포커스를 잃으면 즉시 정지
   useEffect(() => {
@@ -156,8 +165,8 @@ export default function Joystick({ send, connected, maxLinear = 0.15, maxAngular
         {v.toFixed(2)} m/s · {w.toFixed(2)} rad/s
       </Typography>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', px: 0.5 }}>
-        <Tooltip title={`속도 ${Math.round(scale * 100)}% (최대 ${(maxLinear * scale).toFixed(2)} m/s)`}>
-          <Slider size="small" min={0.2} max={1} step={0.1} value={scale} onChange={(_, val) => setScale(val as number)} aria-label="속도" />
+        <Tooltip title={`속도 ${Math.round(scale * 100)}% — 최대 ${(maxLinear * scale).toFixed(2)} m/s · ${(maxAngular * scale).toFixed(2)} rad/s. 조이스틱·키보드와 지도 목표 자동 주행에 함께 적용`}>
+          <Slider size="small" min={0.2} max={1} step={0.1} value={scale} onChange={(_, val) => onScale(val as number)} aria-label="속도" />
         </Tooltip>
         {!touch && (
           <Tooltip title="키보드: 방향키 또는 W·A·S·D 를 누르고 있는 동안 이동, 스페이스 = 정지. 떼면 멈춘다. 움직이기 시작하면 진행 중인 자동 주행은 취소된다.">

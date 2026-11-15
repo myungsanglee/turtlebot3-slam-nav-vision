@@ -20,7 +20,7 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
   GET|PUT /api/maps/{name}/zones   금지 구역·가상 벽 (저장 지도별, 주행 중이면 Nav2 에 즉시 반영)
                               저장 지도 목록 / 지금 지도 저장 / 삭제 / 미리보기
   WS   /ws                    status(2Hz)·pose(10Hz)·scan·depth_points·path·footprint·map·costmap·nav·mode 를 바뀔 때 push,
-                              브라우저 → 서버: {"type": "teleop", "x", "y", "scale"} (조이스틱, 0.1초마다) / {"type": "teleop_release"}
+                              브라우저 → 서버: {"type": "teleop", "x", "y"} (속도는 POST /api/speed 값) (조이스틱, 0.1초마다) / {"type": "teleop_release"}
   GET  /api/power · POST /api/power {action}   로봇 전원: wake(켜기) / standby(대기) / restart(ROS 재시작) /
                               reboot(Pi 재부팅) / poweroff(Pi 끄기) — 대기·재시작·끄기 전에 웹에서 띄운 SLAM·Nav2 를 먼저 끈다
                               / gyro_reset(자이로 재보정 — 정지 상태에서만, 지도 만들기 중 불가. 상태의 gyro 에 드리프트 °/분)
@@ -74,6 +74,11 @@ def result(r: dict):
     if r.get('ok'):
         return r
     return JSONResponse(r, status_code=REASON_STATUS.get(r.get('reason'), 500))
+
+
+class Speed(BaseModel):
+    """속도 조절 (0.2~1). 조이스틱 = teleop 최대 × scale, 자동 주행 = Nav2 /speed_limit 로 같은 값."""
+    scale: float = Field(ge=0.2, le=1.0)
 
 
 class Pose2D(BaseModel):
@@ -204,6 +209,15 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
     async def nav_relocalize():
         return await nav_call('relocalize')
 
+    @app.get('/api/speed')
+    def speed_state():
+        return node.speed.snapshot()
+
+    @app.post('/api/speed')
+    def speed_set(req: Speed):
+        node.speed.set(req.scale)
+        return {'ok': True, **node.speed.snapshot()}
+
     # ---------------- 로봇 전원 ----------------
     @app.get('/api/power')
     def power_state():
@@ -303,7 +317,7 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
             while True:
                 msg = await websocket.receive_json()
                 if msg.get('type') == 'teleop':
-                    node.teleop.command(msg.get('x', 0.0), msg.get('y', 0.0), msg.get('scale', 1.0))
+                    node.teleop.command(msg.get('x', 0.0), msg.get('y', 0.0), node.speed.scale)   # 속도는 서버 값 (모든 화면 공통)
                 elif msg.get('type') == 'teleop_release':
                     node.teleop.release()
 

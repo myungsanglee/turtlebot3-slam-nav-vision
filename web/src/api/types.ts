@@ -70,6 +70,8 @@ export interface Status {
   mode: string
   power: Power
   gyro?: GyroStatus
+  // 속도 조절 (조이스틱·자동 주행 공통, 서버 teleop.py SpeedSetting)
+  speed?: { scale: number; linear: number; angular: number }
   robot_connected: boolean
   battery: Battery | null
   velocity: { linear: number; angular: number } | null

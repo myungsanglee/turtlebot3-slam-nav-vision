@@ -233,7 +233,7 @@ turtlebot3-slam-nav-vision/
   2°/분 이상 돌면 상단 경고 칩, 3°/분 이상이면 자동 재보정(지도 만들기·주행·조이스틱 중 제외, 10분 쿨다운).
   재보정 = Pi `robot_power.sh gyro_reset`(SSH 강제 명령 → `/reset`), 주행 모드면 이어서 위치 다시 찾기. 수동 재보정 실기 ✅ (11-15), 자동은 장시간 관찰 중
 - **웹 조작 화면 재배치·기본 지도 (2026-11-15)** — 지도 크게 + 카메라 작은 창(⇄) + 겹치는 조이스틱·키보드(WASD) (my_web_api 4.22).
-  저장 지도 ★ = 기본 지도: 대기 중에도 화면에 표시하고 web-api `idle_locator.py` 가 스캔 매칭(my_localization 재사용)으로 map←odom 을
+  속도 조절 슬라이더 = 조이스틱·자동 주행 공통(Nav2 /speed_limit, 4.24). 저장 지도 ★ = 기본 지도: 대기 중에도 화면에 표시하고 web-api `idle_locator.py` 가 스캔 매칭(my_localization 재사용)으로 map←odom 을
   추정해 로봇·센서를 지도 위에 그림 (표시 전용, 실기 0.92). 로봇 데이터가 끊기면 로봇·센서 표시를 지움 (4.23)
 - **주행 헤맴 진단·개선 (2026-11-15)** — 녹화 분석(`analyze_bag.py`): 속도·자이로는 원인 아님, AMCL 정지 오차 10cm → 좁은 입구 모퉁이 끼임 →
   바퀴 헛돌아 AMCL 붕괴. 녹화를 AMCL 에 재생(`replay_amcl.py`)해 튜닝(z_hit 0.9·max_beams 180·sigma 0.15) + relocalizer **정지 중 보정**

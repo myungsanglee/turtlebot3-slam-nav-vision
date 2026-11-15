@@ -5,8 +5,8 @@ import SportsEsportsIcon from '@mui/icons-material/SportsEsports'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import VideocamIcon from '@mui/icons-material/Videocam'
 import { Alert, Box, Button, Card, Chip, IconButton, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography, type SxProps, type Theme } from '@mui/material'
-import { lazy, Suspense, useRef, useState } from 'react'
-import { useInitialPose, useNavGoal } from '../api/nav'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useInitialPose, useNavGoal, useSetSpeed } from '../api/nav'
 import { useRobotModel } from '../api/robot'
 import type { Pose, RobotStream } from '../api/types'
 import { useZones } from '../api/zones'
@@ -51,6 +51,9 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
   const mapRef = useRef<MapHandle>(null)
   const [pending, setPending] = useState<Pose | null>(null)
   const goal = useNavGoal()
+  // 속도 조절: 서버 값(모든 화면 공통)을 쓰되, 슬라이더를 움직인 직후엔 서버가 따라올 때까지 내 값을 보여 준다
+  const setSpeed = useSetSpeed()
+  const [speedLocal, setSpeedLocal] = useState<number | null>(null)
   const robotModel = useRobotModel(robot.connectionId)
   const initial = useInitialPose()
   // 금지 구역: 저장 지도로 주행 중일 때 그 지도의 구역 (SLAM 중엔 지도 원점이 매번 달라 편집 불가)
@@ -59,6 +62,11 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
   const [draft, setDraft] = useState<Draft>({ kind: 'wall', points: [] })
 
   const status = robot.status
+  const serverSpeed = status?.speed?.scale
+  const speedScale = speedLocal ?? serverSpeed ?? 0.6
+  useEffect(() => {
+    if (speedLocal != null && serverSpeed != null && Math.abs(serverSpeed - speedLocal) < 1e-6) setSpeedLocal(null)
+  }, [serverSpeed, speedLocal])
   const nav = status?.navigation
   // Nav2 가 꺼지면 costmap·footprint 가 더 오지 않는다 — 마지막 값이 옛 자리에 남지 않게 3초 넘게 안 오면 숨긴다
   const fresh = (age: number | null | undefined) => age != null && age < 3
@@ -296,7 +304,7 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
             }
           >
             {tool === 'initial' ? '초기 위치' : '목표'} ({pending.x.toFixed(2)}, {pending.y.toFixed(2)}) m · {deg(pending.yaw)}°
-            {tool === 'goal' && ' — 로봇이 실제로 움직인다'}
+            {tool === 'goal' && ` — 로봇이 실제로 움직인다 (속도 ${Math.round(speedScale * 100)}%, 조이스틱 슬라이더로 조절)`}
           </Alert>
         )}
 
@@ -306,7 +314,15 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
         </Box>
         {showStick && (
           <Box sx={{ position: 'absolute', right: 8, bottom: 8, zIndex: 3 }}>
-            <Joystick send={robot.send} connected={robot.connected && !!status?.robot_connected} />
+            <Joystick
+              send={robot.send}
+              connected={robot.connected && !!status?.robot_connected}
+              scale={speedScale}
+              onScale={(v) => {
+                setSpeedLocal(v)
+                setSpeed.mutate(v)
+              }}
+            />
           </Box>
         )}
       </Box>
