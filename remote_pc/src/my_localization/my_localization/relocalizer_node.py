@@ -27,7 +27,7 @@ import numpy as np
 import rclpy
 import rclpy.executors
 from geometry_msgs.msg import PoseWithCovarianceStamped
-from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
@@ -65,6 +65,16 @@ class Relocalizer(Node):
         self.retry_sec = P('retry_sec', 3.0).value                # 잃은 동안 전체 검색 간격
         self.save_sec = P('pose_save_sec', 2.0).value
         self.max_range = P('max_range', 3.5).value
+        # 정지 중 보정: AMCL 은 움직여야 갱신한다 → 멈춘 동안 남은 10~20cm 오차가 다음 출발까지 간다 (2026-11-15 녹화 분석).
+        # 멈춘 지 still_sec 이 지났고 추적 점수가 correct_below 미만인데, 바로 근처에 훨씬 잘 맞는 자리가 있으면 AMCL 을 그리로.
+        self.correct = P('stationary_correction', True).value
+        self.still_sec = P('still_sec', 2.0).value
+        self.correct_below = P('correct_below', 0.75).value     # 추적 점수가 이보다 낮을 때만
+        self.correct_min = P('correct_min', 0.8).value          # 보정 자리의 점수 하한
+        self.correct_gain = P('correct_gain', 0.12).value       # 지금보다 이만큼은 좋아야
+        self.correct_every = P('correct_every_sec', 5.0).value
+        self.still_from: float | None = None
+        self.last_correct = 0.0
         self.params = SearchParams()
 
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
@@ -73,6 +83,7 @@ class Relocalizer(Node):
         self.create_subscription(LaserScan, P('scan_topic', '/scan').value, self._on_scan, qos_profile_sensor_data)
         self.create_subscription(PoseWithCovarianceStamped, P('amcl_pose_topic', '/amcl_pose').value,
                                  self._on_amcl_pose, 10)
+        self.create_subscription(Odometry, P('odom_topic', '/odom').value, self._on_odom, qos_profile_sensor_data)
         initialpose_topic = P('initialpose_topic', '/initialpose').value
         self.create_subscription(PoseWithCovarianceStamped, initialpose_topic, self._on_initialpose, 10)
         self.pub_init = self.create_publisher(PoseWithCovarianceStamped, initialpose_topic, 10)
@@ -120,6 +131,13 @@ class Relocalizer(Node):
             except Exception:   # noqa: BLE001 — 정적 TF 가 아직 안 들어옴
                 pass
 
+    def _on_odom(self, msg: Odometry):
+        tw = msg.twist.twist
+        if abs(tw.linear.x) < 0.01 and abs(tw.angular.z) < 0.02:
+            self.still_from = self.still_from or time.time()
+        else:
+            self.still_from = None
+
     def _on_amcl_pose(self, msg: PoseWithCovarianceStamped):
         """추적 중인 위치를 지도 옆 파일에 저장 → 다음에 켤 때 '마지막 위치' 로 먼저 확인."""
         if self.status['state'] != 'localized' or not self.pose_file or time.time() - self.last_saved < self.save_sec:
@@ -157,11 +175,14 @@ class Relocalizer(Node):
             return
         if time.time() < self.grace_until:
             return   # 위치를 막 정함 — AMCL 이 따라올 시간
-        track = self._track_score()
-        if track is None:
+        tr = self._track()
+        if tr is None:
             return
+        track, cur, cur_scan = tr
         self.status['track_score'] = round(track, 3)
         now = time.time()
+        if self._maybe_correct(track, cur, cur_scan, now):
+            return
         if track >= self.lost_score:
             self.low_since = None
             if self.status['state'] == 'lost':
@@ -179,11 +200,36 @@ class Relocalizer(Node):
         if now - self.last_try >= self.retry_sec:
             self._start('recover')
 
-    def _track_score(self) -> float | None:
+    def _maybe_correct(self, track: float, cur, scan_msg, now: float) -> bool:
+        """정지 중 보정 (위 설명). 보정했으면 True."""
+        if (not self.correct or self.still_from is None or now - self.still_from < self.still_sec
+                or track >= self.correct_below or now - self.last_correct < self.correct_every):
+            return False
+        with self.lock:
+            m, grid = self.map, self.grid
+        s = self._scan(scan_msg)
+        c = rank(m, grid, s, [local_search(m, s.points(), *cur, radius=0.3, angle_deg=15.0, p=self.params)])[0]
+        self.last_correct = now
+        if c.score < self.correct_min or c.score - track < self.correct_gain:
+            return False
+        d = math.hypot(c.x - cur[0], c.y - cur[1])
+        self.get_logger().info(f'정지 중 보정: 추적 점수 {track:.2f} → {c.score:.2f}, '
+                               f'{d * 100:.0f}cm·{math.degrees(c.yaw - cur[2]):+.1f}° 이동')
+        self._send(c, scan_msg, 'corrected', f'멈춘 동안 위치 보정 ({d * 100:.0f}cm, 점수 {track:.2f}→{c.score:.2f})')
+        return True
+
+    def _track(self):
+        """(추적 점수, 지금 추정 자세 (x, y, yaw), 그 스캔) 또는 None."""
+        with self.lock:
+            scan = self.scan_msg
+        score = self._track_score(scan)
+        return None if score is None else (score[0], score[1], scan)
+
+    def _track_score(self, scan):
         """현재 추정 위치(map→base TF, 스캔 시각)에서 스캔이 지도와 얼마나 맞는지 — 검색과 같은 최종 점수
         (우도장 평균 × 빔 일관성). 우도장만 쓰면 엉뚱한 곳도 0.2~0.37 이 나와 정상(0.5~0.75)과 가깝다 (시뮬레이션)."""
         with self.lock:
-            scan, m, grid = self.scan_msg, self.map, self.grid
+            m, grid = self.map, self.grid
         try:
             # 기다리지 않는다 (timeout 없음): 단일 스레드 executor 라 기다리는 동안 TF 콜백도 멈춘다
             t = self.tf.lookup_transform(self.global_frame, self.base_frame, Time.from_msg(scan.header.stamp))
@@ -196,7 +242,7 @@ class Relocalizer(Node):
         if len(pts) < 20:
             return None
         lik = float(m.score(m.field(self.params.fine_sigma), np.array([[x, y, yaw]]), pts)[0])
-        return rank(m, grid, s, [Candidate(x, y, yaw, lik)])[0].score
+        return rank(m, grid, s, [Candidate(x, y, yaw, lik)])[0].score, (x, y, yaw)
 
     # ---------- 검색 ----------
     def _scan(self, msg: LaserScan) -> Scan:

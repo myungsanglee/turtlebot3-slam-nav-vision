@@ -87,6 +87,7 @@ AMCL 에 초기 위치(`/initialpose`)로 보낸다. 확신이 없으면(비슷�
 | 웹 「위치 찾기」 | 지도 전체 검색 (`~/relocalize` 서비스) |
 | 위치 잃음 | 1초마다 지금 추정 위치(map→base_footprint TF, 스캔 시각)의 최종 점수 = **추적 점수**. `lost_score`(0.3) 미만이 4초 이어지면 '위치 잃음' → 3초마다 전체 검색. 들고 있는 동안은 스캔이 엉망이라 실패하고, 내려놓으면 다음 시도에서 찾는다 (`recovered`) |
 | 사람이 「초기 위치」 지정 | 그대로 따른다 (`manual`) — 이후 추적 점수 감시는 계속 |
+| **멈춰 있는데 AMCL 이 조금 어긋남** (2026-11-15) | 2초 이상 정지 + 추적 점수 < 0.75 + 근처(±30cm·±15°)에 0.8 이상·0.12 이상 더 좋은 자리 → AMCL 을 그리로 (`corrected`, 5초에 한 번까지). AMCL 은 움직여야 갱신해서 정지 중 10~20cm 오차가 다음 출발까지 남았다 (troubleshooting 2026-11-15) — 정지 중에만 하므로 주행 중엔 위치가 튀지 않는다 |
 
 찾은 자세는 `/initialpose` 로 보낸다 (공분산 x·y 10cm, yaw 5° — AMCL 이 그 근처에 파티클을 모은다).
 메시지 시각은 **스캔 시각** — AMCL 이 그 뒤에 바퀴가 움직인 만큼을 보정한다.
@@ -109,7 +110,9 @@ remote_pc/src/my_localization/          (ament_python)
 └── tools/
     ├── fake_scan.py         # 저장 지도에서 가상 라이다 발행 (로봇 없이 시험, '들어 옮기기' 흉내)
     ├── sim_test.sh          # map_server + AMCL + relocalizer + fake_scan 을 별도 ROS_DOMAIN_ID 로
-    └── score_pose.py        # 지금 스캔으로 임의 자세들의 점수 비교 (진단)
+    ├── score_pose.py        # 지금 스캔으로 임의 자세들의 점수 비교 (진단)
+    ├── analyze_bag.py       # 주행 녹화 진단: 스캔 매칭 '실제 위치' vs AMCL vs odom·명령 속도 시간표, 회전 배율, 속도별 오차
+    └── replay_amcl.py       # 녹화를 AMCL(+relocalizer)에 다시 흘려 설정별 정확도 비교 (sim 시간, 별도 도메인)
 ```
 
 - 알고리즘을 ROS 와 분리 → pytest 로 시험, 시뮬레이션 대량 평가가 쉽다.
@@ -150,6 +153,12 @@ cd /overlay_ws/src/my_localization && python3 -m pytest -q test
 # 로봇 없이 전체 흐름 (별도 도메인 77 — 실제 로봇과 안 섞임)
 bash /overlay_ws/src/my_localization/tools/sim_test.sh /overlay_ws/maps/<지도>.yaml 1.0 1.2 40
 echo "0.2 0.3 -120" > /tmp/fake_scan_pose        # 다른 터미널: '들어 옮기기'
+
+# 주행 진단: 녹화 → 분석 → 설정 바꿔 재생 (2026-11-15 사례)
+ros2 bag record -o /tmp/navbag/run1 /scan /odom /imu /joint_states /tf /tf_static /amcl_pose /plan /cmd_vel /initialpose
+python3 analyze_bag.py /tmp/navbag/run1 /overlay_ws/maps/<지도>.yaml --save /tmp/navbag/truth1.npz
+python3 replay_amcl.py /tmp/navbag/run1 /overlay_ws/maps/<지도>.yaml <nav2_params.yaml> /tmp/navbag/truth1.npz \
+    --rate 4 --skip 128-157 --set z_hit=0.9 z_rand=0.1      # --relocalizer 로 정지 중 보정까지 (--rate 1)
 
 # 진단: 지금 스캔으로 자세 점수 비교 (주행 모드 실행 중)
 python3 /overlay_ws/src/my_localization/tools/score_pose.py 1.0 1.9 -168 0.95 1.80 -69

@@ -36,7 +36,7 @@ amcl:
     laser_max_range: 3.5            # LDS 실제 사거리
     laser_min_range: -1.0
     laser_model_type: "likelihood_field"
-    max_beams: 60
+    max_beams: 180                  # LDS 360빔의 절반 (60 → 180: 녹화 재생에서 정지 오차 8.7 → 약 4cm, 2026-11-15)
     max_particles: 2000
     min_particles: 500
     odom_frame_id: "odom"
@@ -47,14 +47,14 @@ amcl:
     resample_interval: 1
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     save_pose_rate: 0.5
-    sigma_hit: 0.2
+    sigma_hit: 0.15                 # 0.2 → 0.15 (0.1 은 오히려 나빠짐 — 재생 시험)
     tf_broadcast: true
     transform_tolerance: 1.0
     update_min_a: 0.2
     update_min_d: 0.25
-    z_hit: 0.5
+    z_hit: 0.9                      # 측정 모델: 지도와 맞는 점을 더 믿는다 (0.5/0.5 → 0.9/0.1 — 좁은 방에서 정확도↑)
     z_max: 0.05
-    z_rand: 0.5
+    z_rand: 0.1
     z_short: 0.05
     scan_topic: scan
 

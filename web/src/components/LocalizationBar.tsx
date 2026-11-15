@@ -23,6 +23,7 @@ const METHOD: Record<string, string> = {
   global: '지도 전체에서 찾음',
   manual: '직접 지정',
   recovered: '잃었다가 다시 찾음',
+  corrected: '멈춘 동안 보정됨',
 }
 
 const deg = (r: number) => Math.round((r * 180) / Math.PI)

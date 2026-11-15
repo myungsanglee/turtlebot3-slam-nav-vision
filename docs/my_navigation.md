@@ -183,6 +183,7 @@ my_slam 과 마찬가지로 소스 코드가 없다 — 검증된 표준 스택(
 | `footprint` | 앞 0.062 / 뒤 −0.220 / 좌우 ±0.090 | **실측 다각형** (2026-09-08). 표준 robot_radius 0.105 원 대체. 뒤는 카메라 USB 케이블 돌출 포함(몸체 CAD 는 −0.165) |
 | `xy_goal_tolerance` | **0.07** (기본 0.25) | 도착 판정 반경. 기본값이면 클릭한 곳 25cm 앞에서 "도착" — 실주행에서 목표 27cm 앞 정지 확인(2026-11-14). AMCL 오차(3~5cm)보다 조금 크게 — 더 줄이면 목표 근처에서 맴돌 수 있다. goal checker 와 DWB 양쪽 같은 값 |
 | `yaw_goal_tolerance` | **0.15** rad (기본 0.25) | 도착 방향 허용 ≈9° |
+| AMCL `z_hit`/`z_rand` · `max_beams` · `sigma_hit` | **0.9/0.1 · 180 · 0.15** (기본 0.5/0.5 · 60 · 0.2) | 좁은 방에서 정지 오차 8.7cm → 1~5cm. 실주행 녹화를 AMCL 에 다시 흘려 넣어 비교해 고름 (troubleshooting 2026-11-15, `my_localization/tools/replay_amcl.py`) |
 
 ## 5. 실행 방법
 

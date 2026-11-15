@@ -136,7 +136,7 @@ export interface LocalizationCandidate {
 }
 export interface LocalizationStatus {
   state: LocalizationStateName
-  method: 'last_pose' | 'global' | 'manual' | 'recovered' | null
+  method: 'last_pose' | 'global' | 'manual' | 'recovered' | 'corrected' | null
   score: number | null // 위치를 정할 때의 점수
   track_score: number | null // 지금 위치에서 스캔이 지도와 맞는 정도 (1초마다)
   pose: Pose | null
