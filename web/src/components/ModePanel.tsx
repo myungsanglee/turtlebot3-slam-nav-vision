@@ -1,10 +1,12 @@
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
+import StarIcon from '@mui/icons-material/Star'
+import StarBorderIcon from '@mui/icons-material/StarBorder'
 import {
   Alert, Box, Button, Card, CardContent, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
-  IconButton, LinearProgress, MenuItem, Stack, Switch, TextField, Typography,
+  IconButton, LinearProgress, MenuItem, Stack, Switch, TextField, Tooltip, Typography,
 } from '@mui/material'
 import { useState } from 'react'
-import { useDeleteMap, useMaps, useModeLog, useSaveMap, useSetMode } from '../api/mode'
+import { useDeleteMap, useMaps, useModeLog, useSaveMap, useSetDefaultMap, useSetMode } from '../api/mode'
 import type { ModeState } from '../api/types'
 
 // 운용 모드 — 터미널 없이 지도 만들기 → 저장 → 저장 지도로 주행 (docs/web_ui_design.md 4장, docs/my_web_api.md 4.14)
@@ -27,6 +29,7 @@ export default function ModePanel({ mode }: { mode: ModeState | null }) {
   const setMode = useSetMode()
   const saveMap = useSaveMap()
   const deleteMap = useDeleteMap()
+  const setDefault = useSetDefaultMap()
   const [vision, setVision] = useState(true)
   const [selected, setSelected] = useState('')
   const [name, setName] = useState(today)
@@ -37,8 +40,10 @@ export default function ModePanel({ mode }: { mode: ModeState | null }) {
   const busy = mode?.phase === 'starting' || mode?.phase === 'stopping' || setMode.isPending
   const current = mode?.mode ?? 'IDLE'
   const mapList = maps.data ?? []
-  const chosen = selected || mapList[0]?.name || ''
-  const error = setMode.error ?? saveMap.error ?? deleteMap.error
+  const defaultMap = mapList.find((m) => m.default)?.name
+  // 처음 고른 지도: 기본 지도 → 가장 최근 지도
+  const chosen = selected || defaultMap || mapList[0]?.name || ''
+  const error = setMode.error ?? saveMap.error ?? deleteMap.error ?? setDefault.error
 
   return (
     <Card>
@@ -76,6 +81,7 @@ export default function ModePanel({ mode }: { mode: ModeState | null }) {
             <TextField select size="small" label="저장 지도" value={chosen} onChange={(e) => setSelected(e.target.value)} sx={{ flex: 1 }} disabled={!mapList.length}>
               {mapList.map((m) => (
                 <MenuItem key={m.name} value={m.name}>
+                  {m.default && '★ '}
                   {m.name} ({m.size_m[0]}×{m.size_m[1]} m{m.zones > 0 && ` · 금지 구역 ${m.zones}`})
                 </MenuItem>
               ))}
@@ -112,6 +118,17 @@ export default function ModePanel({ mode }: { mode: ModeState | null }) {
                 <Typography variant="caption" sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {m.name}
                 </Typography>
+                <Tooltip title={m.default ? '기본 지도 해제' : '기본 지도로 — 대기 중에도 이 지도를 화면에 보여 줌'}>
+                  <IconButton
+                    size="small"
+                    sx={{ position: 'absolute', top: 2, left: 2, color: m.default ? 'warning.main' : 'text.secondary' }}
+                    disabled={setDefault.isPending}
+                    onClick={(e) => (e.stopPropagation(), setDefault.mutate(m.default ? null : m.name))}
+                    aria-label={m.default ? '기본 지도 해제' : '기본 지도로'}
+                  >
+                    {m.default ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+                  </IconButton>
+                </Tooltip>
                 <IconButton size="small" sx={{ position: 'absolute', top: 2, right: 2 }} onClick={(e) => (e.stopPropagation(), setConfirmDelete(m.name))} aria-label="지도 삭제">
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
@@ -121,7 +138,7 @@ export default function ModePanel({ mode }: { mode: ModeState | null }) {
         )}
 
         {error && (
-          <Alert severity="error" sx={{ mt: 1 }} onClose={() => (setMode.reset(), saveMap.reset(), deleteMap.reset())}>
+          <Alert severity="error" sx={{ mt: 1 }} onClose={() => (setMode.reset(), saveMap.reset(), deleteMap.reset(), setDefault.reset())}>
             {error.message}
           </Alert>
         )}

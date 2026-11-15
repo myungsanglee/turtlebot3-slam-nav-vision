@@ -1,5 +1,7 @@
 """저장 지도 관리 — 목록·미리보기·저장·삭제 (지도 파일 = nav2 map_saver 형식 yaml + pgm).
 
+기본 지도: 지도 폴더의 `.default_map` (이름 한 줄) — 대기 중에도 그 지도를 화면에 보여 준다 (ros_node).
+
 저장은 nav2_map_server 의 `map_saver_cli` 를 그대로 쓴다 (README·my_slam.md 에 적힌 수동 절차와 같은 도구 —
 웹이 하든 사람이 하든 같은 결과 파일). 지도 폴더는 /overlay_ws/maps (호스트 remote_pc/maps, git 제외).
 """
@@ -45,6 +47,7 @@ class MapStore:
         return os.path.join(self.dir, f'{name}.{ext}')
 
     def list(self) -> list[dict]:
+        default = self.get_default()
         maps = []
         for f in sorted(os.listdir(self.dir)):
             if not f.endswith('.yaml'):
@@ -62,7 +65,7 @@ class MapStore:
                     n_zones = len(zone_lib.load(self.path(name, 'zones.json')))
                 except (ValueError, OSError):
                     n_zones = 0
-                maps.append({'name': name, 'width': w, 'height': h, 'resolution': res,
+                maps.append({'name': name, 'default': name == default, 'width': w, 'height': h, 'resolution': res,
                              'size_m': [round(w * res, 2), round(h * res, 2)],
                              'saved': os.path.getmtime(yaml_path), 'yaml': yaml_path, 'zones': n_zones})
             except Exception:  # noqa: BLE001 — 깨진 파일은 목록에서 빼되 다른 지도는 보여준다
@@ -102,6 +105,47 @@ class MapStore:
             os.remove(ppath)
         return {'ok': ok, 'name': name, 'message': msg}
 
+    # ---------- 기본 지도 ----------
+    def _default_path(self) -> str:
+        return os.path.join(self.dir, '.default_map')
+
+    def get_default(self) -> str | None:
+        """기본 지도 이름. 파일이 없거나 지도가 지워졌으면 None."""
+        try:
+            name = open(self._default_path(), encoding='utf-8').read().strip()
+        except OSError:
+            return None
+        return name if valid_name(name) and os.path.isfile(self.path(name, 'yaml')) else None
+
+    def set_default(self, name: str | None):
+        if name is None:
+            if os.path.isfile(self._default_path()):
+                os.remove(self._default_path())
+            return
+        if not os.path.isfile(self.path(name, 'yaml')):
+            raise FileNotFoundError(name)
+        with open(self._default_path(), 'w', encoding='utf-8') as f:
+            f.write(name + '\n')
+
+    def load_grid(self, name: str):
+        """저장 지도 → OccupancyGrid 와 같은 격자 (행 0 = 아래, 0 빈칸·100 장애물·-1 미지), 해상도, 원점 (x, y, yaw).
+        map_server 와 같은 trinary 규칙: occ = (255 − 픽셀)/255 (negate 0), occ > occupied_thresh → 100, < free_thresh → 0."""
+        y = read_yaml_simple(self.path(name, 'yaml'))
+        img = cv2.imread(os.path.join(self.dir, y.get('image', f'{name}.pgm')), cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            raise FileNotFoundError(name)
+        occ = (255.0 - img.astype(np.float32)) / 255.0
+        if y.get('negate', '0').strip() in ('1', 'true', 'True'):
+            occ = 1.0 - occ
+        grid = np.full(img.shape, -1, np.int8)
+        grid[occ > float(y.get('occupied_thresh', 0.65))] = 100
+        grid[occ < float(y.get('free_thresh', 0.196))] = 0
+        ox, oy, *rest = (float(v) for v in y['origin'].strip('[]').split(','))
+        return grid[::-1].copy(), float(y.get('resolution', 0.05)), (ox, oy, rest[0] if rest else 0.0)
+
+    def mtime(self, name: str) -> float:
+        return os.path.getmtime(self.path(name, 'yaml'))
+
     # ---------- 금지 구역 (zones.py) ----------
     def geometry(self, name: str) -> dict:
         """저장 지도의 격자 크기·해상도·원점 (마스크를 같은 격자로 만들 때). yaml origin = [x, y, yaw]."""
@@ -134,4 +178,6 @@ class MapStore:
                   self.path(name, 'pose.json')):
             if os.path.isfile(p):
                 os.remove(p)
+        if self.get_default() is None and os.path.isfile(self._default_path()):
+            os.remove(self._default_path())   # 기본 지도를 지웠으면 설정도 지운다
         return True

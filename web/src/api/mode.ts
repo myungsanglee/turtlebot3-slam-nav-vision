@@ -42,3 +42,12 @@ export const useModeLog = (enabled: boolean) =>
     enabled,
     refetchInterval: enabled ? 2000 : false,
   })
+
+/** 기본 지도 지정·해제 (null). 대기 중에도 그 지도가 화면에 나온다. */
+export function useSetDefaultMap() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string | null) => call('PUT', '/api/maps/default', { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['maps'] }),
+  })
+}

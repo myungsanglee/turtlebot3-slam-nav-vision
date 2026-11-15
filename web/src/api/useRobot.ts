@@ -32,10 +32,10 @@ function reducer(s: RobotStream, a: Action): RobotStream {
       return { ...s, status: m }
     case 'pose':
       return { ...s, pose: m.pose }
-    case 'map':
-      return { ...s, map: m }
+    case 'map': // none = 서버가 지도를 내림 (대기로 돌아왔는데 기본 지도가 없을 때 등)
+      return { ...s, map: m.none ? null : m }
     case 'costmap':
-      return { ...s, costmap: m }
+      return { ...s, costmap: m.none ? null : m }
     case 'scan':
       return { ...s, scan: m.points, scanFrame: m.frame }
     case 'depth_points':

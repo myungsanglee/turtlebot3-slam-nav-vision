@@ -38,6 +38,7 @@ const PIP_W = { xs: '42%', sm: 260, md: 320 }
 const BESIDE_PIP = { xs: 'calc(42% + 16px)', sm: 276, md: 336 }
 
 const deg = (r: number) => Math.round((r * 180) / Math.PI)
+const POWER_TEXT: Record<string, string> = { standby: '대기', off: 'Pi 꺼짐', unreachable: 'Pi 연결 안 됨', rebooting: '재부팅 중', stopping: '정지 중', starting: '시작 중' }
 
 export default function MapPanel({ robot }: { robot: RobotStream }) {
   const [view, setView] = useState<'2d' | '3d'>('2d')
@@ -61,9 +62,22 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
   const nav = status?.navigation
   // Nav2 가 꺼지면 costmap·footprint 가 더 오지 않는다 — 마지막 값이 옛 자리에 남지 않게 3초 넘게 안 오면 숨긴다
   const fresh = (age: number | null | undefined) => age != null && age < 3
-  const costmap = fresh(nav?.costmap_age) ? robot.costmap : null
-  const footprint = fresh(nav?.footprint_age) ? robot.footprint : []
-  const active = robot.nav && (robot.nav.state === 'active' || robot.nav.state === 'sending')
+  // 로봇 데이터가 끊기면(대기·Pi 꺼짐·통신 끊김) 로봇·라이다·카메라 점·장애물 지도·경로를 지운다 — 옛 값이 지금처럼 보이지 않게
+  const robotLive = !!status?.robot_connected
+  const costmap = robotLive && fresh(nav?.costmap_age) ? robot.costmap : null
+  const footprint = robotLive && fresh(nav?.footprint_age) ? robot.footprint : []
+  const pose = robotLive ? robot.pose : null
+  const scan = robotLive ? robot.scan : []
+  const depth = robotLive ? robot.depth : { points: [], band: robot.depth.band }
+  const active = robotLive && robot.nav && (robot.nav.state === 'active' || robot.nav.state === 'sending')
+  // 대기 중 기본 지도: 로봇 위치를 몰라도 지도는 보여 준다 (위치는 서버가 스캔 매칭으로 추정 — idle_localization)
+  const defaultMap = robot.map?.source === 'default'
+  const idleLoc = nav?.idle_localization
+  const notice = !robotLive
+    ? `로봇 데이터 없음 (${POWER_TEXT[status?.power?.state ?? ''] ?? '수신 끊김'}) — 로봇·센서 표시를 지웠습니다`
+    : defaultMap && idleLoc?.state !== 'localized'
+      ? idleLoc?.state === 'searching' ? '기본 지도에서 로봇 위치를 찾는 중…' : '기본 지도에서 로봇 위치를 확신하지 못함 — 「이 지도로 주행」 시 다시 찾습니다'
+      : undefined
   // 자동 위치 찾기: 저장 지도 주행 중에만 (SLAM 모드는 slam_toolbox 가 위치를 스스로 안다)
   const loc = robot.mode?.mode === 'NAVIGATION' ? (robot.nav?.localization ?? null) : null
   const camMain = main === 'camera' && showCam
@@ -97,13 +111,13 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
       <Box sx={{ width: '100%', height: '100%', bgcolor: '#0b0d10' }}>
         <Suspense fallback={<Typography color="text.secondary" sx={{ p: 2 }}>3D 화면 불러오는 중…</Typography>}>
           <Map3D
-            frame={robot.pose?.frame ?? null}
+            frame={pose?.frame ?? null}
             mapFrame={nav?.fixed_frame ?? 'map'}
             map={robot.map}
             costmap={costmap}
-            pose={robot.pose}
-            scan={robot.scan}
-            depth={robot.depth}
+            pose={pose}
+            scan={scan}
+            depth={depth}
             globalPath={active ? robot.paths.global : []}
             localPath={active ? robot.paths.local : []}
             footprint={footprint}
@@ -119,13 +133,15 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
       <MapView
         fill
         compact={camMain}
-        frame={robot.pose?.frame ?? null}
+        mapAlways={defaultMap}
+        notice={notice}
+        frame={pose?.frame ?? null}
         mapFrame={nav?.fixed_frame ?? 'map'}
         map={robot.map}
         costmap={costmap}
-        pose={robot.pose}
-        scan={robot.scan}
-        depth={robot.depth}
+        pose={pose}
+        scan={scan}
+        depth={depth}
         globalPath={active ? robot.paths.global : []}
         localPath={active ? robot.paths.local : []}
         footprint={footprint}
@@ -134,7 +150,7 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
         pending={pending}
         tool={camMain ? 'view' : tool}
         layers={layers}
-        follow={follow || camMain} // 작은 창일 땐 로봇을 따라가게 (주변이 항상 보이게)
+        follow={(follow || camMain) && !!pose} // 작은 창일 땐 로봇을 따라가게 (주변이 항상 보이게)
         ref={mapRef}
         zones={zoneMap ? (zones.data ?? []) : []}
         draft={tool === 'zone' ? draft : null}
@@ -156,8 +172,17 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
         <Typography variant="subtitle1" sx={{ fontWeight: 600, mr: 'auto' }}>
           조작
         </Typography>
-        {nav?.display_frame === 'odom' && <Chip size="small" variant="outlined" label="출발점(odom) 기준" />}
-        {nav && nav.display_frame === null && <Chip size="small" color="warning" label="로봇 위치 없음" />}
+        {defaultMap && (
+          <Tooltip title="대기 중 표시하는 기본 지도 (운용 모드의 ★). 로봇 위치는 라이다를 지도에 맞춰 추정 — 화면 표시용">
+            <Chip size="small" variant="outlined" label={`기본 지도: ${robot.map?.name}`} />
+          </Tooltip>
+        )}
+        {defaultMap && robotLive && idleLoc?.state === 'localized' && (
+          <Chip size="small" color="success" variant="outlined" label={`위치 추정 ${idleLoc.score?.toFixed(2) ?? ''}`} />
+        )}
+        {!robotLive && <Chip size="small" color="warning" label="로봇 데이터 없음" />}
+        {robotLive && !defaultMap && nav?.display_frame === 'odom' && <Chip size="small" variant="outlined" label="출발점(odom) 기준" />}
+        {robotLive && nav && nav.display_frame === null && <Chip size="small" color="warning" label="로봇 위치 없음" />}
         {robot.mode?.mode === 'NAVIGATION' && <LocalizationControl loc={loc} />}
         <ToggleButtonGroup
           size="small"
@@ -194,7 +219,7 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
           <ToggleButton value="3d">3D</ToggleButton>
         </ToggleButtonGroup>
         <Tooltip title="로봇 따라가기">
-          <ToggleButton size="small" value="follow" selected={follow} onChange={() => setFollow(!follow)} disabled={!robot.pose}>
+          <ToggleButton size="small" value="follow" selected={follow} onChange={() => setFollow(!follow)} disabled={!pose}>
             <CenterFocusStrongIcon fontSize="small" />
           </ToggleButton>
         </Tooltip>

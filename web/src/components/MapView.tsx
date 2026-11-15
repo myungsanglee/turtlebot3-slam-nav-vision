@@ -63,6 +63,8 @@ interface Props {
   layers: Layers
   follow: boolean
   onPick: (p: Pose) => void
+  mapAlways?: boolean // 로봇 위치를 몰라도 지도를 보여 줌 (대기 중 기본 지도)
+  notice?: string // 아래쪽 안내 (예: 로봇 데이터 없음)
   fill?: boolean // 부모 높이를 꽉 채움 (조작 화면). 아니면 폭에 맞춘 높이
   compact?: boolean // 작은 창 — 축척·안내 문구 숨김
   ref?: Ref<MapHandle>
@@ -143,8 +145,9 @@ export default function MapView({ ref, ...p }: Props) {
   //   지도 없이 odom 으로 그릴 땐 지난 지도를 숨기고 로봇·라이다만 출발점 기준으로 실시간 표시.
   //   단 「초기 위치」 도구에선 (AMCL 이 아직 위치를 모르는 상태) 지도를 보여주고 odom 기준 레이어를 숨긴다.
   const initialTool = p.tool === 'initial'
-  const showMap = !!p.map && (p.frame === p.mapFrame || initialTool)
-  const showLive = !initialTool || p.frame === p.mapFrame
+  const showMap = !!p.map && (p.frame === p.mapFrame || initialTool || !!p.mapAlways)
+  // 지도를 띄웠는데 로봇이 지도 좌표가 아니면(기본 지도 위 위치를 아직 모름) 출발점 기준 로봇·라이다는 숨긴다 — 엉뚱한 자리에 겹치지 않게
+  const showLive = p.frame === p.mapFrame || (!initialTool && !(showMap && p.mapAlways))
   const depth = useMemo(() => splitDepth(p.depth), [p.depth])
   const showCostmap = p.layers.costmap && !!p.costmap && p.costmap.frame === p.frame && showLive
 
@@ -326,7 +329,12 @@ export default function MapView({ ref, ...p }: Props) {
           </Group>
         </Layer>
       </Stage>
-      {!showMap && !p.compact && (
+      {p.notice && !p.compact && (
+        <Typography variant="caption" color="warning.main" sx={{ position: 'absolute', left: 10, right: p.fill ? 190 : 10, bottom: 34, pointerEvents: 'none' }}>
+          {p.notice}
+        </Typography>
+      )}
+      {!showMap && !p.compact && !p.notice && (
         <Typography variant="caption" color="text.secondary" sx={{ position: 'absolute', left: 10, right: p.fill ? 190 : 10, bottom: 34, pointerEvents: 'none' }}>
           {p.pose
             ? '지도 없음 — 로봇·라이다를 출발점(odom) 기준으로 실시간 표시. 지도 만들기(SLAM)를 실행하면 지도가 나타난다'

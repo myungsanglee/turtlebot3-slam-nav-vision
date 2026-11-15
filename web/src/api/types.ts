@@ -33,6 +33,10 @@ export interface NavigationStatus {
   footprint_age: number | null
   nav2_ready: boolean
   keepout: { map: string | null; zones: number } // Nav2 에 적용 중인 금지 구역
+  map_source: 'default' | 'live' | null // 화면 지도 출처
+  default_map: string | null // 기본 지도 이름
+  // 대기 중 기본 지도 위 로봇 위치 추정 (서버 idle_locator.py) — 화면 표시 전용
+  idle_localization: { state: 'none' | 'searching' | 'localized' | 'ambiguous' | 'failed'; score: number | null } | null
 }
 
 // 로봇 전원 상태 (서버 robot_power.py) — Pi 에 SSH 로 물어 본 bringup 상태 + 진행 중 동작
@@ -97,6 +101,8 @@ export interface GridMeta {
   origin: Pose // 격자 (0,0) 칸의 모서리 위치 (map 좌표)
   version: number
   frame?: string
+  source?: 'default' | 'live' // 지도 출처: default = 대기 중 기본 지도, live = SLAM·AMCL 의 /map
+  name?: string | null
 }
 
 export type NavStateName = 'idle' | 'sending' | 'active' | 'succeeded' | 'aborted' | 'canceled' | 'rejected' | 'error'
@@ -177,6 +183,7 @@ export interface SavedMap {
   size_m: [number, number]
   saved: number // epoch 초
   zones: number // 금지 구역 개수
+  default: boolean // 기본 지도 (대기 중에도 화면에 표시)
 }
 
 export interface RobotStream {

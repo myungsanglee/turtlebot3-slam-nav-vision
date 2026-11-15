@@ -39,12 +39,13 @@ remote_pc/src/my_web_api/            ROS 2 패키지 (ament_python)
 │   ├── zones.py                     ROS 없는 금지 구역 로직: 검증·저장·지도 좌표 다각형 → Keepout 마스크 격자
 │   ├── robot_power.py               로봇 전원(대기·켜기·재시작·재부팅·끄기·자이로 재보정) — Pi 에 전용 SSH 키로 robot_power.sh 호출
 │   ├── gyro_watch.py                ROS 없는 자이로 드리프트 판정(정지 중 방향 변화율)·자동 재보정 조건
+│   ├── idle_locator.py              대기 중 기본 지도 위 로봇 위치 추정 (my_localization 스캔 매칭 재사용, 화면 표시 전용)
 │   ├── depth_points.py              카메라 depth → 지도 좌표 3D 점 (my_vision depth_cloud 의 역투영 재사용, 3D 회전, 5cm 솎기)
 │   ├── robot_model.py               URDF → base_link CAD 메시 → 위에서 본 이미지(PNG)·3D 용 STL(gzip)
 │   ├── map_codec.py                 OccupancyGrid → RGBA PNG (지도 / costmap 색 규칙)
 │   ├── nav.py                       Nav2 목표·취소·진행 상태, AMCL 초기 위치, 자동 위치 찾기 상태·요청 (ROS 스레드 큐)
 │   ├── mode_manager.py              운용 모드: system.launch 를 프로세스 그룹으로 켜고 끔, 외부 실행 감지
-│   ├── maps.py                      저장 지도 목록·미리보기·저장(map_saver_cli)·삭제
+│   ├── maps.py                      저장 지도 목록·미리보기·저장(map_saver_cli)·삭제·기본 지도(.default_map)·파일→격자
 │   ├── teleop.py                    조이스틱 → /cmd_vel (0.3초 워치독, 속도 상한, 시작 시 Nav2 목표 취소)
 │   ├── ros_node.py                  rclpy 노드: 구독·TF → 지도 좌표로 정리, snapshot() 으로 상태 조립
 │   ├── app.py                       FastAPI 라우트: 상태·영상·지도·주행 API, WebSocket, 정적 파일
@@ -445,6 +446,24 @@ Spot·Clearpath 의 웹 조작 화면)은 공통으로 **한 화면을 크게 + 
 - 폰: 도구 막대를 한 줄 가로 스크롤로 (지도 공간을 줄이지 않게).
 - 검증 (헤드리스 크롬, 로봇 꺼짐 상태): 1600×950 과 412×880 배치, ⇄ 클릭 → 카메라 크게·지도 작은 창 (aria-label 로 상태 확인), 빌드·타입 검사 통과.
   ⏳ 로봇 켠 상태에서 키보드·조이스틱 실제 이동.
+
+### 4.23 기본 지도 — 대기 중에도 지도 위에 로봇 (`maps.py`, `idle_locator.py`) · 끊긴 데이터 지우기 (2026-11-15)
+
+**기본 지도**: 운용 모드의 저장 지도 목록에서 ★ 를 누르면 그 지도가 기본 지도가 된다 (지도 폴더의 `.default_map`, 이름 한 줄,
+`PUT /api/maps/default {name|null}`). 지도를 지우면 설정도 지워지고, 지도 목록·「이 지도로 주행」 선택의 기본값이 된다.
+- 대기(IDLE) 중엔 서버가 그 지도 파일을 읽어 화면 지도로 보낸다 (`load_grid` — map_server 와 같은 trinary 규칙, 행 0 = 아래).
+  지도 만들기·주행이 시작되면 내리고 SLAM·AMCL 의 `/map` 으로 바꾼다. 터미널에서 띄운 SLAM(external) 이 있으면 건드리지 않는다.
+  기본 지도가 없으면 대기로 돌아올 때 지난 지도를 내린다 (위치가 이어지지 않으므로).
+- **로봇을 그 지도 위에**: 대기 중엔 AMCL 이 없어 map→odom 이 없다. `idle_locator.py` 가 2초마다 my_localization 의 스캔 매칭으로
+  map←odom 을 추정한다 — 처음엔 지도 전체 검색(확신할 때만 채택), 이후엔 odom 예측 자리 ±25cm·±15° 만 확인, 2번 연속 안 맞으면 다시 전체 검색.
+  그 추정을 `lookup()`(2D)·`lookup3d()`(카메라) 의 "map 으로의 TF 가 없을 때" 대신 쓰므로 로봇·라이다·카메라 점이 코드 변경 없이 지도 좌표로 그려진다.
+  **화면 표시 전용** — Nav2·로봇 제어에는 쓰지 않는다 (주행은 「이 지도로 주행」 → AMCL + relocalizer).
+  위치를 확신하지 못하면 지도만 보이고 로봇·라이다는 숨긴다 (엉뚱한 자리에 겹치지 않게). 상태: `navigation.map_source`·`idle_localization`.
+- **끊긴 데이터 지우기**: 로봇 데이터(odom)가 끊기면(대기·Pi 꺼짐·통신 끊김) 화면이 로봇·라이다·카메라 점·장애물 지도·경로를 지우고
+  "로봇 데이터 없음 (대기)" 를 띄운다 — 전에는 마지막 값이 지금 상태처럼 남아 있었다. 지도는 남는다. 서버 쪽 위치 추정도 버려서,
+  다시 켜면 처음부터 찾는다 (그 사이 로봇을 옮겼을 수 있다). 지워졌던 지도는 WebSocket `{"type": "map", "none": true}` 로 알린다.
+- 검증 (2026-11-15, 실기 대기 상태): 기본 지도 지정 → 6초 안에 위치 추정 0.92 (`display_frame` = map), 화면에서 라이다·카메라 점이 지도 벽과 일치.
+  단위 시험: 기본 지도 지정·해제·삭제 연동, 격자 변환 규칙, 위치 추정(찾기·20cm 이동 추적·잃기).
 
 ## 5. 실행
 

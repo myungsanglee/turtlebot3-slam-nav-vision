@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 
@@ -28,10 +29,12 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CameraInfo, CompressedImage, JointState, LaserScan
 from std_msgs.msg import String
+from my_localization.scan_matcher import Scan
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from .depth_points import PixelRays, depth_to_display, quat_matrix
 from .gyro_watch import GyroDriftWatch, auto_reset_reason
+from .idle_locator import IdleLocator
 from .geometry import compose, downsample, scan_to_points, transform_points, yaw_from_quaternion
 from .map_codec import costmap_to_rgba, encode_png, map_to_rgba
 from .monitor import FrameStore, TopicMonitor, TopicSpec, battery_level
@@ -97,6 +100,15 @@ class GridStore:
             self.version += 1
             self._grid, self._meta = grid, {**meta, 'version': self.version}
             self.stamp = time.monotonic()
+
+    def clear(self):
+        """화면에서 지운다 (WebSocket 이 '없음' 을 보낸다)."""
+        with self._lock:
+            if self._grid is None:
+                return
+            self.version += 1
+            self._grid = self._meta = None
+            self.stamp = None
 
     def meta(self):
         with self._lock:
@@ -168,6 +180,11 @@ class WebApiNode(Node):
         self._depth_band = [float(p('depth_obstacle_min_height', 0.04).value),
                             float(p('depth_obstacle_max_height', 0.25).value)]
         self._depth_last = 0.0
+        # 기본 지도 (maps.py .default_map): 대기 중에도 화면에 보여 주고, 그 위 로봇 위치는 스캔 매칭으로 추정 (idle_locator.py)
+        self._map_source = None          # ('default', 이름, 파일 시각) | ('live',) — 지금 화면 지도의 출처
+        self.idle = IdleLocator()
+        self._last_scan: LaserScan | None = None
+        self._idle_busy = False
         self._depth_rays = None
         self._cam_info = None
         self.create_subscription(CameraInfo, p('topic_camera_info', '/camera/color/camera_info').value,
@@ -228,6 +245,8 @@ class WebApiNode(Node):
         self._keepout_lock = threading.Lock()   # ROS 타이머와 웹 요청(PUT zones)이 동시에 부를 수 있다
         self.keepout = {'map': None, 'zones': 0}
         self.create_timer(1.0, self.sync_keepout)
+        self.create_timer(1.0, self._sync_default_map)
+        self.create_timer(2.0, self._idle_locate_tick)
 
         self.create_subscription(String, p('topic_robot_description', '/robot_description').value,
                                  lambda m: self.robot_model.update(m.data), LATCHED_QOS)
@@ -242,9 +261,23 @@ class WebApiNode(Node):
         try:
             t = self._tf.lookup_transform(target_frame, source_frame, rclpy.time.Time())
         except TransformException:
-            return None
+            est = self._idle_map_odom(target_frame)
+            if est is None:
+                return None
+            o = self.lookup(self.odom_frame, source_frame)
+            return None if o is None else compose(est, o)
         tr, q = t.transform.translation, t.transform.rotation
         return tr.x, tr.y, yaw_from_quaternion(q.x, q.y, q.z, q.w)
+
+    def _idle_map_odom(self, target_frame: str):
+        """대기 중 기본 지도 위 추정 map←odom (map 으로의 TF 가 없을 때만 대신 쓴다). 화면 표시 전용."""
+        if target_frame != self.fixed_frame or not self._default_active():
+            return None
+        return self.idle.map_from_odom()
+
+    def _default_active(self) -> bool:
+        src = self._map_source
+        return src is not None and src[0] == 'default'
 
     def display_frame(self) -> str | None:
         """지금 화면을 그릴 좌표계. map→로봇 이 이어지면 map, 아니면 odom, 둘 다 없으면 None."""
@@ -283,6 +316,7 @@ class WebApiNode(Node):
         return cb
 
     def _on_scan(self, msg: LaserScan):
+        self._last_scan = msg
         frame = self.display_frame()
         t = None if frame is None else self.lookup(frame, msg.header.frame_id)
         if t is None:
@@ -332,7 +366,13 @@ class WebApiNode(Node):
         try:
             t = self._tf.lookup_transform(target_frame, source_frame, rclpy.time.Time())
         except TransformException:
-            return None
+            est = self._idle_map_odom(target_frame)
+            o = None if est is None else self.lookup3d(self.odom_frame, source_frame)
+            if o is None:
+                return None
+            c, s_ = math.cos(est[2]), math.sin(est[2])
+            rz = np.array([[c, -s_, 0.0], [s_, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
+            return rz @ o[0], rz @ o[1] + np.array([est[0], est[1], 0.0], dtype=np.float32)
         tr, q = t.transform.translation, t.transform.rotation
         return quat_matrix(q.x, q.y, q.z, q.w), np.array([tr.x, tr.y, tr.z], dtype=np.float32)
 
@@ -376,7 +416,70 @@ class WebApiNode(Node):
         if msg.header.frame_id and msg.header.frame_id != self.fixed_frame:
             self.get_logger().warn(f'/map frame {msg.header.frame_id} != fixed_frame {self.fixed_frame}',
                                    throttle_duration_sec=30.0)
-        self.map.set(self._grid(msg), self._grid_meta(msg, self._origin(msg)))
+        self._map_source = ('live',)
+        self.idle.clear()
+        self.map.set(self._grid(msg), {**self._grid_meta(msg, self._origin(msg)), 'source': 'live', 'name': None})
+
+    # ---------- 기본 지도 (대기 중 표시) ----------
+    def _sync_default_map(self):
+        """대기(IDLE)이고 기본 지도가 있으면 그 지도를 화면에. 지도 만들기·주행이 시작되면 내린다
+        (SLAM 지도·AMCL 지도는 /map 으로 따로 온다). 터미널에서 띄운 SLAM 이 있으면(external) 건드리지 않는다."""
+        st = self.mode.snapshot()
+        idle = st['mode'] == 'IDLE' and st['phase'] in ('idle', 'error') and not st.get('external')
+        name = self.maps.get_default() if idle else None
+        if name:
+            try:
+                key = ('default', name, self.maps.mtime(name))
+                if key != self._map_source:
+                    grid, res, origin = self.maps.load_grid(name)
+                    self.map.set(grid, {'width': grid.shape[1], 'height': grid.shape[0], 'resolution': res,
+                                        'origin': {'x': round(origin[0], 4), 'y': round(origin[1], 4),
+                                                   'yaw': round(origin[2], 5)},
+                                        'source': 'default', 'name': name})
+                    self.idle.set_map(key, grid, res, origin[:2])
+                    self._map_source = key
+                    self.get_logger().info(f'기본 지도 표시: {name} ({grid.shape[1]}x{grid.shape[0]})')
+            except (OSError, ValueError, KeyError) as e:
+                self.get_logger().warn(f'기본 지도 {name} 읽기 실패: {e}', throttle_duration_sec=30.0)
+            return
+        if self._default_active():
+            self._map_source = None
+            self.idle.clear()
+            self.map.clear()
+        elif idle and self._map_source == ('live',) and not st.get('external'):
+            # 주행·지도 만들기를 끄고 대기로 — 기본 지도가 없으면 지난 지도를 내린다 (위치가 이어지지 않으므로)
+            self._map_source = None
+            self.map.clear()
+
+    def _robot_live(self) -> bool:
+        return self.monitors['odom'].snapshot()['state'] == 'ok'
+
+    def _idle_locate_tick(self):
+        """대기 중 기본 지도 위 위치 추정 (2초마다, 작업 스레드). 로봇 데이터가 끊기면 추정을 버린다."""
+        if not self._default_active():
+            return
+        if not self._robot_live():
+            self.idle.lose()
+            return
+        scan = self._last_scan
+        if scan is None or self._idle_busy:
+            return
+        sensor = self.lookup(self._base_frame, scan.header.frame_id)
+        odom_base = self.lookup(self.odom_frame, self._base_frame)
+        if sensor is None or odom_base is None:
+            return
+        angles = scan.angle_min + np.arange(len(scan.ranges)) * scan.angle_increment
+        s = Scan(np.asarray(scan.ranges, np.float64), angles, sensor, max(scan.range_min, 0.05), min(scan.range_max, 3.5))
+        self._idle_busy = True
+
+        def work():
+            try:
+                self.idle.update(s, odom_base)
+            except Exception as e:  # noqa: BLE001
+                self.get_logger().warn(f'대기 중 위치 추정 오류: {e}', throttle_duration_sec=30.0)
+            finally:
+                self._idle_busy = False
+        threading.Thread(target=work, daemon=True).start()
 
     def _on_costmap(self, msg: OccupancyGrid):
         # 로컬 costmap 은 odom 기준 → 표시 좌표계(보통 map) 기준 원점으로 옮긴다 (회전 포함)
@@ -529,6 +632,10 @@ class WebApiNode(Node):
                 'footprint_age': age(self.footprint.stamp),
                 'nav2_ready': self._nav2_ready,
                 'keepout': self.keepout,           # Nav2 에 적용 중인 금지 구역 (지도 이름·개수)
+                # 화면 지도의 출처: default(대기 중 기본 지도 — 로봇 위치는 스캔 매칭 추정) / live(SLAM·AMCL /map) / None
+                'map_source': (self._map_source or (None,))[0],
+                'default_map': self.maps.get_default(),
+                'idle_localization': self.idle.snapshot() if self._default_active() else None,
             },
             'topics': topics,
         }

@@ -231,7 +231,10 @@ turtlebot3-slam-nav-vision/
   상세는 `docs/my_localization.md`
 - **자이로 드리프트 감지·재보정 (2026-11-14)** — web-api `gyro_watch.py`: 바퀴(/joint_states)·위치가 30초 멈춘 채 odom 방향이
   2°/분 이상 돌면 상단 경고 칩, 3°/분 이상이면 자동 재보정(지도 만들기·주행·조이스틱 중 제외, 10분 쿨다운).
-  재보정 = Pi `robot_power.sh gyro_reset`(SSH 강제 명령 → `/reset`), 주행 모드면 이어서 위치 다시 찾기. ⏳ 실기 시험 (Pi git pull 후)
+  재보정 = Pi `robot_power.sh gyro_reset`(SSH 강제 명령 → `/reset`), 주행 모드면 이어서 위치 다시 찾기. 수동 재보정 실기 ✅ (11-15), 자동은 장시간 관찰 중
+- **웹 조작 화면 재배치·기본 지도 (2026-11-15)** — 지도 크게 + 카메라 작은 창(⇄) + 겹치는 조이스틱·키보드(WASD) (my_web_api 4.22).
+  저장 지도 ★ = 기본 지도: 대기 중에도 화면에 표시하고 web-api `idle_locator.py` 가 스캔 매칭(my_localization 재사용)으로 map←odom 을
+  추정해 로봇·센서를 지도 위에 그림 (표시 전용, 실기 0.92). 로봇 데이터가 끊기면 로봇·센서 표시를 지움 (4.23)
 
 **다음 (우선순위 순)**
 1. ~~base_link→camera_link TF~~ ✅ (2026-09-08) + ~~Vision 3D 위치의 base_link/map 변환~~ ✅

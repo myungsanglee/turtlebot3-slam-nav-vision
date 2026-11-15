@@ -16,6 +16,7 @@ API (docs/web_ui_design.md 5장, docs/my_web_api.md 5장):
   GET  /api/mode · POST /api/mode {mode, map?, vision?}   운용 모드 (IDLE / MAPPING / NAVIGATION)
   GET  /api/mode/log          모드 launch 로그 꼬리 (문제 확인용)
   GET  /api/maps · POST /api/maps {name} · DELETE /api/maps/{name} · GET /api/maps/{name}.png
+  PUT  /api/maps/default {name|null}  기본 지도 (대기 중에도 화면에 표시, 로봇 위치는 스캔 매칭 추정)
   GET|PUT /api/maps/{name}/zones   금지 구역·가상 벽 (저장 지도별, 주행 중이면 Nav2 에 즉시 반영)
                               저장 지도 목록 / 지금 지도 저장 / 삭제 / 미리보기
   WS   /ws                    status(2Hz)·pose(10Hz)·scan·depth_points·path·footprint·map·costmap·nav·mode 를 바뀔 때 push,
@@ -58,6 +59,10 @@ class ZonesPut(BaseModel):
 
 class PowerRequest(BaseModel):
     action: str = Field(description='wake | standby | restart | reboot | poweroff | gyro_reset')
+
+
+class DefaultMap(BaseModel):
+    name: str | None = Field(None, description='기본 지도 이름 (null = 해제)')
 
 
 class MapSave(BaseModel):
@@ -236,6 +241,17 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
             return result({'ok': False, 'reason': 'bad_request', 'message': str(e)})
         return r if r['ok'] else result({**r, 'reason': 'error'})
 
+    @app.put('/api/maps/default')
+    def maps_default(req: DefaultMap):
+        try:
+            node.maps.set_default(req.name)
+        except FileNotFoundError:
+            return result({'ok': False, 'reason': 'not_found', 'message': f'지도 {req.name} 없음'})
+        except ValueError as e:
+            return result({'ok': False, 'reason': 'bad_request', 'message': str(e)})
+        return {'ok': True, 'default': node.maps.get_default(),
+                'message': f'기본 지도: {req.name}' if req.name else '기본 지도 해제'}
+
     @app.delete('/api/maps/{name}')
     def maps_delete(name: str):
         snap = node.mode.snapshot()
@@ -310,8 +326,9 @@ def create_app(node, static_dir: str = '', stop: threading.Event | None = None) 
                     await websocket.send_json({'type': 'pose', 'pose': pose})
                 for key, store in (('map', node.map), ('costmap', node.costmap)):
                     meta = store.meta()
-                    if meta is not None and changed(key, meta['version']):
-                        await websocket.send_json({'type': key, **meta})
+                    if changed(key, store.version):
+                        # 지워졌으면 'none' — 화면이 옛 지도를 내린다 (대기로 돌아왔는데 기본 지도가 없을 때 등)
+                        await websocket.send_json({'type': key, **meta} if meta is not None else {'type': key, 'none': True})
                 version, scan = node.scan_pts.get()
                 if scan is not None and changed('scan', version):
                     await websocket.send_json({'type': 'scan', **scan})
