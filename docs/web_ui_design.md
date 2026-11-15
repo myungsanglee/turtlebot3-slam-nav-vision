@@ -219,3 +219,10 @@ robot/systemd/tb3-bringup.service
 - 지도 위젯: [nav2djs](https://github.com/GT-RAIL/nav2djs), [ros2djs](https://gittrend.io/repo/RobotWebTools/ros2djs) (roslibjs 전제, 유지보수 불분명)
 - 자동 실행: [Clearpath ROS 2 서비스 구성](https://docs.clearpathrobotics.com/docs/ros2humble/ros/config/services), [robot_upstart](https://docs.ros.org/en/jazzy/p/robot_upstart/doc/index.html)
 - 클라우드 관제(범위 밖 참고): [InOrbit](https://inorbit.ai/faq), [Transitive Robotics](https://transitiverobotics.com/caps/)
+- **조작 화면 배치 참고 (2026-11-15, my_web_api.md 4.22 "큰 화면 + 작은 창")**:
+  Formant — [Teleoperation (짧은 영상)](https://www.youtube.com/watch?v=VD2vxN-zms0) · [Teleoperations](https://www.youtube.com/watch?v=hODLXfAM2Is) ·
+  [원격 조작 화면 구성 문서](https://docs.formant.io/docs/getting-started-build-a-teleoperation-interface) (영상 최대 2개 + 위치 지도 사이드바, 조이스틱/키보드);
+  로보락 앱 원격 보기 — [S6 MaxV 실시간 영상](https://www.youtube.com/watch?v=9dDp_p0sh8o) · [Qrevo Curv 카메라 보기·이동](https://www.youtube.com/watch?v=BtyZSUTgj9A);
+  Spot 원격 조작(Formant) — [Test driving Spot from home](https://www.youtube.com/watch?v=ip_Cwj-LYmI), [Spot Orbit](https://bostondynamics.com/products/orbit/) (지도 기반 화면);
+  오픈소스 — [ROS2 Web User Interface (CPS Austria)](https://youtube.com/watch?v=PUpIDviqkQI),
+  [OpenTera WebRTC 원격 조작 프론트엔드](https://github.com/introlab/opentera-webrtc-teleop-frontend) (가상 조이스틱·확대 가능한 지도 위젯·속도 제한)

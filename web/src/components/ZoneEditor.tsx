@@ -19,7 +19,8 @@ export interface Draft {
 }
 
 // 지도 위에 겹치는 편집 막대 (도구 = 'zone' 일 때)
-export function ZoneDraftBar({ map, zones, draft, setDraft, onClose }: {
+export function ZoneDraftBar({ map, zones, draft, setDraft, onClose, right = 8 }: {
+  right?: number | string | Record<string, number | string> // 오른쪽 여백 (카메라 작은 창을 가리지 않게)
   map: string
   zones: Zone[]
   draft: Draft
@@ -37,7 +38,7 @@ export function ZoneDraftBar({ map, zones, draft, setDraft, onClose }: {
     <Alert
       severity={save.error ? 'error' : 'warning'}
       icon={false}
-      sx={{ position: 'absolute', top: 8, left: 8, right: 8, alignItems: 'center', '& .MuiAlert-message': { width: '100%' } }}
+      sx={{ position: 'absolute', top: 8, left: 8, right, zIndex: 3, alignItems: 'center', '& .MuiAlert-message': { width: '100%' } }}
     >
       <Stack direction="row" sx={{ alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
         <ToggleButtonGroup

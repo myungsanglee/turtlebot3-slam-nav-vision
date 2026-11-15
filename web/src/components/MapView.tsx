@@ -63,6 +63,8 @@ interface Props {
   layers: Layers
   follow: boolean
   onPick: (p: Pose) => void
+  fill?: boolean // 부모 높이를 꽉 채움 (조작 화면). 아니면 폭에 맞춘 높이
+  compact?: boolean // 작은 창 — 축척·안내 문구 숨김
   ref?: Ref<MapHandle>
 }
 
@@ -102,6 +104,8 @@ function flat(points: Point[]) {
 
 export default function MapView({ ref, ...p }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
+  const fillRef = useRef(!!p.fill)
+  fillRef.current = !!p.fill
   const worldRef = useRef<Konva.Group>(null)
   const [size, setSize] = useState({ w: 600, h: 450 })
   const [view, setView] = useState({ x: 300, y: 225, s: 60 }) // Stage 위치·배율 (px/m)
@@ -118,7 +122,8 @@ export default function MapView({ ref, ...p }: Props) {
     if (!el) return
     const ro = new ResizeObserver(() => {
       const w = el.clientWidth
-      setSize({ w, h: Math.round(Math.max(340, Math.min(window.innerHeight * 0.68, w * 0.8))) })
+      const h = fillRef.current ? el.clientHeight : Math.round(Math.max(340, Math.min(window.innerHeight * 0.68, w * 0.8)))
+      if (w > 0 && h > 0) setSize({ w, h })
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -151,6 +156,15 @@ export default function MapView({ ref, ...p }: Props) {
     setFitted('robot')
     setView(centered(p.pose.x, p.pose.y, 80))
   }
+
+  // 화면 크기가 크게 바뀌면(큰 화면 ↔ 작은 창 전환, 창 크기 변경) 지도 전체 보기로 다시 맞춘다
+  const lastSize = useRef(size)
+  useEffect(() => {
+    const a = lastSize.current
+    lastSize.current = size
+    const changed = Math.abs(size.w - a.w) / a.w > 0.25 || Math.abs(size.h - a.h) / a.h > 0.25
+    if (changed && showMap && !p.follow) setView(fitView())
+  }, [size.w, size.h]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 로봇 따라가기: 저장하지 않고 그릴 때마다 로봇 위치로 계산
   const stage = p.follow && p.pose ? centered(p.pose.x, p.pose.y, view.s) : view
@@ -213,7 +227,7 @@ export default function MapView({ ref, ...p }: Props) {
   )
 
   return (
-    <Box ref={wrapRef} sx={{ position: 'relative', width: '100%', bgcolor: '#0b0d10', borderRadius: 1, overflow: 'hidden', touchAction: 'none' }}>
+    <Box ref={wrapRef} sx={{ position: 'relative', width: '100%', height: p.fill ? '100%' : 'auto', bgcolor: '#0b0d10', borderRadius: p.fill ? 0 : 1, overflow: 'hidden', touchAction: 'none' }}>
       <Stage
         width={size.w}
         height={size.h}
@@ -312,20 +326,22 @@ export default function MapView({ ref, ...p }: Props) {
           </Group>
         </Layer>
       </Stage>
-      {!showMap && (
-        <Typography variant="caption" color="text.secondary" sx={{ position: 'absolute', left: 10, bottom: 6, pointerEvents: 'none' }}>
+      {!showMap && !p.compact && (
+        <Typography variant="caption" color="text.secondary" sx={{ position: 'absolute', left: 10, right: p.fill ? 190 : 10, bottom: 34, pointerEvents: 'none' }}>
           {p.pose
             ? '지도 없음 — 로봇·라이다를 출발점(odom) 기준으로 실시간 표시. 지도 만들기(SLAM)를 실행하면 지도가 나타난다'
             : '로봇 위치 없음 — 로봇 bringup 확인'}
         </Typography>
       )}
-      {/* 축척 막대: 화면에서 1m 길이 */}
-      <Box sx={{ position: 'absolute', right: 12, bottom: 8, pointerEvents: 'none', textAlign: 'center' }}>
-        <Box sx={{ width: stage.s, height: 6, borderLeft: '2px solid #9aa4b2', borderRight: '2px solid #9aa4b2', borderBottom: '2px solid #9aa4b2' }} />
-        <Typography variant="caption" color="text.secondary">
-          1 m
-        </Typography>
-      </Box>
+      {/* 축척 막대: 화면에서 1m 길이 (오른쪽 아래는 조이스틱 자리라 왼쪽 아래) */}
+      {!p.compact && (
+        <Box sx={{ position: 'absolute', left: 12, bottom: 8, pointerEvents: 'none', textAlign: 'center' }}>
+          <Box sx={{ width: stage.s, height: 6, borderLeft: '2px solid #9aa4b2', borderRight: '2px solid #9aa4b2', borderBottom: '2px solid #9aa4b2' }} />
+          <Typography variant="caption" color="text.secondary">
+            1 m
+          </Typography>
+        </Box>
+      )}
     </Box>
   )
 }

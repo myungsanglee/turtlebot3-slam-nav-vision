@@ -60,16 +60,16 @@ web/                                 React 프론트엔드 (npm 프로젝트, RO
     ├── api/nav.ts                   주행 요청 (TanStack Query mutation)
     ├── api/mode.ts                  모드 전환·지도 목록/저장/삭제·실행 로그
     ├── components/ModePanel.tsx     운용 모드 버튼, 지도 저장·선택·삭제(확인 대화상자), 실행 로그
-    ├── components/Joystick.tsx      가상 조이스틱 (누르는 동안만 0.1초마다 전송, 속도 조절)
+    ├── components/Joystick.tsx      겹치는 조이스틱 + 키보드(방향키·WASD) — 누르는 동안만 0.1초마다 전송, 속도 조절
     ├── api/robot.ts                 로봇 모양 정보 (TanStack Query)
     ├── components/MapView.tsx       react-konva 2D 지도: 레이어·확대/이동·따라가기·목표 찍기·로봇 CAD 윗모습
     ├── components/Map3D.tsx         react-three-fiber 3D 화면 (보기 전용, 「3D」 누를 때만 내려받음)
-    ├── components/MapPanel.tsx      도구(보기·목표·초기 위치)·레이어 토글·목표 확인 창
+    ├── components/MapPanel.tsx      ★ 조작 화면: 지도 크게 + 카메라 작은 창(⇄ 맞바꾸기) + 겹치는 조이스틱·주행 상태, 도구·레이어 막대
     ├── components/NavPanel.tsx      주행 상태·남은 거리·취소
     ├── components/PowerControl.tsx   전원 칩·메뉴(대기·켜기·재시작·재부팅·끄기·자이로 재보정)·드리프트 경고 칩
     ├── components/LocalizationBar.tsx 자동 위치 찾기 상태 칩·「위치 찾기」·후보 선택 (저장 지도 주행)
     ├── components/StatusBar.tsx     모드·서버 연결·로봇 연결·속도
-    ├── components/CameraPanel.tsx   MJPEG <img>, 원본/검출 결과 전환
+    ├── components/CameraView.tsx    MJPEG <img> (부모 영역을 꽉 채움), 원본/검출 결과 전환
     ├── components/BatteryCard.tsx   전압·셀 전압·판정
     └── components/TopicTable.tsx    토픽별 주기·마지막 수신·상태
 ```
@@ -425,6 +425,26 @@ Nav2:    global·local costmap 의 KeepoutFilter 가 마스크 칸을 LETHAL 로
 - 검증: 단위 시험(드리프트 −13.4°/분 판정·±180° 경계·바퀴 회전은 'moving'·멈춘 직후 'settling'·자동 조건 7가지, 전원 guard·
   'calibrating'·오류 JSON 합치기). Pi 스크립트: bringup 꺼짐 → `{"error"}` exit 3, 강제 명령 환경에서 ROS 환경 확인.
   ⏳ 로봇 실행 중 실기 (Pi `git pull` 후 — 강제 명령은 레포의 스크립트를 실행한다).
+
+### 4.22 화면 배치 — 큰 화면 + 작은 창 (2026-11-15)
+
+**왜**: 처음 배치는 카드 대시보드(지도 왼쪽, 카메라·조이스틱은 오른쪽 열에 차례로)라서, 지도를 만들며 조이스틱으로 움직일 때
+지도·카메라·조이스틱을 스크롤하며 오가야 했다 (사용자 피드백). 원격 조작 제품들(Formant 원격 조작 화면, 로보락 앱의 원격 보기,
+Spot·Clearpath 의 웹 조작 화면)은 공통으로 **한 화면을 크게 + 다른 영상은 작은 창 + 조작기는 화면 위에 겹침** 이다
+(조사 링크: web_ui_design.md 10장).
+
+- **조작 화면**(`MapPanel`)이 브라우저 높이에 꼭 맞는다 (스크롤 없이 조작). 지도가 크고, 카메라는 오른쪽 위 작은 창.
+  작은 창의 ⇄ 로 맞바꾼다 — 카메라를 크게 보며 몰 때는 지도가 작은 창이 되고 로봇을 따라간다. ✕ 로 작은 창을 닫는다.
+- 두 영역은 같은 컴포넌트를 유지한 채 **위치·크기만 바꾼다** (CSS absolute) → 맞바꿔도 MJPEG 스트림이 다시 열리지 않고 지도 상태가 남는다.
+  지도는 `MapView fill` 로 부모 높이를 따라가고, 크기가 25% 넘게 바뀌면 지도 전체 보기로 다시 맞춘다.
+- **조이스틱**은 오른쪽 아래에 겹친다 (폰에서는 터치 크기로 더 크게 — `pointer: coarse`). 노트북에서는 **키보드 방향키·WASD**
+  (누르는 동안 이동, 여러 키 = 전진하며 회전, 스페이스 = 정지, 입력창에 타이핑 중엔 무시). 조이스틱과 같은 전송 규칙(0.1초마다,
+  떼면 정지, 서버 0.3초 워치독)이라 안전 장치는 그대로.
+- **주행 중**에는 왼쪽 아래에 남은 거리·「취소」 가 겹쳐 뜬다 (`NavOverlay`). 목표 확인 창·금지 구역 그리기 막대는 작은 창을 가리지 않게 그 왼쪽까지만.
+- 운용 모드(지도 만들기·저장·주행)·주행 상세·배터리·센서 상태는 **옆 패널**(넓은 화면: 오른쪽 380px, 따로 스크롤 / 폰: 조작 화면 아래).
+- 폰: 도구 막대를 한 줄 가로 스크롤로 (지도 공간을 줄이지 않게).
+- 검증 (헤드리스 크롬, 로봇 꺼짐 상태): 1600×950 과 412×880 배치, ⇄ 클릭 → 카메라 크게·지도 작은 창 (aria-label 로 상태 확인), 빌드·타입 검사 통과.
+  ⏳ 로봇 켠 상태에서 키보드·조이스틱 실제 이동.
 
 ## 5. 실행
 

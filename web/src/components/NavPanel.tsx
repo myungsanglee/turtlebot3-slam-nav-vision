@@ -1,4 +1,4 @@
-import { Alert, Button, Card, CardContent, Chip, LinearProgress, Stack, Typography } from '@mui/material'
+import { Alert, Button, Card, CardContent, Chip, LinearProgress, Paper, Stack, Typography } from '@mui/material'
 import { useNavCancel } from '../api/nav'
 import type { NavState, NavigationStatus } from '../api/types'
 
@@ -61,5 +61,27 @@ export default function NavPanel({ nav, navigation }: { nav: NavState | null; na
         {cancel.error && <Alert severity="error" sx={{ mt: 1 }}>{cancel.error.message}</Alert>}
       </CardContent>
     </Card>
+  )
+}
+
+/** 조작 화면 위에 겹치는 주행 상태 (주행 중일 때만) — 남은 거리와 「취소」 를 손 닿는 곳에 */
+export function NavOverlay({ nav }: { nav: NavState | null }) {
+  const cancel = useNavCancel()
+  const state = nav?.state ?? 'idle'
+  if (state !== 'active' && state !== 'sending') return null
+  const fb = nav?.feedback
+  return (
+    <Paper elevation={6} sx={{ px: 1.5, py: 1, borderRadius: 2, bgcolor: 'rgba(17,21,27,0.85)', backdropFilter: 'blur(4px)' }}>
+      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+        <Chip size="small" color="info" label={STATE[state].label} />
+        <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+          {fb ? `남은 ${fb.distance_remaining.toFixed(2)} m` : '경로 계산 중'}
+          {fb && fb.recoveries > 0 && ` · 복구 ${fb.recoveries}회`}
+        </Typography>
+        <Button size="small" variant="contained" color="error" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
+          취소
+        </Button>
+      </Stack>
+    </Paper>
   )
 }
