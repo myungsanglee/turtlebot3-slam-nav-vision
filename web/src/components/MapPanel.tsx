@@ -318,6 +318,8 @@ export default function MapPanel({ robot }: { robot: RobotStream }) {
               send={robot.send}
               connected={robot.connected && !!status?.robot_connected}
               scale={speedScale}
+              maxLinear={status?.speed?.max_linear}
+              maxAngular={status?.speed?.max_angular}
               onScale={(v) => {
                 setSpeedLocal(v)
                 setSpeed.mutate(v)

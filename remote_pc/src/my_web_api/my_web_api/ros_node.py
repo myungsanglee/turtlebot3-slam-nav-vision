@@ -215,7 +215,7 @@ class WebApiNode(Node):
                                 on_stop=lambda: self.nav.submit('cancel'),
                                 ready_timeout=float(p('mode_ready_timeout_sec', 120.0).value))
         self.teleop = TeleopController(self, p('topic_cmd_vel', '/cmd_vel').value,
-                                       float(p('teleop_max_linear', 0.15).value),
+                                       float(p('teleop_max_linear', 0.22).value),
                                        float(p('teleop_max_angular', 1.0).value),
                                        on_start=lambda: self.nav.submit('cancel'))
         # 속도 조절(화면 슬라이더) — 조이스틱과 자동 주행(Nav2 /speed_limit) 공통

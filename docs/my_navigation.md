@@ -176,8 +176,8 @@ my_slam 과 마찬가지로 소스 코드가 없다 — 검증된 표준 스택(
 |---|---|---|
 | `robot_base_frame` | `base_footprint` | slam_toolbox 와 프레임 규약 통일 (프로젝트 공통) |
 | `controller_frequency` | 10.0 | ROBOTIS TB3 검증값. cmd_vel 이 VPN 을 건너는 원격 구조라 과한 주기보다 안정성 |
-| `max_vel_x`·`max_speed_xy`, `max_velocity` | 0.15, (smoother 0.22) | 웹 조이스틱 최대와 같게 (2026-11-15). 웹 속도 조절이 `/speed_limit`(SpeedLimit, m/s)으로 이 값의 20~100% 를 보내고 DWB 가 같은 비율로 회전 한도도 줄인다 → 자동 주행 = 조이스틱 속도 (my_web_api 4.24). velocity_smoother 는 하드웨어 한계 0.22 그대로 |
-| `movement_time_allowance` | 30.0 | 기본 10초 — 속도 조절 최저 20%(0.03 m/s)에서도 진행 검사(0.5 m)가 실패로 끊지 않게 |
+| `max_vel_x`·`max_speed_xy`, `max_velocity` | 0.22 (smoother 도 0.22) | burger 하드웨어 최대 = 웹 조이스틱 최대 (2026-11-15 0.15 → 11-16 0.22, 평소 속도는 슬라이더로). 웹 속도 조절이 `/speed_limit`(SpeedLimit, m/s)으로 이 값의 20~100% 를 보내고 DWB 가 같은 비율로 회전 한도도 줄인다 → 자동 주행 = 조이스틱 속도 (my_web_api 4.24). velocity_smoother 는 하드웨어 한계 0.22 그대로 |
+| `movement_time_allowance` | 30.0 | 기본 10초 — 속도 조절 최저 20%(0.044 m/s)에서도 진행 검사(0.5 m)가 실패로 끊지 않게 |
 | costmap `filters` | `keepout_filter` (local·global) | 금지 구역 마스크(`/costmap_filter_info` → `/keepout_filter_mask`, 웹 백엔드가 발행). 필터는 inflation 뒤에 적용돼 여유 폭이 붙지 않는다 |
 | costmap `plugins` | obstacle + **camera_layer** + inflation | 라이다 층 + 카메라 깊이 층(2D ObstacleLayer 두 개, 2.1). 3D voxel_layer 대신 2D 층 + 높이 필터 — 로봇이 낮아(14cm) 높이 구분이 거의 필요 없음 |
 | `allow_unknown` | true | 미탐사 영역 주행 허용 (SLAM 동시 주행에 필수) |

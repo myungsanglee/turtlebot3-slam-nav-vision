@@ -301,7 +301,7 @@ feedback·결과 콜백 ─▶ 상태(state·남은 거리·경과·복구 횟�
 WebSocket 이 끊기면 → 즉시 정지
 ```
 
-- 브라우저를 믿지 않는다: 속도 상한(전진 0.15 m/s · 회전 1.0 rad/s, `web_api.yaml`)·작은 떨림 무시(데드존)는 서버가 한다.
+- 브라우저를 믿지 않는다: 속도 상한(전진 0.22 m/s · 회전 1.0 rad/s, `web_api.yaml`, × 화면 속도 조절)·작은 떨림 무시(데드존)는 서버가 한다.
   화면의 속도 조절(20~100%)은 그 상한에 곱해진다.
 - 조이스틱을 움직이기 시작하면 진행 중인 Nav2 목표를 취소한다 (두 명령이 섞이지 않게).
 - `/cmd_vel` 은 `geometry_msgs/Twist` — Pi 의 turtlebot3_node 구독 형식을 `ros2 topic info -v` 로 확인했다
@@ -470,12 +470,12 @@ Spot·Clearpath 의 웹 조작 화면)은 공통으로 **한 화면을 크게 + 
 
 전에는 조이스틱 슬라이더(브라우저 안 값)는 조이스틱에만 쓰였고, 지도 목표 자동 주행은 Nav2 의 최대 0.22 m/s 로 달렸다.
 이제 슬라이더 값(0.2~1)은 **서버가 들고 있는 공통 값**이다 (`POST /api/speed {scale}`, 상태 `speed`, 마지막 값은 `maps/.speed_scale`).
-- 조이스틱·키보드: teleop 최대(0.15 m/s·1.0 rad/s) × scale. 브라우저가 보낸 scale 은 쓰지 않는다 (여러 화면이 같은 값).
-- 자동 주행: `nav2_msgs/SpeedLimit`(percentage=false, speed_limit = 0.15 × scale m/s)를 `/speed_limit` 으로 1초마다 보낸다
+- 조이스틱·키보드: teleop 최대(0.22 m/s·1.0 rad/s — 11-16 에 0.15 에서 하드웨어 최대로 올림, 평소엔 슬라이더로 낮춰 씀) × scale. 브라우저가 보낸 scale 은 쓰지 않는다 (여러 화면이 같은 값).
+- 자동 주행: `nav2_msgs/SpeedLimit`(percentage=false, speed_limit = 0.22 × scale m/s)를 `/speed_limit` 으로 1초마다 보낸다
   (controller_server 구독이 volatile 이라 Nav2 가 나중에 켜져도 받게). DWB 는 `limit / max_speed_xy` 비율로 직진·회전 한도를 함께
-  줄이므로, nav2_params 의 FollowPath 최대를 teleop 최대와 같게(0.15 m/s·1.0 rad/s) 두면 **직진·회전 모두 조이스틱과 같은 속도**가 된다.
+  줄이므로, nav2_params 의 FollowPath 최대를 teleop 최대와 같게(0.22 m/s·1.0 rad/s) 두면 **직진·회전 모두 조이스틱과 같은 속도**가 된다.
   주행 중에 슬라이더를 바꾸면 1초 안에 반영된다.
-- 가장 느린 20%(0.03 m/s) 에서도 Nav2 진행 검사(0.5 m 이동)가 실패로 끊지 않게 `movement_time_allowance` 10 → 30초.
+- 가장 느린 20%(0.044 m/s) 에서도 Nav2 진행 검사(0.5 m 이동)가 실패로 끊지 않게 `movement_time_allowance` 10 → 30초.
 - 검증: API·`/speed_limit` 값(0.4 → 0.06 m/s)·범위 밖 거부·재시작 후 값 유지·단위 시험. ⏳ 바닥에서 자동 주행 속도 확인.
 
 ## 5. 실행

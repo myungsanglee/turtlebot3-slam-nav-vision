@@ -86,7 +86,7 @@ class SpeedSetting:
     - scale(0.2~1) × teleop 최대 속도 = 조이스틱 속도. 서버가 값을 들고 있어 여러 브라우저가 같은 값을 본다.
     - Nav2 에는 nav2_msgs/SpeedLimit(절대값, m/s)를 /speed_limit 으로 보낸다 → controller_server 가 DWB 의
       최대 속도를 낮춘다. DWB 는 직진 한도의 비율(limit / max_speed_xy)만큼 회전 한도도 같이 줄이므로,
-      nav2_params 의 FollowPath max_vel_x·max_speed_xy·max_vel_theta 를 teleop 최대(0.15 m/s·1.0 rad/s)와 같게 두면
+      nav2_params 의 FollowPath max_vel_x·max_speed_xy·max_vel_theta 를 teleop 최대(0.22 m/s·1.0 rad/s)와 같게 두면
       직진·회전 모두 조이스틱과 같아진다.
     - controller_server 구독은 volatile 이라 Nav2 가 나중에 켜져도 받도록 1초마다 다시 보낸다.
     - 마지막 값은 파일에 남겨 web-api 재시작 후에도 유지한다.
@@ -134,7 +134,8 @@ class SpeedSetting:
 
     def snapshot(self) -> dict:
         s = self.scale
-        return {'scale': s, 'linear': round(self.max_linear * s, 3), 'angular': round(self.max_angular * s, 3)}
+        return {'scale': s, 'linear': round(self.max_linear * s, 3), 'angular': round(self.max_angular * s, 3),
+                'max_linear': self.max_linear, 'max_angular': self.max_angular}
 
     def publish(self):
         msg = self._msg_type()

@@ -56,7 +56,7 @@ web_api:
     maps_dir: /overlay_ws/maps        # 저장 지도 (호스트 remote_pc/maps, git 제외). map_saver 형식 yaml + pgm
     mode_ready_timeout_sec: 120.0     # 모드 시작 후 이 시간 안에 Nav2·지도가 안 뜨면 경고 (TensorRT 첫 빌드는 더 걸릴 수 있음)
     topic_cmd_vel: /cmd_vel           # 조이스틱이 내보내는 속도 명령 (geometry_msgs/Twist — Pi 의 turtlebot3_node 와 일치 확인)
-    teleop_max_linear: 0.15           # m/s  (TurtleBot3 burger 최대 0.22 — 실내 수동 조작은 여유 있게)
+    teleop_max_linear: 0.22           # m/s  = TurtleBot3 burger 최대. 평소 속도는 화면 슬라이더(20~100%)로 낮춰 쓴다 (2026-11-16, 전 0.15)
     teleop_max_angular: 1.0           # rad/s (최대 2.84)
     # 화면 속도 조절(0.2~1) = 조이스틱과 자동 주행 공통. 자동 주행은 Nav2 /speed_limit(m/s) 로 전달 —
     # nav2_params FollowPath 의 max_vel_x·max_speed_xy·max_vel_theta 를 위 두 값과 같게 둘 것 (teleop.py SpeedSetting)

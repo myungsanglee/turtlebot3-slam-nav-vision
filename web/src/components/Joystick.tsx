@@ -31,7 +31,7 @@ type Props = {
   maxAngular?: number
 }
 
-export default function Joystick({ send, connected, scale, onScale, maxLinear = 0.15, maxAngular = 1.0 }: Props) {
+export default function Joystick({ send, connected, scale, onScale, maxLinear = 0.22, maxAngular = 1.0 }: Props) {
   const touch = useMediaQuery('(pointer: coarse)')
   const SIZE = touch ? 150 : 128
   const KNOB = touch ? 58 : 50

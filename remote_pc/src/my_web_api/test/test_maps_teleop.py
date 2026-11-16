@@ -95,7 +95,7 @@ def test_speed_setting_publishes_limit_and_persists(tmp_path):
     node = _FakeNode()
     f = str(tmp_path / '.speed_scale')
     s = SpeedSetting(node, '/speed_limit', 0.15, 1.0, state_file=f, default=0.6)
-    assert s.snapshot() == {'scale': 0.6, 'linear': 0.09, 'angular': 0.6}
+    assert s.snapshot() == {'scale': 0.6, 'linear': 0.09, 'angular': 0.6, 'max_linear': 0.15, 'max_angular': 1.0}
     assert s.set(5) == 1.0 and s.set(0.05) == 0.2           # 0.2~1 로 자른다
     s.set(0.4)
     msg = node.pub.msgs[-1]
