@@ -247,7 +247,7 @@ turtlebot3-slam-nav-vision/
    (troubleshooting 2026-11-05). 남은 것: 노드 종료 순간 1회 저전압(원인 미확정)·실주행 중 재관찰,
    UBEC 가 OpenCR 스위치 우회 → 사용 후 배터리 분리 습관 (필요 시 스위치/LiPo 경보기).
    ★ 2026-11-12 장시간 실행 중 저전압 → USB 리셋 2회 (troubleshooting) — 전원 기록(scan-watchdog)으로 원인 추적 중,
-   오래 켜 둔 뒤 GPIO 5V 재측정(부팅 직후 4.91V) 예정
+   2026-11-18 켠 지 27분 만에 재발 — 저전압 중 GPIO 4.83V, **UBEC 본체가 매우 뜨거움** → UBEC 교체·보강 검토 (troubleshooting 11-12 후속)
 4. SLAM 실주행 정밀 검증 (제자리 회전 벽 이중선) — 공간 확보 시. ★ 그 전에 **자이로 영점 확인**: 정지 상태에서
    odom 방향이 돌면(2026-11-12 실측 15°/분, 11-14 데워진 뒤 13.4°/분) 재보정 — 이제 웹이 감지(상단 경고 칩)·자동 재보정,
    수동은 전원 메뉴 「자이로 재보정」 또는 Pi 에서 `ros2 service call /reset std_srvs/srv/Trigger`
