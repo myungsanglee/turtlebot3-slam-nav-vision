@@ -64,10 +64,12 @@
 - 점 구름은 **my_vision 의 별도 노드 `depth_cloud_node`** (검출 노드에 붙이지 않음 — Vision 을 꺼도 회피는 동작해야 함).
   depth_image_proc 대신 직접 디코딩+역투영. stride 4, 0.2~3.0m. 6Hz, 약 1.1만 점, CPU 9%. (my_vision.md 4.7)
 - costmap 에는 라이다 obstacle_layer 에 소스를 더하지 않고 **별도 `camera_layer`(ObstacleLayer)** 로 넣었다 — 카메라의
-  지우기 광선이 라이다 장애물을 지우지 않게. 같은 토픽을 `camera_mark`(4~25cm, 찍기만) / `camera_clear`(바닥 포함, 지우기만)
+  지우기 광선이 라이다 장애물을 지우지 않게. 같은 토픽을 `camera_mark`(2.5~25cm, 찍기만) / `camera_clear`(바닥 포함, 지우기만)
   두 소스로 나눴다. **local·global 둘 다** 넣음 (경로 계획도 낮은 장애물을 알아야 같은 곳으로 계속 경로를 내지 않음).
-- 높이: max 25cm(로봇 CAD 키 14.3cm + 여유), min **4cm(임시)** — 책상 위 측정에서 가까운 면이 −2~−3.5cm.
-  ★ 바닥 시험에서 실측: 바닥 점 높이 분포(거리별)를 보고 min 을 낮출 수 있는지 판단.
+- 높이: max 25cm(로봇 CAD 키 14.3cm + 여유), min 4cm(책상 측정 임시값) → **2.5cm (2026-11-18 바닥 실측)** —
+  빈 바닥 오검출 1%, 맨발 발가락 놓치는 거리 ~10cm → ~5cm (my_navigation.md 2.1, `depth_floor_check.py`).
+- 가까운 곳 지우기 금지: `camera_clear.raytrace_min_range` 0.30 — 카메라 사각(앞 ~20cm)에 들어간 낮은 장애물이 2D 지우기
+  광선에 지워져 선풍기 받침에 걸리던 문제 (my_navigation.md 2.1).
 - 끄기: `navigation.launch.py camera_obstacles:=false`, 실행 중엔 `ros2 param set /local_costmap/local_costmap camera_layer.enabled false`.
 - 검증: 층을 하나씩 꺼 local costmap 비교 (my_navigation.md 2.1 그림). 남은 것: 바닥에서 라이다 아래 높이 물체(신발·상자)를 찍고 피해 가는지.
 

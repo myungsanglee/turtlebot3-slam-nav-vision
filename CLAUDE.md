@@ -282,8 +282,8 @@ turtlebot3-slam-nav-vision/
    ② 의미 층: /vision/objects(+반경 추정) → 자체 C++ `SemanticLayer` 플러그인(클래스별 여유·소멸) + 사람 근처
    SpeedLimit 감속. AI 만으로는 미학습 물체를 못 피하므로 ①이 안전, ②가 행동. 단계 V1~V4 (V1 은 web P2 와 함께)
    **V1 구현 ✅ (2026-11-12)** — my_vision `depth_cloud_node`(depth→/camera/points, 6Hz·CPU 9%, navigation.launch 가
-   `camera_obstacles:=true` 로 함께 띄움) + nav2_params 의 별도 `camera_layer`(local·global, mark 4~25cm / clear 바닥 포함 두 소스).
-   책상 검증(층별 costmap 비교). ⏳ 바닥에서 min 높이 4cm(임시) 실측 조정·낮은 물체 회피 확인. 다음 V2 크기 추정
+   `camera_obstacles:=true` 로 함께 띄움) + nav2_params 의 별도 `camera_layer`(local·global, mark 2.5~25cm / clear 바닥 포함 두 소스, 카메라 30cm 안은 안 지움).
+   책상 검증(층별 costmap 비교). 바닥 실측으로 min 높이 4→2.5cm·가까운 곳 지우기 금지(2026-11-18, 선풍기 받침·발). ⏳ 다가가기 시험으로 확인(전원 정리 후). 다음 V2 크기 추정
 
 ## 9. 규칙 / 선호
 

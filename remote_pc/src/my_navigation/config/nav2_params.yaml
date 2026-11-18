@@ -231,8 +231,13 @@ local_costmap:
       #   camera_mark  : 높이 4~25cm 의 점만 장애물로 찍기 (바닥·로봇보다 높은 것 제외)
       #   camera_clear : 바닥 점까지 포함한 모든 점으로 '여기까지 비어 있다' 지우기 — 바닥 점은 장애물이 아니지만
       #                  그 점까지 시야가 트였다는 증거라, 사람이 지나간 자리 등을 지울 수 있다
-      # 높이 기준: 로봇 키 14.3cm(CAD) + 여유 → 25cm. 아래 4cm 는 바닥 노이즈 여유 — 책상 위 측정에서 가까운 면이
-      #   −2~−3.5cm 로 나왔고(2026-11-12), 바닥 실측으로 다시 조정할 값 (그보다 낮은 문턱·전선은 아직 못 봄).
+      # 높이 기준: 로봇 키 14.3cm(CAD) + 여유 → 25cm. 아래 2.5cm 는 바닥 노이즈 여유 — 바닥 실측(2026-11-18,
+      #   depth_floor_check.py): 1.25m 안 빈 바닥 점이 주행 중 최고 +2.5cm, 기준별 오검출 프레임 2.0cm 7% / 2.5cm 1% /
+      #   4cm 0%. 4cm 일 때 맨발 발가락(1.2~2.4cm)을 끝에서 ~10cm 못 봐서 거의 칠 뻔함 → 2.5cm 로 ~5cm 로 줄임.
+      # 가까운 곳 지우기 금지(camera_clear 의 raytrace_min_range 0.30): 카메라가 낮아(렌즈 7cm) 앞 ~20cm 는 안 보인다
+      #   (depth_cloud min_range 0.2). 로봇이 다가가 장애물이 그 안에 들어가면, 너머 벽까지의 2D 지우기 광선이
+      #   높이와 상관없이 그 칸을 지워 버린다 → 선풍기 받침(5cm)에 다가간 뒤 제자리 회전하다 걸림 (2026-11-18).
+      #   카메라에서 30cm 안의 칸은 카메라가 지우지 않고, 로봇이 물러나 다시 볼 때 지운다.
       camera_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -242,7 +247,7 @@ local_costmap:
           data_type: "PointCloud2"
           marking: True
           clearing: False
-          min_obstacle_height: 0.04
+          min_obstacle_height: 0.025   # 바닥 실측 2026-11-18 (위 설명)
           max_obstacle_height: 0.25
           obstacle_max_range: 2.0     # 멀수록 depth 오차↑ (D435i 2m 에서 수 cm)
           obstacle_min_range: 0.0
@@ -254,7 +259,7 @@ local_costmap:
           min_obstacle_height: -1.0   # 지우기용은 바닥(및 책상 끝 아래) 점까지 사용
           max_obstacle_height: 2.0
           raytrace_max_range: 2.5
-          raytrace_min_range: 0.0
+          raytrace_min_range: 0.30    # 카메라 사각(앞 ~20cm) + 여유 — 가까이 다가간 장애물을 지우지 않게 (위 설명)
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -308,7 +313,7 @@ global_costmap:
           data_type: "PointCloud2"
           marking: True
           clearing: False
-          min_obstacle_height: 0.04
+          min_obstacle_height: 0.025   # 바닥 실측 2026-11-18 (위 설명)
           max_obstacle_height: 0.25
           obstacle_max_range: 2.0     # 멀수록 depth 오차↑ (D435i 2m 에서 수 cm)
           obstacle_min_range: 0.0
@@ -320,7 +325,7 @@ global_costmap:
           min_obstacle_height: -1.0   # 지우기용은 바닥(및 책상 끝 아래) 점까지 사용
           max_obstacle_height: 2.0
           raytrace_max_range: 2.5
-          raytrace_min_range: 0.0
+          raytrace_min_range: 0.30    # 카메라 사각(앞 ~20cm) + 여유 — 가까이 다가간 장애물을 지우지 않게 (위 설명)
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
