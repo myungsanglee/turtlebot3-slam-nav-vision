@@ -37,7 +37,7 @@ from .depth_points import PixelRays, depth_to_display, quat_matrix
 from .gyro_watch import GyroDriftWatch, auto_reset_reason
 from .idle_locator import IdleLocator
 from .geometry import compose, downsample, scan_to_points, transform_points, yaw_from_quaternion
-from .map_codec import costmap_to_rgba, encode_png, map_to_rgba
+from .map_codec import align_to_axes, costmap_to_rgba, encode_png, map_to_rgba
 from .monitor import FrameStore, TopicMonitor, TopicSpec, battery_level
 from .maps import MapStore
 from .mode_manager import ModeManager
@@ -494,7 +494,13 @@ class WebApiNode(Node):
         if t is None:
             return
         origin = compose(t, self._origin(msg))
-        self.costmap.set(self._grid(msg), {**self._grid_meta(msg, origin), 'frame': frame})
+        # 지도 축에 맞춰 다시 뽑는다 — 회전된 칸 격자가 비스듬히 보이지 않게, 칸 경계도 지도 칸에 맞춤 (map_codec.align_to_axes)
+        mm = self.map.meta()
+        snap = (mm['origin']['x'], mm['origin']['y']) if mm and mm.get('frame', frame) == frame and \
+            abs(mm['origin']['yaw']) < 1e-6 and abs(mm['resolution'] - msg.info.resolution) < 1e-9 else None
+        grid, origin = align_to_axes(self._grid(msg), msg.info.resolution, origin, snap)
+        self.costmap.set(grid, {'width': grid.shape[1], 'height': grid.shape[0], 'resolution': msg.info.resolution,
+                                'origin': {'x': round(origin[0], 4), 'y': round(origin[1], 4), 'yaw': 0.0}, 'frame': frame})
 
     def _on_path(self, name: str, msg: Path):
         if not msg.poses:

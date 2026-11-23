@@ -56,3 +56,25 @@ def test_png_roundtrip():
     back = cv2.imdecode(np.frombuffer(encode_png(img), np.uint8), cv2.IMREAD_UNCHANGED)
     assert back.shape == (1, 3, 4)
     assert tuple(back[0, 1, :3][::-1]) == tuple(MAP_OCCUPIED[:3])
+
+
+def test_align_to_axes_keeps_world_position():
+    import math
+    import numpy as np
+    from my_web_api.map_codec import align_to_axes
+    r = 0.05
+    g = np.zeros((60, 60), np.int8)
+    g[10, 40] = 100                                   # 행 10, 열 40 → 로컬 (40.5r, 10.5r)
+    origin = (1.0, -0.5, math.radians(13))
+    out, (x0, y0, yaw) = align_to_axes(g, r, origin, snap=(0.0, 0.0))
+    assert yaw == 0.0
+    assert abs(round(x0 / r) * r - x0) < 1e-9 and abs(round(y0 / r) * r - y0) < 1e-9   # 지도 칸 경계에 맞춤
+    lx, ly = 40.5 * r, 10.5 * r
+    c, s = math.cos(origin[2]), math.sin(origin[2])
+    wx, wy = origin[0] + c * lx - s * ly, origin[1] + s * lx + c * ly
+    jj, ii = np.nonzero(out == 100)
+    cx, cy = x0 + (ii + 0.5) * r, y0 + (jj + 0.5) * r
+    assert len(ii) >= 1 and np.min(np.hypot(cx - wx, cy - wy)) < r      # 같은 자리 (한 칸 안)
+    assert out[0, 0] == -1                                               # 원래 격자 바깥 = 미지
+    same, o2 = align_to_axes(g, r, (1.0, -0.5, 0.0))
+    assert same is g and o2 == (1.0, -0.5, 0.0)                          # 회전 없으면 그대로

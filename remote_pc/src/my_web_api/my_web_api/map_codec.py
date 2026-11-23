@@ -45,7 +45,8 @@ def costmap_to_rgba(data: np.ndarray, alpha: int = 150) -> np.ndarray:
     t = (grid.astype(np.float32) - 1.0) / 97.0
     out[..., 0] = np.where(mid, (t * 255).astype(np.uint8), 0)
     out[..., 2] = np.where(mid, ((1 - t) * 255).astype(np.uint8), 0)
-    out[..., 3] = np.where(mid, int(alpha * 0.7), 0)
+    # inflation(장애물 둘레 여유) 은 옅게 — 진하면 아래 지도의 벽을 덮어 라이다·장애물이 지도와 맞는지 안 보인다 (2026-11-23)
+    out[..., 3] = np.where(mid, int(alpha * 0.35), 0)
     out[grid == 99] = _rgba('#00e5ff', alpha)
     out[grid == 100] = _rgba('#ff00d4', min(255, alpha + 60))
     return np.flipud(out)
@@ -57,3 +58,34 @@ def encode_png(rgba: np.ndarray) -> bytes:
     if not ok:
         raise RuntimeError('PNG 인코딩 실패')
     return buf.tobytes()
+
+
+def align_to_axes(grid: np.ndarray, resolution: float, origin, snap=None):
+    """회전된 격자(원점 yaw ≠ 0)를 표시 좌표계 축에 맞춘 격자로 다시 뽑는다 (가장 가까운 칸 값 — 비용 값이 섞이지 않게).
+
+    로컬 costmap 은 odom 기준이라 map 과 각도가 다르다 (map→odom 회전). 그대로 깔면 칸 격자가 통째로 비스듬히
+    보여 지도 벽과 비교하기 어렵다 → 같은 해상도의 축 정렬 격자로 바꾸고, snap(지도 원점 x, y)이 있으면
+    칸 경계를 지도 칸 경계에 맞춘다. grid 는 0번 행 = 아래(OccupancyGrid 순서), 바깥은 -1(미지).
+    반환: (새 격자, (x0, y0, 0.0))
+    """
+    ox, oy, yaw = origin
+    h, w = grid.shape
+    c, s = np.cos(yaw), np.sin(yaw)
+    if abs(s) < 1e-6 and c > 0:
+        return grid, (ox, oy, 0.0)
+    r = resolution
+    cx = np.array([0, w, 0, w]) * r
+    cy = np.array([0, 0, h, h]) * r
+    wx, wy = ox + c * cx - s * cy, oy + s * cx + c * cy
+    x0, y0 = wx.min(), wy.min()
+    if snap is not None:
+        x0 = snap[0] + np.floor((x0 - snap[0]) / r) * r
+        y0 = snap[1] + np.floor((y0 - snap[1]) / r) * r
+    W = int(np.ceil((wx.max() - x0) / r))
+    H = int(np.ceil((wy.max() - y0) / r))
+    # 새 칸 (I, J) 중심의 월드 좌표 → 원래 격자의 열·행 (역변환)
+    m = np.array([[c, s, (c * (x0 - ox) + s * (y0 - oy)) / r + 0.5 * (c + s) - 0.5],
+                  [-s, c, (-s * (x0 - ox) + c * (y0 - oy)) / r + 0.5 * (c - s) - 0.5]], dtype=np.float64)
+    out = cv2.warpAffine(grid.astype(np.int16), m, (W, H), flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
+                         borderMode=cv2.BORDER_CONSTANT, borderValue=-1)
+    return out.astype(np.int8), (float(x0), float(y0), 0.0)
