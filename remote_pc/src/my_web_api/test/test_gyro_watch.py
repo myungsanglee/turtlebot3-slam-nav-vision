@@ -93,3 +93,26 @@ def test_motor_watch_position_fallback():
         m.add_cmd(t, 0.1, 0.0)
         m.add_wheels(t, [], [0.3 * t, 0.3 * t])          # 속도 칸이 비어도 위치 변화(3 rad/s)로 돈다고 판단
     assert m.snapshot(2.5)['state'] == 'ok'
+
+
+def test_scan_health_frozen_and_ok():
+    import numpy as np
+    from my_web_api.scan_health import ScanHealth
+    h = ScanHealth()
+    for i in range(6):                                   # 2026-11-24 실제 증상: 360개 모두 1.132 m
+        h.update(i * 0.2, [1.132] * 360, [959.0] * 360)
+    s = h.snapshot(1.2)
+    assert s['state'] == 'frozen' and '1.132' in s['detail']
+    rng = np.random.default_rng(0)
+    for i in range(6, 9):                                # 정상 스캔이 오면 해제
+        h.update(i * 0.2, 1.0 + rng.random(360), rng.random(360))
+    assert h.snapshot(1.8)['state'] == 'ok'
+    same = list(1.0 + rng.random(360))                   # 다양한 값이지만 매 바퀴 똑같음
+    for i in range(9, 16):
+        h.update(i * 0.2, same, [1.0] * 360)
+    assert h.snapshot(3.2)['state'] == 'frozen'
+    assert h.snapshot(10.0)['state'] == 'unknown'        # 안 오면 모름
+    h2 = ScanHealth()
+    for i in range(6):                                   # 유효 빔이 적으면(가림·빈 공간) 판정 안 함
+        h2.update(i * 0.2, [0.0] * 350 + [1.0] * 10)
+    assert h2.snapshot(1.0)['state'] == 'ok'

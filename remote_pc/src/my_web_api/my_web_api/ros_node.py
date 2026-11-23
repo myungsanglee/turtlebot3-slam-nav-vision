@@ -47,6 +47,7 @@ from .robot_model import RobotModel
 from .robot_power import RobotPower
 from .zones import rasterize
 from .motor_watch import MotorWatch
+from .scan_health import ScanHealth
 from .teleop import SpeedSetting, TeleopController
 
 # key: (파라미터 이름, 메시지 타입, 한글 이름, 기대 Hz, optional)
@@ -158,6 +159,7 @@ class WebApiNode(Node):
         self._gyro_last = None   # 마지막 재보정 {time, auto, ok, reason}
         # 모터 감시 (motor_watch.py) — 토크 꺼짐(/sensor_state) · 명령을 줘도 바퀴가 안 도는 무반응(/cmd_vel vs /joint_states)
         self.motor = MotorWatch()
+        self.scan_health = ScanHealth()   # 라이다 측정값 이상 (모든 방향 같은 거리 등) — scan_health.py
         self.create_subscription(JointState, p('topic_joint_states', '/joint_states').value,
                                  self._on_joint_states, qos_profile_sensor_data)
         self.create_subscription(SensorState, p('topic_sensor_state', '/sensor_state').value,
@@ -333,6 +335,7 @@ class WebApiNode(Node):
 
     def _on_scan(self, msg: LaserScan):
         self._last_scan = msg
+        self.scan_health.update(time.monotonic(), msg.ranges, msg.intensities)
         frame = self.display_frame()
         t = None if frame is None else self.lookup(frame, msg.header.frame_id)
         if t is None:
@@ -648,6 +651,7 @@ class WebApiNode(Node):
             'speed': self.speed.snapshot(),        # 속도 조절 (조이스틱·자동 주행 공통) — teleop.py SpeedSetting
             # 모터: torque_off(토크 꺼짐) / no_response(명령에 바퀴 무반응) / ok / unknown — motor_watch.py
             'motor': self.motor.snapshot(now) if by_key['odom']['state'] == 'ok' else None,
+            'lidar': self.scan_health.snapshot(now),    # ok / frozen(측정값 이상) / unknown — scan_health.py
             'robot_connected': by_key['odom']['state'] == 'ok',
             'battery': battery_out,
             'velocity': velocity_out,

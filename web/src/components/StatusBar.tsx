@@ -28,7 +28,7 @@ export default function StatusBar({ status, connected }: { status: Status | null
               color={status?.robot_connected ? 'success' : 'warning'}
             />
           )}
-          <PowerControl power={status?.power} mode={status?.mode} gyro={status?.gyro} motor={status?.motor} scanMissing={status?.topics.find((t) => t.key === 'scan')?.state === 'missing'} />
+          <PowerControl power={status?.power} mode={status?.mode} gyro={status?.gyro} motor={status?.motor} scanMissing={status?.topics.find((t) => t.key === 'scan')?.state === 'missing'} lidarFrozen={status?.lidar?.state === 'frozen' ? (status.lidar.detail ?? '') : null} />
         </Stack>
       </Toolbar>
     </AppBar>

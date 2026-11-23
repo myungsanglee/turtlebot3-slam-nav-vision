@@ -77,6 +77,8 @@ export interface Status {
   power: Power
   gyro?: GyroStatus
   motor?: MotorStatus | null
+  // 라이다 측정값 이상 (서버 scan_health.py) — 오는데 내용이 가짜 (모든 방향 같은 거리 등)
+  lidar?: { state: 'ok' | 'frozen' | 'unknown'; detail: string | null }
   // 속도 조절 (조이스틱·자동 주행 공통, 서버 teleop.py SpeedSetting)
   speed?: { scale: number; linear: number; angular: number; max_linear: number; max_angular: number }
   robot_connected: boolean

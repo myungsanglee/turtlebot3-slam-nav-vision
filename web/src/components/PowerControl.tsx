@@ -91,9 +91,9 @@ function available(state: PowerState): PowerAction[] {
   }
 }
 
-type Props = { power: Power | undefined; mode: string | undefined; gyro?: GyroStatus; motor?: MotorStatus | null; scanMissing?: boolean }
+type Props = { power: Power | undefined; mode: string | undefined; gyro?: GyroStatus; motor?: MotorStatus | null; scanMissing?: boolean; lidarFrozen?: string | null }
 
-export default function PowerControl({ power, mode, gyro, motor, scanMissing }: Props) {
+export default function PowerControl({ power, mode, gyro, motor, scanMissing, lidarFrozen }: Props) {
   const act = usePowerAction()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<PowerAction | null>(null)
@@ -144,6 +144,11 @@ export default function PowerControl({ power, mode, gyro, motor, scanMissing }: 
       {lidarMissing && (
         <Tooltip title="로봇은 실행 중인데 라이다 데이터가 들어오지 않습니다. 라이다가 돌고 있다면 라이다 USB 케이블을 뺐다 꽂은 뒤 「ROS 재시작」, 안 돌면 전원·케이블을 확인하세요. (카메라 케이블은 건드리지 마세요)">
           <Chip size="small" color="error" label="라이다 데이터 없음" />
+        </Tooltip>
+      )}
+      {state === 'running' && lidarFrozen != null && (
+        <Tooltip title={`라이다 데이터는 오는데 측정값이 가짜입니다 (${lidarFrozen}). 위치 찾기·장애물 회피가 동작하지 않습니다. 라이다 USB 케이블을 10초 뽑았다 꽂은 뒤 「ROS 재시작」, 반복되면 라이다 내부 연결·고장 의심.`}>
+          <Chip size="small" color="error" label="라이다 측정값 이상" />
         </Tooltip>
       )}
       {(state === 'standby' || state === 'error') && (
