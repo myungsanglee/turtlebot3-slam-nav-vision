@@ -69,3 +69,14 @@ def test_battery_level_3s():
     assert battery_level(12.0, 3, 3.5, 3.3) == 'ok'
     assert battery_level(10.2, 3, 3.5, 3.3) == 'warn'
     assert battery_level(9.8, 3, 3.5, 3.3) == 'critical'
+
+
+def test_ros_node_declares_each_parameter_once():
+    """같은 파라미터를 두 번 선언하면 노드가 시작하자마자 죽는다 (2026-11-24 topic_cmd_vel) — 소스에서 미리 잡는다."""
+    import collections
+    import os
+    import re
+    src = open(os.path.join(os.path.dirname(__file__), '..', 'my_web_api', 'ros_node.py')).read()
+    names = re.findall(r"\bp\('([a-z0-9_]+)'", src)
+    dup = [n for n, c in collections.Counter(names).items() if c > 1]
+    assert not dup, f'두 번 선언된 파라미터: {dup}'

@@ -501,6 +501,8 @@ Spot·Clearpath 의 웹 조작 화면)은 공통으로 **한 화면을 크게 + 
   왜 SSH 인가: zenoh 는 토픽만 허용 목록으로 넘기고 있고, 서비스까지 브리징하면 허용 범위가 넓어진다 — 전원 동작과 같은 강제 명령 경로로 묶음.
 - 상태: `status.motor = {state: ok | unknown | torque_off | no_response, torque}` (로봇 데이터가 끊기면 null).
 - 단위 시험: 토크 꺼짐·오래된 값, 명령 2초 + 바퀴 정지 → 무반응, 바퀴가 돌면 해제, 짧은 명령·작은 명령은 무시, 속도 칸이 비면 위치 변화로 판단.
+- 실기 확인 (2026-11-24): 브리지 반영 후 `status.motor = {state: ok, torque: true}` 수신, 웹 「모터 켜기」 → Pi `/motor_power` 성공.
+  ★ 첫 배포 때 `topic_cmd_vel` 파라미터를 두 번 선언해 web-api 가 시작하자마자 죽었다 → 소스에서 중복 선언을 잡는 단위 시험 추가.
 
 ## 5. 실행
 

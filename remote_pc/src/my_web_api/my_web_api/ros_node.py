@@ -162,8 +162,6 @@ class WebApiNode(Node):
                                  self._on_joint_states, qos_profile_sensor_data)
         self.create_subscription(SensorState, p('topic_sensor_state', '/sensor_state').value,
                                  lambda m: self.motor.set_torque(time.monotonic(), m.torque), qos_profile_sensor_data)
-        self.create_subscription(Twist, p('topic_cmd_vel', '/cmd_vel').value,
-                                 lambda m: self.motor.add_cmd(time.monotonic(), m.linear.x, m.angular.z), 10)
         for key, (param, msg_type, label, hz, optional) in TOPICS.items():
             topic = p(param, '').value
             self.monitors[key] = TopicMonitor(TopicSpec(key, topic, label, hz, optional))
@@ -222,7 +220,11 @@ class WebApiNode(Node):
         self.mode = ModeManager(self.get_logger(), self.maps, self._mode_ready, lambda: self._graph,
                                 on_stop=lambda: self.nav.submit('cancel'),
                                 ready_timeout=float(p('mode_ready_timeout_sec', 120.0).value))
-        self.teleop = TeleopController(self, p('topic_cmd_vel', '/cmd_vel').value,
+        cmd_vel_topic = p('topic_cmd_vel', '/cmd_vel').value
+        # 모터 무반응 감시용: 조이스틱·Nav2 가 내보내는 모든 속도 명령 (motor_watch.py)
+        self.create_subscription(Twist, cmd_vel_topic,
+                                 lambda m: self.motor.add_cmd(time.monotonic(), m.linear.x, m.angular.z), 10)
+        self.teleop = TeleopController(self, cmd_vel_topic,
                                        float(p('teleop_max_linear', 0.22).value),
                                        float(p('teleop_max_angular', 1.0).value),
                                        on_start=lambda: self.nav.submit('cancel'))
