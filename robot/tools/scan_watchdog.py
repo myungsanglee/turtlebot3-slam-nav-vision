@@ -37,6 +37,7 @@ DRIVER = 'hlds_laser_publisher'
 LDS_GLOB = '/dev/serial/by-id/*CP210*'   # LDS-01 의 USB-시리얼(CP2102). 없으면 PORT
 PORT = '/dev/ttyUSB0'
 STALL_SEC = 10.0      # 5Hz 라이다가 이만큼 끊기면 사고
+FIRST_SCAN_SEC = 30.0  # 드라이버 시작 후 이만큼 한 번도 발행이 없으면 사고 (2026-11-24: 라이다는 도는데 시리얼 0 B)
 NUDGE_READ_SEC = 1.0  # 시리얼 같이 읽기 시간
 RECOVER_WAIT_SEC = 10.0
 RETRY_SEC = 60.0
@@ -126,6 +127,8 @@ class ScanWatchdog(Node):
         self.last_scan = None          # 마지막 수신 (monotonic)
         self.scan_count = 0
         self.pid = None                # 지금 감시 중인 드라이버 pid (바뀌면 '첫 발행'부터 다시 기다림)
+        self.pid_since = None          # 그 드라이버를 처음 본 시각 (monotonic)
+        self.first_reported = False    # '첫 발행 없음' 을 이 드라이버에 대해 이미 기록했는지
         self.busy = False
         self.file_lock = threading.Lock()
         # 전원
@@ -223,13 +226,37 @@ class ScanWatchdog(Node):
             if pid:
                 self.get_logger().info(f'드라이버 감지 pid={pid} — 첫 발행을 기다림')
             self.pid, self.last_scan = pid, None
+            self.pid_since, self.first_reported = time.monotonic(), False
             return
-        if pid is None or self.last_scan is None:
-            return   # 드라이버 없음(bringup 꺼짐) 또는 아직 한 번도 발행 안 함(시작 중) → 판정 안 함
+        if pid is None:
+            return   # 드라이버 없음(bringup 꺼짐) → 판정 안 함
+        if self.last_scan is None:
+            # 아직 한 번도 발행 안 함: 시작 중이면 기다리고, FIRST_SCAN_SEC 넘으면 한 번 기록 (자동 조치 없음)
+            if not self.first_reported and time.monotonic() - self.pid_since >= FIRST_SCAN_SEC:
+                self.first_reported = True
+                threading.Thread(target=self.no_first_scan, args=(pid,), daemon=True).start()
+            return
         age = time.monotonic() - self.last_scan
         if age >= STALL_SEC:
             self.busy = True
             threading.Thread(target=self.incident, args=(pid, age), daemon=True).start()
+
+    def no_first_scan(self, pid):
+        """드라이버가 떠 있는데 시작 후 한 번도 /scan 이 없음. 드라이버가 시리얼에서 읽는 양으로 원인을 가른다:
+        0 B/s 면 라이다(또는 USB 변환 보드 CP2102)가 데이터를 안 보내는 것 — 2026-11-24 라이다는 회전하는데 0 B,
+        시작 명령('b')·bringup 재시작으로 안 풀리고 라이다 USB 케이블 재연결로 복구."""
+        r1 = rchar(pid)
+        time.sleep(2.0)
+        r2 = rchar(pid)
+        rate = None if r1 is None or r2 is None else (r2 - r1) / 2.0
+        if rate is not None and rate < 100:
+            hint = '라이다가 시리얼로 데이터를 안 보냄 → 라이다 USB 케이블 재연결 후 ROS 재시작 (troubleshooting 2026-11-24)'
+        else:
+            hint = '시리얼 데이터는 들어오는데 발행 안 함 → 드라이버 정지 의심 (troubleshooting 2026-11-12 라이다 항목)'
+        rate_s = '?' if rate is None else f'{rate:.0f} B/s'
+        self.event(f'라이다 첫 발행 없음 — 드라이버 시작 {FIRST_SCAN_SEC:.0f}초째, 드라이버 시리얼 읽기 {rate_s}: {hint}')
+        self.write('incidents.log', f'[{time.strftime("%F %T")}] 라이다 첫 발행 없음 pid={pid} 읽기 {rate_s} {self.batt_text()}\n'
+                   + ''.join(f'    {line}\n' for line in bringup_tail(10, only=('hlds',))) + f'  → {hint}\n')
 
     def driver_gone(self, old, new):
         state = run(['systemctl', '--user', 'is-active', 'tb3-bringup'])

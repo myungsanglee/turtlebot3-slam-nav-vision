@@ -160,6 +160,7 @@ turtlebot3-slam-nav-vision/
   수동 launch 전엔 반드시 서비스 stop (중복 실행 시 OpenCR 시리얼·카메라 충돌, troubleshooting 2026-11-05).
   라이다 끊김은 두 종류 (troubleshooting 2026-11-12 두 항목): ① 드라이버는 살아 있는데 발행 정지(원인 조사 중, 시리얼 같이 읽기로 복구)
   ② **Pi 저전압 → USB 전체 리셋 → 라이다 드라이버 종료·OpenCR 끊김** (몇 시간 켜 두면 발생, 충전기 연결 상태, 원인 조사 중).
+  ③ 켠 뒤 한 번도 안 옴 — 라이다는 도는데 시리얼 0 B → 라이다 USB 재연결 + ROS 재시작 (troubleshooting 2026-11-24, 웹 「라이다 데이터 없음」 칩).
   `scan-watchdog` 사용자 서비스가 `~/.ros/scan_watchdog/` 에 기록 — `events.log`(사건)·`incidents.log`(진단)·
   `power-<날짜>.log`(10초 배터리V·저전압). 다음 발생 시 먼저 이 기록 확인, ①이면 필요 시 사용자에게 sudo strace 요청.
   bringup 은 시리얼을 `/dev/serial/by-id/` 로 열므로 ②도 `systemctl --user restart tb3-bringup` 으로 복구 (전원 껐다 켤 필요 없음).

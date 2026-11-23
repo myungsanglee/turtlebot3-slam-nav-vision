@@ -91,7 +91,9 @@ function available(state: PowerState): PowerAction[] {
   }
 }
 
-export default function PowerControl({ power, mode, gyro, motor }: { power: Power | undefined; mode: string | undefined; gyro?: GyroStatus; motor?: MotorStatus | null }) {
+type Props = { power: Power | undefined; mode: string | undefined; gyro?: GyroStatus; motor?: MotorStatus | null; scanMissing?: boolean }
+
+export default function PowerControl({ power, mode, gyro, motor, scanMissing }: Props) {
   const act = usePowerAction()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<PowerAction | null>(null)
@@ -110,6 +112,9 @@ export default function PowerControl({ power, mode, gyro, motor }: { power: Powe
   // 정지 중 방향 드리프트 경고 (자동 재보정이 꺼져 있거나 못 하는 상황 — 예: 지도 만들기 중)
   const drift = state === 'running' && gyro?.state === 'drift' && gyro.rate_deg_min != null
   const lastGyro = gyro?.last_reset
+  // 로봇은 실행 중(odom 수신)인데 라이다가 안 옴 — 켜기·재시작 직후 30초는 시작 중이라 제외 (troubleshooting 2026-11-24)
+  const startedAgo = power?.last && ['wake', 'restart'].includes(power.last.action) ? Date.now() / 1000 - power.last.at : Infinity
+  const lidarMissing = state === 'running' && !!motor && !!scanMissing && startedAgo > 30
 
   return (
     <>
@@ -134,6 +139,11 @@ export default function PowerControl({ power, mode, gyro, motor }: { power: Powe
       {state === 'running' && motor?.state === 'no_response' && (
         <Tooltip title="움직이라는 명령을 보내는데 바퀴가 돌지 않습니다. 모터 토크·OpenCR 연결을 확인하세요. 눌러서 모터 켜기 시도">
           <Chip size="small" color="error" label="바퀴 무반응" disabled={busy} onClick={() => setConfirm('motor_on')} />
+        </Tooltip>
+      )}
+      {lidarMissing && (
+        <Tooltip title="로봇은 실행 중인데 라이다 데이터가 들어오지 않습니다. 라이다가 돌고 있다면 라이다 USB 케이블을 뺐다 꽂은 뒤 「ROS 재시작」, 안 돌면 전원·케이블을 확인하세요. (카메라 케이블은 건드리지 마세요)">
+          <Chip size="small" color="error" label="라이다 데이터 없음" />
         </Tooltip>
       )}
       {(state === 'standby' || state === 'error') && (
