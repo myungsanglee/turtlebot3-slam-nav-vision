@@ -23,12 +23,13 @@ import time
 import cv2
 import numpy as np
 import rclpy.time
-from geometry_msgs.msg import PolygonStamped
+from geometry_msgs.msg import PolygonStamped, Twist
 from nav2_msgs.msg import CostmapFilterInfo
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CameraInfo, CompressedImage, JointState, LaserScan
+from turtlebot3_msgs.msg import SensorState
 from std_msgs.msg import String
 from my_localization.scan_matcher import Scan
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -45,6 +46,7 @@ from .nav import NavController
 from .robot_model import RobotModel
 from .robot_power import RobotPower
 from .zones import rasterize
+from .motor_watch import MotorWatch
 from .teleop import SpeedSetting, TeleopController
 
 # key: (파라미터 이름, 메시지 타입, 한글 이름, 기대 Hz, optional)
@@ -154,8 +156,14 @@ class WebApiNode(Node):
         self._gyro_auto_min = float(p('gyro_auto_min_deg_min', 3.0).value)
         self._gyro_cooldown = float(p('gyro_auto_cooldown_sec', 600.0).value)
         self._gyro_last = None   # 마지막 재보정 {time, auto, ok, reason}
+        # 모터 감시 (motor_watch.py) — 토크 꺼짐(/sensor_state) · 명령을 줘도 바퀴가 안 도는 무반응(/cmd_vel vs /joint_states)
+        self.motor = MotorWatch()
         self.create_subscription(JointState, p('topic_joint_states', '/joint_states').value,
-                                 lambda m: self.gyro.add_wheels(time.monotonic(), m.position), qos_profile_sensor_data)
+                                 self._on_joint_states, qos_profile_sensor_data)
+        self.create_subscription(SensorState, p('topic_sensor_state', '/sensor_state').value,
+                                 lambda m: self.motor.set_torque(time.monotonic(), m.torque), qos_profile_sensor_data)
+        self.create_subscription(Twist, p('topic_cmd_vel', '/cmd_vel').value,
+                                 lambda m: self.motor.add_cmd(time.monotonic(), m.linear.x, m.angular.z), 10)
         for key, (param, msg_type, label, hz, optional) in TOPICS.items():
             topic = p(param, '').value
             self.monitors[key] = TopicMonitor(TopicSpec(key, topic, label, hz, optional))
@@ -538,6 +546,11 @@ class WebApiNode(Node):
     def _nav_active(self) -> bool:
         return self.nav.snapshot()['state'] in ('active', 'sending')
 
+    def _on_joint_states(self, m: JointState):
+        t = time.monotonic()
+        self.gyro.add_wheels(t, m.position)
+        self.motor.add_wheels(t, list(m.velocity), list(m.position))
+
     def _power_guard(self, action: str) -> str | None:
         """재보정은 로봇이 완전히 멈춰 있을 때만 (OpenCR 이 5초 동안 영점을 잡는다).
         지도 만들기 중엔 막는다 — /reset 이 odom 을 0 으로 튀게 해 slam_toolbox 지도가 망가질 수 있다."""
@@ -631,6 +644,8 @@ class WebApiNode(Node):
             'gyro': {**self.gyro.snapshot(now), 'auto': self._gyro_auto, 'auto_min_deg_min': self._gyro_auto_min,
                      'last_reset': self._gyro_last},
             'speed': self.speed.snapshot(),        # 속도 조절 (조이스틱·자동 주행 공통) — teleop.py SpeedSetting
+            # 모터: torque_off(토크 꺼짐) / no_response(명령에 바퀴 무반응) / ok / unknown — motor_watch.py
+            'motor': self.motor.snapshot(now) if by_key['odom']['state'] == 'ok' else None,
             'robot_connected': by_key['odom']['state'] == 'ok',
             'battery': battery_out,
             'velocity': velocity_out,

@@ -488,6 +488,20 @@ Spot·Clearpath 의 웹 조작 화면)은 공통으로 **한 화면을 크게 + 
 - inflation(장애물 둘레 비용) 투명도를 0.7 → 0.35 배로 낮춰 아래 지도 벽이 비쳐 보이게. lethal·inscribed 색은 그대로.
 - 단위 시험: 13° 돌린 격자의 장애물 칸이 다시 뽑은 뒤에도 같은 월드 위치(한 칸 안), 바깥은 미지, 회전 없으면 그대로.
 
+### 4.26 모터 상태 알림 — 토크 꺼짐·바퀴 무반응 (`motor_watch.py`, 2026-11-24)
+
+로봇이 켜져 있고 센서가 다 오는데 조이스틱·주행이 안 먹힌 일이 있었다 — OpenCR 모터 토크가 꺼져 있었다
+(troubleshooting 2026-11-24). 웹은 아무것도 알려 주지 않았다. 두 가지를 감시해 상단 전원 칩 옆에 경고를 띄운다.
+- **토크 꺼짐**: `/sensor_state.torque` (turtlebot3_msgs/SensorState, OpenCR 제어표의 motor_torque_enable). zenoh 허용 목록에
+  `/sensor_state` 를 추가했다 (Pi·서버 양쪽). 3초 넘게 소식이 없으면 '모름'. false 면 **「모터 꺼짐 — 켜기」** (누르면 확인 창 → 모터 켜기).
+- **바퀴 무반응**: 서버 안의 `/cmd_vel`(조이스틱·Nav2 velocity_smoother 모두)이 '움직이라는 명령'(|v| ≥ 0.02 m/s 또는 |w| ≥ 0.15 rad/s)을
+  1.5초 넘게 이어 보내는데 `/joint_states` 바퀴 속도가 한 번도 0.1 rad/s 를 넘지 않으면 **「바퀴 무반응」** (5초 유지).
+  토크 정보가 없어도, OpenCR 통신 끊김처럼 다른 원인이어도 잡힌다. 바퀴가 헛도는 끼임은 해당 없음 (바퀴는 돈다).
+- **모터 켜기**: 전원 메뉴 「모터 켜기」 = `robot_power.sh motor_on` → Pi 에서 `/motor_power`(std_srvs/SetBool true).
+  왜 SSH 인가: zenoh 는 토픽만 허용 목록으로 넘기고 있고, 서비스까지 브리징하면 허용 범위가 넓어진다 — 전원 동작과 같은 강제 명령 경로로 묶음.
+- 상태: `status.motor = {state: ok | unknown | torque_off | no_response, torque}` (로봇 데이터가 끊기면 null).
+- 단위 시험: 토크 꺼짐·오래된 값, 명령 2초 + 바퀴 정지 → 무반응, 바퀴가 돌면 해제, 짧은 명령·작은 명령은 무시, 속도 칸이 비면 위치 변화로 판단.
+
 ## 5. 실행
 
 ### 평소 (서버 부팅 시 자동)

@@ -53,3 +53,43 @@ def test_auto_reset_conditions():
     assert auto_reset_reason({**drift, 'wheels': False}, **ok) is None           # 바퀴 정보 없으면 확신 못 함
     assert auto_reset_reason({**drift, 'rate_deg_min': 2.5}, **ok) is None       # 경고만 하는 수준
     assert auto_reset_reason(drift, **{**ok, 'enabled': False}) is None
+
+
+def test_motor_watch_torque_and_no_response():
+    from my_web_api.motor_watch import MotorWatch
+    m = MotorWatch()
+    assert m.snapshot(0.0)['state'] == 'unknown'
+    m.set_torque(0.0, False)
+    assert m.snapshot(1.0) == {'state': 'torque_off', 'torque': False}
+    assert m.snapshot(5.0)['torque'] is None                 # 3초 넘게 소식 없으면 모름
+    m.set_torque(10.0, True)
+    # 전진 명령 2초 + 바퀴 안 돎 → 무반응
+    for i in range(21):
+        t = 10.0 + i * 0.1
+        m.add_cmd(t, 0.1, 0.0)
+        m.add_wheels(t, [0.0, 0.0])
+    m.set_torque(12.0, True)
+    assert m.snapshot(12.0)['state'] == 'no_response'
+    # 바퀴가 돌면 해제
+    m.add_wheels(12.1, [2.0, 2.0])
+    assert m.snapshot(12.1)['state'] == 'ok'
+    # 명령 1초뿐 → 아직 무반응 아님 / 아주 작은 명령은 무시
+    m2 = MotorWatch()
+    m2.set_torque(0.0, True)
+    for i in range(10):
+        m2.add_cmd(i * 0.1, 0.1, 0.0)
+        m2.add_wheels(i * 0.1, [0.0, 0.0])
+    for i in range(30):
+        m2.add_cmd(1.0 + i * 0.1, 0.005, 0.05)
+    assert m2.snapshot(2.0)['state'] == 'ok'
+
+
+def test_motor_watch_position_fallback():
+    from my_web_api.motor_watch import MotorWatch
+    m = MotorWatch()
+    m.set_torque(0.0, True)
+    for i in range(25):
+        t = i * 0.1
+        m.add_cmd(t, 0.1, 0.0)
+        m.add_wheels(t, [], [0.3 * t, 0.3 * t])          # 속도 칸이 비어도 위치 변화(3 rad/s)로 돈다고 판단
+    assert m.snapshot(2.5)['state'] == 'ok'

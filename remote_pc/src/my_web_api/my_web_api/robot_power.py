@@ -4,7 +4,7 @@
   - 대기 상태에선 Pi 의 ROS(bringup)가 꺼져 있다. 켜는 명령은 ROS 바깥 경로로 보내야 한다.
   - zenoh 브리지는 허용 목록의 토픽만 넘기고, 목록을 바꾸려면 Pi 시스템 서비스 재시작(sudo)이 필요하다.
   - 전용 키 + Pi authorized_keys 의 command= 강제로 **robot/tools/robot_power.sh 만** 실행되게 묶는다
-    (셸 불가, 포워딩 불가 — restrict). 키를 가진 쪽이 할 수 있는 일은 그 스크립트의 동작(상태·전원 5가지·자이로 재보정)뿐.
+    (셸 불가, 포워딩 불가 — restrict). 키를 가진 쪽이 할 수 있는 일은 그 스크립트의 동작(상태·전원 5가지·자이로 재보정·모터 켜기)뿐.
 
 상태는 몇 초마다 Pi 에 status 를 물어 갱신한다 (전환 중엔 더 자주). 화면에 보이는 state:
   unconfigured  키·known_hosts 가 없음 (설정 안 됨)
@@ -23,10 +23,10 @@ import subprocess
 import threading
 import time
 
-ACTIONS = ('wake', 'standby', 'restart', 'reboot', 'poweroff', 'gyro_reset')
+ACTIONS = ('wake', 'standby', 'restart', 'reboot', 'poweroff', 'gyro_reset', 'motor_on')
 STOPPING_ACTIONS = ('standby', 'restart', 'reboot', 'poweroff')   # 서버 쪽 SLAM·Nav2 를 먼저 끌 동작
 ACTION_LABEL = {'wake': '켜기', 'standby': '대기', 'restart': 'ROS 재시작', 'reboot': 'Pi 재부팅', 'poweroff': 'Pi 끄기',
-                'gyro_reset': '자이로 재보정'}
+                'gyro_reset': '자이로 재보정', 'motor_on': '모터 켜기'}
 POLL_SEC = 5.0
 POLL_FAST_SEC = 1.5      # 전환 중
 SSH_TIMEOUT = 8.0        # status·wake·restart
@@ -174,7 +174,7 @@ class RobotPower:
             if action in STOPPING_ACTIONS:
                 self._before_stop()
             timeout = STOP_TIMEOUT if action in ('standby', 'poweroff') else \
-                GYRO_TIMEOUT if action == 'gyro_reset' else SSH_TIMEOUT
+                GYRO_TIMEOUT if action in ('gyro_reset', 'motor_on') else SSH_TIMEOUT
             ok, info, err = self._ssh(action, timeout)
             if action in ('reboot', 'poweroff') and not ok and info is not None and 'password' not in err:
                 ok = True   # 스크립트가 실행됐고(status 출력) 끄는 도중 연결이 먼저 끊긴 것 — 정상

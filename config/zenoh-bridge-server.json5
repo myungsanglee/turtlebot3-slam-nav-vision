@@ -28,7 +28,7 @@
         subscribers: [          // 이 호스트로 들어오는 것 (Pi -> 서버)
           "/scan", "/odom", "/imu",
           "/tf", "/tf_static", "/joint_states",
-          "/robot_description", "/battery_state",
+          "/robot_description", "/battery_state", "/sensor_state",
           "/camera/.*/camera_info",
           "/camera/.*/compressed",   // compressed + compressedDepth 매칭
         ],

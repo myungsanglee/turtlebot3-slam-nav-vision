@@ -16,10 +16,10 @@ import {
 } from '@mui/material'
 import { useState } from 'react'
 import { usePowerAction } from '../api/power'
-import type { GyroStatus, Power, PowerAction, PowerState } from '../api/types'
+import type { GyroStatus, MotorStatus, Power, PowerAction, PowerState } from '../api/types'
 
 // ───────────────────────────────────────────────────────────────────────────
-// 로봇 전원 — 대기·켜기·ROS 재시작·Pi 재부팅·끄기 (docs/my_web_api.md 4.19) + 자이로 재보정 (4.21)
+// 로봇 전원 — 대기·켜기·ROS 재시작·Pi 재부팅·끄기 (docs/my_web_api.md 4.19) + 자이로 재보정 (4.21) + 모터 켜기 (4.26)
 //   대기 = Pi 의 bringup(라이다·카메라·모터 제어)만 끔. Pi·네트워크는 켜진 채라 웹에서 다시 켤 수 있다.
 //   Pi 끄기 뒤엔 네트워크가 없어 웹에서 켤 수 없다 → 배터리 재연결.
 //   부팅 시 기본은 대기 (robot-standby.service) — 쓰지 않을 때 라이다가 돌며 배터리를 쓰지 않게.
@@ -56,6 +56,11 @@ const ACTION: Record<PowerAction, { label: string; detail: string; danger?: bool
     detail:
       '멈춰 있는데 로봇 방향이 저절로 돌 때(지도 위 스캔이 벽과 어긋남) 씁니다. 로봇이 움직이지 않는 상태에서 5초 동안 자이로 영점을 다시 잡으니 그동안 건드리지 마세요. odom 이 0 으로 바뀌고, 저장 지도 주행 중이면 위치를 자동으로 다시 찾습니다. 지도 만들기 중엔 할 수 없습니다.',
   },
+  motor_on: {
+    label: '모터 켜기',
+    detail:
+      '모터 토크를 켭니다. 토크가 꺼져 있으면 조이스틱·주행 명령이 와도 바퀴가 힘을 내지 않습니다. 켜는 순간 로봇은 움직이지 않습니다 (속도 명령이 없으면 제자리에 고정).',
+  },
   reboot: {
     label: 'Pi 재부팅',
     detail: 'Raspberry Pi 를 재부팅합니다. 1~2분 뒤 다시 연결되면 대기 상태로 켜집니다.',
@@ -78,7 +83,7 @@ function available(state: PowerState): PowerAction[] {
     case 'error':
       return ['wake', 'standby', 'reboot', 'poweroff']
     case 'running':
-      return ['gyro_reset', 'standby', 'restart', 'reboot', 'poweroff']
+      return ['gyro_reset', 'motor_on', 'standby', 'restart', 'reboot', 'poweroff']
     case 'starting':
       return ['standby', 'restart', 'reboot', 'poweroff']
     default:
@@ -86,7 +91,7 @@ function available(state: PowerState): PowerAction[] {
   }
 }
 
-export default function PowerControl({ power, mode, gyro }: { power: Power | undefined; mode: string | undefined; gyro?: GyroStatus }) {
+export default function PowerControl({ power, mode, gyro, motor }: { power: Power | undefined; mode: string | undefined; gyro?: GyroStatus; motor?: MotorStatus | null }) {
   const act = usePowerAction()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<PowerAction | null>(null)
@@ -101,7 +106,7 @@ export default function PowerControl({ power, mode, gyro }: { power: Power | und
     setConfirm(null)
     act.mutate(a)
   }
-  const stopsMode = confirm && confirm !== 'wake' && confirm !== 'gyro_reset' && mode && mode !== 'IDLE'
+  const stopsMode = confirm && confirm !== 'wake' && confirm !== 'gyro_reset' && confirm !== 'motor_on' && mode && mode !== 'IDLE'
   // 정지 중 방향 드리프트 경고 (자동 재보정이 꺼져 있거나 못 하는 상황 — 예: 지도 만들기 중)
   const drift = state === 'running' && gyro?.state === 'drift' && gyro.rate_deg_min != null
   const lastGyro = gyro?.last_reset
@@ -119,6 +124,16 @@ export default function PowerControl({ power, mode, gyro }: { power: Power | und
       {!drift && lastGyro?.auto && Date.now() / 1000 - lastGyro.time < 60 && (
         <Tooltip title={lastGyro.reason ?? ''}>
           <Chip size="small" variant="outlined" color={lastGyro.ok ? 'info' : 'error'} label={lastGyro.ok ? '자이로 자동 재보정됨' : '자이로 자동 재보정 실패'} />
+        </Tooltip>
+      )}
+      {state === 'running' && motor?.state === 'torque_off' && (
+        <Tooltip title="모터 토크가 꺼져 있어 조이스틱·주행 명령에 바퀴가 움직이지 않습니다. 눌러서 모터 켜기">
+          <Chip size="small" color="error" label="모터 꺼짐 — 켜기" disabled={busy} onClick={() => setConfirm('motor_on')} />
+        </Tooltip>
+      )}
+      {state === 'running' && motor?.state === 'no_response' && (
+        <Tooltip title="움직이라는 명령을 보내는데 바퀴가 돌지 않습니다. 모터 토크·OpenCR 연결을 확인하세요. 눌러서 모터 켜기 시도">
+          <Chip size="small" color="error" label="바퀴 무반응" disabled={busy} onClick={() => setConfirm('motor_on')} />
         </Tooltip>
       )}
       {(state === 'standby' || state === 'error') && (

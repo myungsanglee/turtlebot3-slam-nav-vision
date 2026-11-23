@@ -43,7 +43,13 @@ export interface NavigationStatus {
 export type PowerState =
   | 'unconfigured' | 'unreachable' | 'off' | 'rebooting'
   | 'standby' | 'starting' | 'running' | 'stopping' | 'error' | 'calibrating'
-export type PowerAction = 'wake' | 'standby' | 'restart' | 'reboot' | 'poweroff' | 'gyro_reset'
+export type PowerAction = 'wake' | 'standby' | 'restart' | 'reboot' | 'poweroff' | 'gyro_reset' | 'motor_on'
+
+// 모터 (서버 motor_watch.py) — 토크 꺼짐 / 움직이라는 명령에 바퀴가 안 돎
+export interface MotorStatus {
+  state: 'ok' | 'unknown' | 'torque_off' | 'no_response'
+  torque: boolean | null
+}
 
 export interface Power {
   state: PowerState
@@ -70,6 +76,7 @@ export interface Status {
   mode: string
   power: Power
   gyro?: GyroStatus
+  motor?: MotorStatus | null
   // 속도 조절 (조이스틱·자동 주행 공통, 서버 teleop.py SpeedSetting)
   speed?: { scale: number; linear: number; angular: number; max_linear: number; max_angular: number }
   robot_connected: boolean

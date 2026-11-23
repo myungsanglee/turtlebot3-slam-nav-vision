@@ -27,6 +27,7 @@
 | 라이다 수신이 끊기고 bringup 재시작으로도 안 돌아옴, 배터리 값이 한 값에 멈춤 | Pi 5V 저전압 → USB 포트 전체 리셋 → 장치가 ttyUSB1·ttyACM1 로 재연결, 라이다 드라이버 종료·OpenCR 통신 끊김 | 로봇 전원 껐다 켜기 (by-id 포트 적용 후엔 `systemctl --user restart tb3-bringup`). 전원 원인은 `~/.ros/scan_watchdog/power-*.log`·`events.log` 로 추적 (2026-11-12 저전압 항목) |
 | 저장 지도로 주행할 때 벽 바깥(미탐사 회색)까지 빈 곳으로 취급됨 | nav2 `map_saver_cli` 기본 `free_thresh 0.25` → 미탐사 픽셀(205)이 불러올 때 0.196 < 0.25 로 '빈 칸' | 저장 시 `--free 0.196` (웹 저장은 적용됨), 옛 지도는 yaml 의 `free_thresh: 0.196` 으로 (2026-11-14 항목) |
 | 클릭한 목표보다 20~25cm 앞에서 "도착" 하고 멈춤 | Nav2 도착 판정 반경 `xy_goal_tolerance` 기본 0.25 m | 0.07 로 (goal checker·DWB 둘 다) (2026-11-14 항목) |
+| 로봇이 켜져 있고 센서도 다 오는데 조이스틱·주행 명령에 바퀴가 안 돎 | OpenCR 모터 토크 꺼짐 (`/sensor_state.torque: false`) — 속도 명령은 Pi 까지 도착함 | `ros2 service call /motor_power std_srvs/srv/SetBool "{data: true}"` 또는 웹 「모터 꺼짐 — 켜기」 (2026-11-24 항목) |
 | 목표로 가다가 엉뚱한 방향으로 가고 센서·지도가 어긋났다 맞았다 함 | AMCL 이 멈춘 동안 갱신하지 않아 10~20cm 오차가 남음 → 좁은 입구 모퉁이에 끼임 → 바퀴 헛돌아 odom 이 '이동' 으로 착각 | AMCL 측정 모델 튜닝 + relocalizer 정지 중 보정. 진단은 녹화(`ros2 bag record`) → `analyze_bag.py`·`replay_amcl.py` (2026-11-15 항목) |
 | 종료한 노드의 토픽이 `topic list` 에 계속 보임 | ros2 daemon 의 그래프 캐시 (표시 문제일 뿐 실제 잔존 아님) | `ros2 daemon stop && ros2 daemon start` 또는 `ros2 topic list --no-daemon` |
 | ROS 카메라 노드만 `UVCIOC_CTRL_QUERY Connection timed out` (pyrealsense2 는 됨) | ROS 래퍼가 apt 커널 백엔드 librealsense 사용, Pi 커널에 패치 없음 | realsense-ros 를 RSUSB 백엔드 librealsense 로 소스 빌드 (아래 2026-08-27 항목) |
@@ -888,3 +889,37 @@ bringup 은 건드리지 않고 옆에서 `/scan` 을 구독하다가 드라이�
 - **끼임(헛돎) 감지**: 바퀴는 도는데 스캔 매칭 위치가 그대로면 '끼임' → 주행 정지·알림 (odom 기반 progress checker 가 못 잡음).
 - 입구 모퉁이 여유: 실주행에서 inflation·cost_scaling 조정, 필요하면 속도 상한.
 - 다음 실주행으로 실기 확인 (녹화 재생은 같은 데이터 1개 — 다른 경로·상황도 녹화해 재생 시험에 추가).
+
+---
+
+## 2026-11-24 — 로봇이 켜져 있는데 조이스틱·주행이 안 먹힘: 모터 토크 꺼짐
+
+### 증상
+저장 지도 주행 모드, 웹 상태는 정상(로봇 실행 중, odom 20Hz·라이다 5Hz·카메라 6fps·배터리 수신). 그런데 조이스틱도, 목표 주행도
+로봇이 꿈쩍하지 않음. 웹에는 아무 경고가 없었다.
+
+### 진단
+1. 전원 기록(`events.log`): 이번엔 USB 리셋·OpenCR 통신 오류 **없음** (2026-11-12 저전압 항목과 다른 경우).
+   bringup 로그에도 `DynamixelSDKWrapper` 오류 없음.
+2. 명령 경로: Pi 에서 `/cmd_vel` 구독자(turtlebot3_node)·발행자(zenoh 브리지) 정상. 서버에서 속도 0 명령을 보내 Pi 가
+   **받는 것 확인** → 통신 문제 아님.
+3. **`/sensor_state` 의 `torque: false`** — OpenCR 이 Dynamixel 모터 토크를 끈 상태. 명령은 도착하지만 바퀴가 힘을 내지 않는다.
+4. `/motor_power`(std_srvs/SetBool, turtlebot3_node 제공) `true` → `torque: true`, 이후 정상.
+
+### 원인 (미확정)
+turtlebot3_node 는 시작할 때 토크를 켜지 않는다 (소스 확인: torque 는 `motor_power` 서비스에서 쓰고 `sensor_state` 에서 읽기만 함) —
+OpenCR 펌웨어가 전원을 켤 때 켜 둔 값을 그대로 쓴다. 누가 껐는지는 모름. 정황:
+- 전날 밤 23:51 배터리 11.01V(셀 3.67V) 때 OpenCR 배터리 상태 수신이 끊겼다가, 00:02 bringup 재시작 후 재개.
+  OpenCR 저전압 보호·Dynamixel 과부하 보호(장애물에 걸려 바퀴가 버팀) 후보 — 재발 시 그때 배터리·직전 주행 확인.
+- 같은 날 Pi 재부팅(00:04) 이 있었지만 Pi 는 OpenCR 전원과 별개(UBEC) 라 OpenCR 은 꺼지지 않았을 수 있다.
+
+### 해결
+- 즉시: `/motor_power true`.
+- 재발 대비 (웹에서 알림·복구, docs/my_web_api.md 4.26):
+  - `/sensor_state` 를 zenoh 브리지 허용 목록에 추가 (Pi·서버 양쪽) → web-api 가 토크 상태를 받아 **「모터 꺼짐 — 켜기」** 경고 칩.
+  - 토크 정보와 상관없이 **"움직이라는 명령 1.5초 + 바퀴 무반응"** 도 감지 → **「바퀴 무반응」** 칩 (OpenCR 통신 끊김 등 다른 원인도 잡힘).
+  - 전원 메뉴에 「모터 켜기」 (robot_power.sh `motor_on` → `/motor_power true`, SSH 강제 명령 경로).
+
+### 재발 방지 / 다음 발생 때
+- 웹 칩이 뜨면 「모터 켜기」. 다시 꺼지면 그 시각 `events.log`(배터리·저전압)와 직전 주행(걸림 여부)을 확인해 원인 좁히기.
+

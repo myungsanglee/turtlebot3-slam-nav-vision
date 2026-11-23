@@ -220,6 +220,7 @@ turtlebot3-slam-nav-vision/
   **금지 구역·가상 벽** (거울·유리 대응, 2026-11-12): 저장 지도 주행 중 웹에서 그림 → `maps/<지도>.zones.json` →
   web-api 가 Keepout 마스크·필터 정보 발행 → nav2_params local·global `keepout_filter` (실행 중 즉시 반영, 경로 계산 검증).
   **전원 버튼** (2026-11-12): 부팅 시 대기 + 웹에서 켜기·대기·ROS 재시작·Pi 재부팅·끄기 (bringup 정지 시 LDS 모터 정지 실측).
+  **모터 상태 알림** (2026-11-24): 토크 꺼짐(`/sensor_state` 브리징)·명령에 바퀴 무반응 감지 → 웹 경고 + 「모터 켜기」(robot_power.sh motor_on).
   상세는 `docs/my_web_api.md`, 설계·이후 단계는 `docs/web_ui_design.md`
 - **첫 바닥 실주행 (2026-11-14)** — 웹으로 지도 만들기·저장 → 저장 지도 주행·초기 위치·클릭 주행 전부 동작.
   발견·수정: ① 목표 25cm 앞 정지 → `xy_goal_tolerance` 0.25→0.07, yaw 0.25→0.15 (바닥 재확인 남음)
